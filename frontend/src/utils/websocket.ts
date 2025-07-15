@@ -58,7 +58,6 @@ export const useWebSocket = () => {
   // Connection stability monitoring
   const monitorConnectionHealth = useCallback(() => {
     const timeSinceLastSuccess = Date.now() - lastSuccessfulConnection
-    const stats = connectionStatsRef.current
     
     // Determine connection health based on multiple factors
     if (consecutiveFailures >= 5 || timeSinceLastSuccess > 60000) {
@@ -321,80 +320,9 @@ export const useWebSocket = () => {
     return 'excellent'
   }
 
-  const checkPlaybackHealth = () => {
-    const currentTime = Date.now()
-    const health = playbackHealthRef.current
-    
-    // If we're not in playback mode, consider healthy
-    if (!useTrainingStore.getState().isPlayingCheckpoint) {
-      return { isHealthy: true, reason: 'not_in_playback' }
-    }
-    
-    // Check if we've received recent heartbeat
-    if (currentTime - health.lastHeartbeat > 30000) { // 30 seconds
-      return { isHealthy: false, reason: 'no_heartbeat' }
-    }
-    
-    // Check if playback system reports unhealthy
-    if (!health.isHealthy) {
-      return { isHealthy: false, reason: 'system_unhealthy' }
-    }
-    
-    // Check consecutive failures
-    if (health.consecutiveFailures >= 5) {
-      return { isHealthy: false, reason: 'too_many_failures' }
-    }
-    
-    return { isHealthy: true, reason: 'healthy' }
-  }
+  // Removed unused checkPlaybackHealth function
 
-  const attemptPlaybackRestart = async () => {
-    try {
-      console.log('Attempting to restart playback automatically...')
-      
-      // First, try to get the current playback status
-      const statusResp = await fetch(`${config.api.baseUrl}/checkpoints/playback/status`)
-      if (!statusResp.ok) {
-        console.warn('Could not get playback status for restart')
-        return
-      }
-      
-      const status = await statusResp.json()
-      
-      // If there's a checkpoint loaded but not playing, try to restart
-      if (status.current_checkpoint && !status.is_playing) {
-        console.log(`Restarting playback for checkpoint: ${status.current_checkpoint}`)
-        
-        // Set loading state
-        useTrainingStore.getState().setLoadingState('isPlaybackStarting', true)
-        useTrainingStore.getState().setLoadingState('loadingMessage', 'Restarting playback...')
-        
-        // Start playback
-        const restartResp = await fetch(`${config.api.baseUrl}/checkpoints/${status.current_checkpoint}/playback/start`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        })
-        
-        if (restartResp.ok) {
-          console.log('Playback restart successful')
-          // Reset health monitoring
-          playbackHealthRef.current.lastHeartbeat = Date.now()
-          playbackHealthRef.current.consecutiveFailures = 0
-          playbackHealthRef.current.isHealthy = true
-        } else {
-          console.warn('Failed to restart playback:', restartResp.status)
-          // Clear loading state on failure
-          useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
-          useTrainingStore.getState().setLoadingState('loadingMessage', null)
-        }
-      }
-    } catch (error) {
-      console.error('Error attempting playback restart:', error)
-      // Clear loading state on error
-      useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
-      useTrainingStore.getState().setLoadingState('loadingMessage', null)
-    }
-  }
+  // Removed unused attemptPlaybackRestart function
 
   const connect = useCallback(async () => {
     // Prevent duplicate connections

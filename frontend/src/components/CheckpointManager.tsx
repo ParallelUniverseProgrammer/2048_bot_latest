@@ -16,6 +16,7 @@ import {
   RefreshCw
 } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
+import { useDeviceDetection } from '../utils/deviceDetection'
 import config from '../utils/config'
 
 interface Checkpoint {
@@ -59,6 +60,10 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   const [stats, setStats] = useState<CheckpointStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // Device detection for mobile optimization
+  const { displayMode } = useDeviceDetection()
+  const isMobile = displayMode === 'mobile'
   
   // UI state
   const [searchTerm, setSearchTerm] = useState('')
@@ -479,14 +484,19 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       </motion.div>
 
       {/* Checkpoints Grid/List */}
-      <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
+      <div className={viewMode === 'grid' ? 
+        (isMobile ? 'mobile-grid-1' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6') : 
+        'space-y-4'
+      }>
         {filteredCheckpoints.map((checkpoint, index) => (
           <motion.div
             key={checkpoint.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
-            className={`card-glass p-6 rounded-xl ${
+            className={`card-glass rounded-xl ${
+              isMobile ? 'mobile-checkpoint-card' : 'p-6'
+            } ${
               selectedCheckpoint === checkpoint.id ? 'ring-2 ring-blue-500' : ''
             }`}
           >

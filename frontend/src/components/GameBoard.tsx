@@ -2,6 +2,7 @@ import React, { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Eye, EyeOff, PlayCircle, PauseCircle, StopCircle, Loader2, RefreshCw } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
+import { useDeviceDetection } from '../utils/deviceDetection'
 import config from '../utils/config'
 
 const GameBoard: React.FC = () => {
@@ -14,6 +15,10 @@ const GameBoard: React.FC = () => {
     isPlayingCheckpoint,
     loadingStates
   } = useTrainingStore()
+  
+  // Device detection for mobile optimization
+  const { displayMode } = useDeviceDetection()
+  const isMobile = displayMode === 'mobile'
   const [showAttention, setShowAttention] = React.useState(false)
   const [playbackStatus, setPlaybackStatus] = React.useState<any>(null)
   
@@ -346,15 +351,17 @@ const GameBoard: React.FC = () => {
             </div>
           </div>
           
-          <div className="flex items-center justify-between">
+          <div className={`${isMobile ? 'mobile-playback-controls' : 'flex items-center justify-between'}`}>
             {/* Playback Buttons */}
-            <div className="flex items-center space-x-3">
+            <div className={`${isMobile ? 'mobile-playback-controls' : 'flex items-center space-x-3'}`}>
               {!loadingStates.isPlaybackStarting && playbackStatus && (
                 <>
                   {playbackStatus.is_playing && !playbackStatus.is_paused ? (
                     <button
                       onClick={pausePlayback}
-                      className="flex items-center space-x-2 px-4 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors"
+                      className={`flex items-center space-x-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors ${
+                        isMobile ? 'mobile-playback-controls button' : 'px-4 py-2'
+                      }`}
                     >
                       <PauseCircle className="w-4 h-4" />
                       <span>Pause</span>
@@ -362,7 +369,9 @@ const GameBoard: React.FC = () => {
                   ) : playbackStatus.is_paused ? (
                     <button
                       onClick={resumePlayback}
-                      className="flex items-center space-x-2 px-4 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors"
+                      className={`flex items-center space-x-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors ${
+                        isMobile ? 'mobile-playback-controls button' : 'px-4 py-2'
+                      }`}
                     >
                       <PlayCircle className="w-4 h-4" />
                       <span>Resume</span>
@@ -374,7 +383,9 @@ const GameBoard: React.FC = () => {
                       {playbackStatus.is_playing || playbackStatus.is_paused ? (
                         <button
                           onClick={stopPlayback}
-                          className="flex items-center space-x-2 px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors"
+                          className={`flex items-center space-x-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors ${
+                            isMobile ? 'mobile-playback-controls button' : 'px-4 py-2'
+                          }`}
                         >
                           <StopCircle className="w-4 h-4" />
                           <span>Stop</span>
@@ -382,7 +393,9 @@ const GameBoard: React.FC = () => {
                       ) : (
                         <button
                           onClick={startNewGame}
-                          className="flex items-center space-x-2 px-4 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors"
+                          className={`flex items-center space-x-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors ${
+                            isMobile ? 'mobile-playback-controls button' : 'px-4 py-2'
+                          }`}
                         >
                           <PlayCircle className="w-4 h-4" />
                           <span>New Game</span>
@@ -394,7 +407,9 @@ const GameBoard: React.FC = () => {
                         (playbackStatus.is_playing && !isPlayingCheckpoint)) && (
                         <button
                           onClick={recoverPlayback}
-                          className="flex items-center space-x-2 px-3 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors text-sm"
+                          className={`flex items-center space-x-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors ${
+                            isMobile ? 'mobile-playback-controls button' : 'px-3 py-2 text-sm'
+                          }`}
                           title="Recover from stuck playback state"
                         >
                           <RefreshCw className="w-4 h-4" />
@@ -419,30 +434,32 @@ const GameBoard: React.FC = () => {
       )}
 
       {/* Game Info */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
+      <div className={`flex items-center justify-between ${isMobile ? 'flex-col space-y-4' : ''}`}>
+        <div className={`flex items-center ${isMobile ? 'w-full justify-between' : 'space-x-4'}`}>
           <motion.div
-            className="card-glass p-4 rounded-xl"
+            className={`card-glass rounded-xl ${isMobile ? 'mobile-score-card flex-1 mr-2' : 'p-4'}`}
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5 }}
           >
-            <h3 className="text-sm font-medium text-gray-400 mb-1">Current Score</h3>
-            <p className="text-2xl font-bold text-green-400">
+            <h3 className={`font-medium text-gray-400 mb-1 ${isMobile ? 'mobile-score-card h3' : 'text-sm'}`}>
+              Current Score
+            </h3>
+            <p className={`font-bold text-green-400 ${isMobile ? 'mobile-score-card p' : 'text-2xl'}`}>
               {currentData?.score?.toLocaleString() || '0'}
             </p>
           </motion.div>
           
           <motion.div
-            className="card-glass p-4 rounded-xl"
+            className={`card-glass rounded-xl ${isMobile ? 'mobile-score-card flex-1 ml-2' : 'p-4'}`}
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.1 }}
           >
-            <h3 className="text-sm font-medium text-gray-400 mb-1">
+            <h3 className={`font-medium text-gray-400 mb-1 ${isMobile ? 'mobile-score-card h3' : 'text-sm'}`}>
               {currentData?.is_playback ? 'Step' : 'Episode'}
             </h3>
-            <p className="text-2xl font-bold text-blue-400">
+            <p className={`font-bold text-blue-400 ${isMobile ? 'mobile-score-card p' : 'text-2xl'}`}>
               {currentData?.is_playback 
                 ? (checkpointPlaybackData?.step_data?.step?.toLocaleString() || '0')
                 : (currentData?.episode?.toLocaleString() || '0')
@@ -454,9 +471,9 @@ const GameBoard: React.FC = () => {
         {/* Attention Toggle */}
         <motion.button
           onClick={() => setShowAttention(!showAttention)}
-          className={`btn-secondary flex items-center space-x-2 ${
+          className={`${isMobile ? 'mobile-attention-btn' : 'btn-secondary'} flex items-center space-x-2 ${
             showAttention ? 'bg-blue-500/20 text-blue-400' : ''
-          }`}
+          } ${isMobile ? 'w-full' : ''}`}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
@@ -465,15 +482,15 @@ const GameBoard: React.FC = () => {
         </motion.button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={`${isMobile ? 'mobile-grid-1' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}`}>
         {/* Game Board */}
         <motion.div
-          className="lg:col-span-2 card-glass p-6 rounded-xl"
+          className={`${isMobile ? 'card-glass p-4 rounded-xl' : 'lg:col-span-2 card-glass p-6 rounded-xl'}`}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
         >
-          <h3 className="text-lg font-semibold mb-4 flex items-center">
+          <h3 className={`font-semibold mb-4 flex items-center ${isMobile ? 'text-base' : 'text-lg'}`}>
             <div className="w-5 h-5 mr-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded" />
             Game Board
             {isTraining && (
@@ -481,7 +498,7 @@ const GameBoard: React.FC = () => {
             )}
           </h3>
           
-          <div className="grid grid-cols-4 gap-2 max-w-xs mx-auto">
+          <div className={`grid grid-cols-4 gap-2 ${isMobile ? 'mobile-game-board' : 'max-w-xs mx-auto'}`}>
             {displayBoard.map((row, rowIndex) =>
               row.map((value, colIndex) => (
                 <div
@@ -514,16 +531,16 @@ const GameBoard: React.FC = () => {
 
         {/* Action Probabilities */}
         <motion.div
-          className="card-glass p-6 rounded-xl"
+          className={`card-glass rounded-xl ${isMobile ? 'p-4' : 'p-6'}`}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3 }}
         >
-          <h3 className="text-lg font-semibold mb-4 flex items-center">
+          <h3 className={`font-semibold mb-4 flex items-center ${isMobile ? 'text-base' : 'text-lg'}`}>
             <ArrowUp className="w-5 h-5 mr-2 text-blue-400" />
             {currentData?.is_playback && checkpointPlaybackData?.step_data?.done && checkpointPlaybackData?.step_data?.action === null 
               ? 'Game Over' 
-              : 'Next Action'
+              : (isMobile ? 'Next' : 'Next Action')
             }
           </h3>
           

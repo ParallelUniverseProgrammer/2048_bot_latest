@@ -194,52 +194,76 @@ body {
 
 /* Mobile responsive adjustments */
 @media (max-width: 768px) {
+  /* Improved chart sizing for mobile */
   .chart-container {
-    height: 120px; /* Much smaller charts for mobile */
+    height: 180px; /* Increased from 120px for better readability */
+    min-height: 180px;
   }
   
+  /* Improved game tile sizing */
   .game-tile {
-    font-size: 10px; /* Smaller font for game tiles */
+    font-size: 14px; /* Increased from 10px for better readability */
+    font-weight: 600;
+    min-height: 60px; /* Ensure minimum touch target size */
+    min-width: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
   }
   
+  /* Improved button sizing for touch */
   .btn-primary, .btn-secondary {
-    @apply px-3 py-1 text-xs; /* Smaller buttons */
+    @apply px-4 py-3 text-sm; /* Larger touch targets */
+    min-height: 44px; /* iOS recommended minimum touch target */
+    border-radius: 8px;
+    font-weight: 500;
   }
   
-  /* Compact metrics cards */
+  /* Improved metrics cards */
   .metrics-card {
-    @apply p-3; /* Smaller padding */
+    @apply p-4; /* Increased from p-3 */
+    min-height: 100px;
+    border-radius: 12px;
   }
   
   .metrics-card h3 {
-    @apply text-xs; /* Smaller headings */
+    @apply text-sm; /* Increased from text-xs */
+    font-weight: 500;
   }
   
   .metrics-card p {
-    @apply text-lg; /* Smaller values */
+    @apply text-xl; /* Increased from text-lg */
+    font-weight: 600;
   }
   
-  /* Compact header */
+  /* Improved header sizing */
   .mobile-header {
-    @apply py-2 px-3; /* Smaller header padding */
+    @apply py-3 px-4; /* Increased padding */
+    min-height: 60px;
   }
   
   .mobile-header h1 {
-    @apply text-base; /* Smaller title */
+    @apply text-lg; /* Increased from text-base */
+    font-weight: 600;
   }
   
-  /* Compact navigation */
+  /* Improved navigation */
   .mobile-nav {
-    @apply p-1; /* Smaller nav padding */
+    @apply p-2; /* Increased from p-1 */
+    border-radius: 12px;
   }
   
   .mobile-nav button {
-    @apply px-2 py-1; /* Smaller nav buttons */
+    @apply px-3 py-2; /* Increased from px-2 py-1 */
+    min-height: 44px; /* Touch target size */
+    border-radius: 8px;
+    font-weight: 500;
   }
   
-  /* Compact main content */
+  /* Better main content spacing */
   .mobile-main {
-    @apply px-3 py-3; /* Smaller main padding */
+    @apply px-4 py-4; /* Increased from px-3 py-3 */
   }
   
   /* Hide less important elements */
@@ -247,13 +271,15 @@ body {
     @apply hidden;
   }
   
-  /* Compact training metrics */
+  /* Improved training metrics */
   .mobile-metrics {
-    @apply gap-2; /* Smaller gaps */
+    @apply gap-3; /* Increased from gap-2 */
   }
   
   .mobile-metrics > div {
-    @apply px-2 py-1; /* Smaller metric items */
+    @apply px-3 py-2; /* Increased from px-2 py-1 */
+    min-height: 44px;
+    border-radius: 8px;
   }
   
   /* Ensure no overflow */
@@ -261,13 +287,67 @@ body {
     overflow-x: hidden;
   }
   
-  /* Compact grid layouts */
+  /* Improved grid layouts */
   .mobile-grid-2 {
-    @apply grid-cols-2 gap-2;
+    @apply grid-cols-2 gap-3; /* Increased gap */
   }
   
   .mobile-grid-1 {
-    @apply grid-cols-1 gap-3;
+    @apply grid-cols-1 gap-4; /* Increased gap */
+  }
+  
+  /* Improved game board container */
+  .mobile-game-board {
+    max-width: 320px; /* Increased from max-w-xs (280px) */
+    margin: 0 auto;
+    padding: 16px;
+  }
+  
+  /* Improved playback controls */
+  .mobile-playback-controls {
+    @apply flex-col space-y-3; /* Stack controls vertically */
+  }
+  
+  .mobile-playback-controls button {
+    @apply w-full; /* Full width buttons */
+    min-height: 48px;
+    font-size: 16px;
+  }
+  
+  /* Improved score display */
+  .mobile-score-card {
+    @apply p-4;
+    min-height: 80px;
+    border-radius: 12px;
+  }
+  
+  .mobile-score-card h3 {
+    @apply text-sm;
+    font-weight: 500;
+  }
+  
+  .mobile-score-card p {
+    @apply text-2xl;
+    font-weight: 700;
+  }
+  
+  /* Improved checkpoint cards */
+  .mobile-checkpoint-card {
+    @apply p-4;
+    border-radius: 12px;
+    min-height: 120px;
+  }
+  
+  /* Better spacing for mobile stacked elements */
+  .mobile-stack > * + * {
+    margin-top: 12px;
+  }
+  
+  /* Improved attention button */
+  .mobile-attention-btn {
+    @apply px-4 py-3 text-sm;
+    min-height: 44px;
+    border-radius: 8px;
   }
 }
 

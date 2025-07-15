@@ -391,7 +391,7 @@ class CheckpointPlayback:
                         'board_state': [list(row) for row in self.env.game.board],
                         'score': self.env.game.score,
                         'action': action,
-                        'action_probs': action_probs,
+                        'action_probs': action_probs.tolist() if action_probs is not None else None,
                         'legal_actions': legal_actions,
                         'attention_weights': attention_weights.tolist() if attention_weights is not None else None,
                         'timestamp': time.time()
