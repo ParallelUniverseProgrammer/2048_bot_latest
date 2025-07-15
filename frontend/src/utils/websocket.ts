@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useTrainingStore } from '../stores/trainingStore'
 import config from './config'
 import { 
+  isMobile,
   isMobileSafari, 
   getMobileOptimizedWebSocketURL, 
   getConnectionRetryDelay, 
@@ -221,6 +222,19 @@ export const useWebSocket = () => {
       const ws = new WebSocket(websocketUrl)
       wsRef.current = ws
       
+      // Add connection timeout for mobile devices
+      let connectionTimeout: number | null = null
+      if (isMobile()) {
+        connectionTimeout = setTimeout(() => {
+          if (ws.readyState === WebSocket.CONNECTING) {
+            console.log('WebSocket connection timeout on mobile, trying fallback')
+            ws.close()
+            setConnectionError('Connection timeout - switching to polling...')
+            startPollingFallback()
+          }
+        }, 5000) // 5 second timeout for mobile
+      }
+      
       // Reset connection stats
       connectionStatsRef.current = {
         latency: 0,
@@ -234,6 +248,13 @@ export const useWebSocket = () => {
       ws.onopen = () => {
         console.log('WebSocket connected successfully')
         reconnectingRef.current = false // connection succeeded – clear guard
+        
+        // Clear connection timeout if it exists
+        if (connectionTimeout) {
+          clearTimeout(connectionTimeout)
+          connectionTimeout = null
+        }
+        
         setConnected(true)
         setConnectionError(null)
         reconnectAttempts.current = 0
@@ -413,6 +434,10 @@ export const useWebSocket = () => {
           } else if (data.type === 'training_complete') {
             console.log('Training completed:', data.message)
             setConnected(true) // Keep connection alive
+          } else if (data.type === 'playback_speed_changed') {
+            console.log('Playback speed changed:', data.message)
+            // Update playback status to reflect new speed
+            // The frontend will automatically update the speed dropdown
           } else if (data.type === 'heartbeat') {
             // Heartbeat received, connection is alive
             if (data.mobile_optimized) {
@@ -468,24 +493,32 @@ export const useWebSocket = () => {
             connect()
           }, backoff)
         } else {
-          setConnectionError('Connection lost. Please refresh the page.')
+          // After all retries failed, try polling fallback on mobile
+          if (isMobileSafari() || isMobile()) {
+            console.log('All WebSocket retries failed, switching to polling fallback')
+            setConnectionError('WebSocket failed, switching to polling mode...')
+            startPollingFallback()
+          } else {
+            setConnectionError('Connection lost. Please refresh the page.')
+          }
         }
       }
 
       ws.onerror = (error) => {
         console.error('WebSocket error:', error)
         console.log('User agent:', navigator.userAgent)
+        console.log('Is mobile device:', isMobile())
         console.log('Is mobile Safari:', isMobileSafari())
         
-        if (isMobileSafari()) {
-          setConnectionError('Connection issue on mobile Safari - trying fallback...')
-          // Try polling fallback after a delay
+        if (isMobile()) {
+          setConnectionError('Connection issue on mobile device - trying fallback...')
+          // Try polling fallback after a shorter delay for mobile
           setTimeout(() => {
             if (!isConnected) {
-              console.log('Attempting polling fallback for mobile Safari')
+              console.log('Attempting polling fallback for mobile device')
               startPollingFallback()
             }
-          }, 2000)
+          }, 1000) // Reduced delay for mobile
         } else {
           setConnectionError('Connection error. Please check if the server is running.')
         }

@@ -60,6 +60,9 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
+  // Get training store loading states to prevent conflicts
+  const { loadingStates } = useTrainingStore()
+  
   // UI state
   const [searchTerm, setSearchTerm] = useState('')
   const [filterTag, setFilterTag] = useState<string>('all')
@@ -72,28 +75,59 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   const loadCheckpoints = async (silent: boolean = false) => {
     try {
       if (!silent) setLoading(true)
-      const [checkpointsRes, statsRes] = await Promise.all([
-        fetch(`${config.api.baseUrl}/checkpoints`),
-        fetch(`${config.api.baseUrl}/checkpoints/stats`)
-      ])
       
-      if (!checkpointsRes.ok) {
-        console.error('Failed to load checkpoints:', checkpointsRes.status)
+      // Use AbortController for better timeout handling on mobile
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout for mobile
+      
+      try {
+        const [checkpointsRes, statsRes] = await Promise.all([
+          fetch(`${config.api.baseUrl}/checkpoints`, { signal: controller.signal }),
+          fetch(`${config.api.baseUrl}/checkpoints/stats`, { signal: controller.signal })
+        ])
+        
+        clearTimeout(timeoutId)
+        
+        if (!checkpointsRes.ok) {
+          console.error('Failed to load checkpoints:', checkpointsRes.status)
+        }
+        if (!statsRes.ok) {
+          console.error('Failed to load stats:', statsRes.status)
+        }
+        
+        const checkpointsData = checkpointsRes.ok ? await checkpointsRes.json() : []
+        const statsData = statsRes.ok ? await statsRes.json() : null
+        
+        setCheckpoints(checkpointsData)
+        setStats(statsData)
+        setError(null)
+      } catch (fetchErr) {
+        clearTimeout(timeoutId)
+        
+        // Handle abort errors more gracefully
+        if (fetchErr instanceof Error && fetchErr.name === 'AbortError') {
+          console.warn('Request timed out, using cached data if available')
+          if (silent && checkpoints.length > 0) {
+            // For silent refreshes, keep existing data if timeout occurs
+            return
+          }
+          throw new Error('Request timed out - please check your connection')
+        }
+        throw fetchErr
       }
-      if (!statsRes.ok) {
-        console.error('Failed to load stats:', statsRes.status)
-      }
-      
-      const checkpointsData = checkpointsRes.ok ? await checkpointsRes.json() : []
-      const statsData = statsRes.ok ? await statsRes.json() : null
-      
-      setCheckpoints(checkpointsData)
-      setStats(statsData)
-      setError(null)
     } catch (err) {
+      console.error('Error loading checkpoints:', err)
+      
+      // For silent refreshes, don't show error if we have existing data
+      if (silent && checkpoints.length > 0) {
+        console.warn('Silent refresh failed, keeping existing data')
+        return
+      }
+      
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
-      if (!silent) setLoading(false)
+      // Always clear loading state, even for silent refreshes that fail
+      setLoading(false)
     }
   }
 
@@ -114,9 +148,10 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
 
     // ------------------------------------------------------------
     // NEW: periodically refresh checkpoint list so UI stays up-to-date
+    // Use longer interval for mobile to reduce network load
     const checkpointInterval = setInterval(() => {
       loadCheckpoints(true)
-    }, 5000)
+    }, 10000) // Increased to 10 seconds for better mobile performance
     // ------------------------------------------------------------
     
     return () => {
@@ -292,12 +327,27 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     }
   }
 
-  if (loading) {
+  // Check if we should show loading state
+  const shouldShowLoading = loading || 
+    loadingStates.isTrainingStarting || 
+    loadingStates.isPlaybackStarting || 
+    loadingStates.isNewGameStarting ||
+    loadingStates.isTrainingStopping ||
+    loadingStates.isTrainingResetting
+
+  if (shouldShowLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="flex items-center space-x-2">
           <RefreshCw className="w-5 h-5 animate-spin text-blue-400" />
-          <span className="text-gray-400">Loading checkpoints...</span>
+          <span className="text-gray-400">
+            {loadingStates.isTrainingStarting ? 'Starting training...' :
+             loadingStates.isPlaybackStarting ? 'Starting playback...' :
+             loadingStates.isNewGameStarting ? 'Starting new game...' :
+             loadingStates.isTrainingStopping ? 'Stopping training...' :
+             loadingStates.isTrainingResetting ? 'Resetting training...' :
+             'Loading checkpoints...'}
+          </span>
         </div>
       </div>
     )

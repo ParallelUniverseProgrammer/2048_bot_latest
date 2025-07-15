@@ -516,7 +516,18 @@ async def set_playback_speed(request: dict):
         speed = request.get("speed", 1.0)
         speed = max(0.5, min(speed, 5.0))
         
-        checkpoint_playback.set_playback_speed(speed)
+        old_speed = checkpoint_playback.playback_speed
+        new_speed = checkpoint_playback.set_playback_speed(speed)
+        
+        # Send speed change notification to connected clients
+        await websocket_manager.broadcast({
+            'type': 'playback_speed_changed',
+            'old_speed': old_speed,
+            'new_speed': new_speed,
+            'checkpoint_id': checkpoint_playback.current_checkpoint_id,
+            'message': f'Playback speed changed from {old_speed}x to {new_speed}x'
+        })
+        
         return {
             "message": f"Playback speed set to {speed}",
             "speed": speed,

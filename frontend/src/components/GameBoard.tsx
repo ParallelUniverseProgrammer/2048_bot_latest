@@ -26,6 +26,11 @@ const GameBoard: React.FC = () => {
         if (res.ok) {
           const data = await res.json()
           setPlaybackStatus(data)
+          
+          // Sync local playback speed with server speed
+          if (data.playback_speed && data.playback_speed !== playbackSpeed) {
+            setPlaybackSpeed(data.playback_speed)
+          }
         }
       } catch (err) {
         // Ignore errors
@@ -35,7 +40,7 @@ const GameBoard: React.FC = () => {
     loadPlaybackStatus()
     const interval = setInterval(loadPlaybackStatus, 1000)
     return () => clearInterval(interval)
-  }, [])
+  }, [playbackSpeed])
 
   // Playback control functions
   const pausePlayback = async () => {

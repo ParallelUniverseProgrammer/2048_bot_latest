@@ -54,6 +54,10 @@ class CheckpointPlayback:
             'adaptive_skip': 1  # Skip every N steps
         }
         
+        # Speed change tracking for responsive sleep
+        self._speed_change_time = time.time()
+        self._last_speed = self.playback_speed
+        
         # Health monitoring
         self.last_heartbeat = time.time()
         self.last_broadcast_success = time.time()
@@ -100,6 +104,33 @@ class CheckpointPlayback:
     def _update_heartbeat(self):
         """Update heartbeat timestamp"""
         self.last_heartbeat = time.time()
+    
+    async def _responsive_sleep(self, target_duration: float):
+        """Sleep with ability to respond to speed changes"""
+        if target_duration <= 0:
+            return
+            
+        start_time = time.time()
+        speed_change_time = self._speed_change_time
+        
+        while time.time() - start_time < target_duration:
+            # Check if speed changed during sleep
+            if self._speed_change_time > speed_change_time:
+                # Speed changed, recalculate remaining time
+                elapsed = time.time() - start_time
+                remaining = target_duration - elapsed
+                
+                # Recalculate based on new speed
+                new_target = remaining * (self._last_speed / self.playback_speed)
+                if new_target <= 0:
+                    break
+                    
+                # Continue with shorter sleep
+                await asyncio.sleep(min(0.1, new_target))
+                speed_change_time = self._speed_change_time
+            else:
+                # No speed change, sleep normally
+                await asyncio.sleep(min(0.1, target_duration - (time.time() - start_time)))
     
     def _is_healthy(self) -> bool:
         """Check if playback system is healthy"""
@@ -630,7 +661,7 @@ class CheckpointPlayback:
                     base_wait = 1.0 / self.playback_speed
                     adaptive_wait = base_wait * (1.0 + self.adaptive_broadcast_interval)
                     wait_time = max(0.05, min(adaptive_wait, 2.0))  # Clamp between 50ms and 2s
-                    await asyncio.sleep(wait_time)
+                    await self._responsive_sleep(wait_time)
                     
                     # Check if this was the last step
                     if step_idx == len(game_result['game_history']) - 1:
@@ -658,7 +689,7 @@ class CheckpointPlayback:
                     if self.is_playing:
                         pause_time = max(0.5, 2.0 / self.playback_speed)
                         print(f"Waiting {pause_time:.1f}s before next game...")
-                        await asyncio.sleep(pause_time)
+                        await self._responsive_sleep(pause_time)
                 
         except asyncio.CancelledError:
             print("Playback cancelled")
@@ -748,7 +779,12 @@ class CheckpointPlayback:
     
     def set_playback_speed(self, speed: float):
         """Set playback speed and adjust performance settings"""
+        old_speed = self.playback_speed
         self.playback_speed = max(0.1, min(5.0, speed))
+        
+        # Track speed change for responsive sleep
+        self._last_speed = old_speed
+        self._speed_change_time = time.time()
         
         # Adjust performance settings based on speed
         if speed > 2.0:
@@ -761,7 +797,11 @@ class CheckpointPlayback:
             self.message_throttle['target_fps'] = 10
             self.lightweight_mode = False
         
-        print(f"Playback speed set to {self.playback_speed}, lightweight_mode={self.lightweight_mode}")
+        # Send speed change notification to frontend
+        print(f"Playback speed changed from {old_speed} to {self.playback_speed}, lightweight_mode={self.lightweight_mode}")
+        
+        # Return the new speed for potential use by the caller
+        return self.playback_speed
     
     def get_playback_status(self) -> Dict[str, Any]:
         """Get current playback status with performance metrics"""

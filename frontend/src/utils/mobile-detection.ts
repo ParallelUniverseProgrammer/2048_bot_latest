@@ -43,8 +43,8 @@ export const getConnectionRetryDelay = (): number => {
 }
 
 export const getMaxReconnectAttempts = (): number => {
-  // Mobile Safari should try fewer times to avoid blocking
-  return isMobileSafari() ? 5 : 10
+  // Mobile devices should try fewer times to avoid blocking and get to fallback faster
+  return isMobile() ? 3 : 10
 }
 
 export const shouldUsePolling = (): boolean => {
