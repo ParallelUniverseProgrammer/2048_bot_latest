@@ -1,0 +1,47 @@
+/**
+ * Configuration utility for the 2048 Transformer Training app
+ */
+
+// Get backend URL from environment variable or default to localhost
+const getBackendUrl = (): string => {
+  // Check if we're in development mode and have a backend URL defined
+  if (typeof window !== 'undefined' && (window as any).__BACKEND_URL__) {
+    return (window as any).__BACKEND_URL__
+  }
+  
+  // Fallback: use current hostname so production preview on LAN works
+  const { protocol, hostname } = window.location
+  const backendProtocol = protocol === 'https:' ? 'https:' : 'http:'
+  return `${backendProtocol}//${hostname}:8000`
+}
+
+export const API_BASE_URL = getBackendUrl()
+export const WS_BASE_URL = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://')
+
+export const config = {
+  api: {
+    baseUrl: API_BASE_URL,
+    endpoints: {
+      training: {
+        start: '/training/start',
+        pause: '/training/pause',
+        resume: '/training/resume',
+        stop: '/training/stop',
+        reset: '/training/reset',
+        config: '/training/config'
+      },
+      checkpoints: {
+        list: '/checkpoints',
+        playback: '/checkpoints/playback'
+      },
+      websocket: '/ws'
+    }
+  },
+  websocket: {
+    url: `${WS_BASE_URL}/ws`,
+    reconnectAttempts: 10,
+    reconnectDelay: 3000
+  }
+}
+
+export default config 

@@ -1,0 +1,293 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom CSS variables */
+:root {
+  --primary-gradient: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  --dark-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  --success-gradient: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  --warning-gradient: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  --error-gradient: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+/* Base styles */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--dark-gradient);
+  color: #f1f5f9;
+  overflow-x: hidden;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Custom utility classes */
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent;
+  }
+  
+  .shadow-glass {
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  
+  .border-glass {
+    border: 1px solid rgba(255, 255, 255, 0.18);
+  }
+  
+  .card-glass {
+    @apply shadow-glass border-glass backdrop-blur-sm;
+    background: rgba(30, 41, 59, 0.8);
+  }
+}
+
+/* Animation utilities */
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.6s ease-out forwards;
+  }
+  
+  .animate-scale-in {
+    animation: scaleIn 0.4s ease-out forwards;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Custom component styles */
+.game-tile {
+  @apply rounded-lg font-bold text-center flex items-center justify-center transition-all duration-300 ease-in-out;
+  font-family: 'JetBrains Mono', monospace;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.game-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.chart-container {
+  @apply relative;
+  height: 300px;
+}
+
+.chart-container canvas {
+  @apply rounded-lg;
+}
+
+/* Custom button styles */
+.btn-primary {
+  @apply px-6 py-3 rounded-lg font-medium transition-all duration-200 ease-in-out;
+  background: var(--primary-gradient);
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  @apply px-6 py-3 rounded-lg font-medium transition-all duration-200 ease-in-out;
+  background: rgba(71, 85, 105, 0.8);
+  color: #f1f5f9;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: rgba(71, 85, 105, 1);
+  transform: translateY(-1px);
+}
+
+/* Network visualization styles */
+.network-node {
+  @apply rounded-full transition-all duration-300 ease-in-out;
+  cursor: pointer;
+}
+
+.network-node:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+}
+
+.network-connection {
+  @apply transition-all duration-300 ease-in-out;
+  stroke-width: 2;
+  stroke: #475569;
+}
+
+.network-connection.active {
+  stroke: #3b82f6;
+  stroke-width: 3;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  .chart-container {
+    height: 120px; /* Much smaller charts for mobile */
+  }
+  
+  .game-tile {
+    font-size: 10px; /* Smaller font for game tiles */
+  }
+  
+  .btn-primary, .btn-secondary {
+    @apply px-3 py-1 text-xs; /* Smaller buttons */
+  }
+  
+  /* Compact metrics cards */
+  .metrics-card {
+    @apply p-3; /* Smaller padding */
+  }
+  
+  .metrics-card h3 {
+    @apply text-xs; /* Smaller headings */
+  }
+  
+  .metrics-card p {
+    @apply text-lg; /* Smaller values */
+  }
+  
+  /* Compact header */
+  .mobile-header {
+    @apply py-2 px-3; /* Smaller header padding */
+  }
+  
+  .mobile-header h1 {
+    @apply text-base; /* Smaller title */
+  }
+  
+  /* Compact navigation */
+  .mobile-nav {
+    @apply p-1; /* Smaller nav padding */
+  }
+  
+  .mobile-nav button {
+    @apply px-2 py-1; /* Smaller nav buttons */
+  }
+  
+  /* Compact main content */
+  .mobile-main {
+    @apply px-3 py-3; /* Smaller main padding */
+  }
+  
+  /* Hide less important elements */
+  .mobile-hide {
+    @apply hidden;
+  }
+  
+  /* Compact training metrics */
+  .mobile-metrics {
+    @apply gap-2; /* Smaller gaps */
+  }
+  
+  .mobile-metrics > div {
+    @apply px-2 py-1; /* Smaller metric items */
+  }
+  
+  /* Ensure no overflow */
+  body {
+    overflow-x: hidden;
+  }
+  
+  /* Compact grid layouts */
+  .mobile-grid-2 {
+    @apply grid-cols-2 gap-2;
+  }
+  
+  .mobile-grid-1 {
+    @apply grid-cols-1 gap-3;
+  }
+}
+
+/* Dark mode enhancements */
+@media (prefers-color-scheme: dark) {
+  body {
+    background: var(--dark-gradient);
+  }
+}
+
+/* Focus styles for accessibility */
+*:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+button:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+} 

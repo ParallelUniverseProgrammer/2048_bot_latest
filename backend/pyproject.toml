@@ -1,0 +1,66 @@
+[tool.poetry]
+name = "2048-transformer-backend"
+version = "0.1.0"
+description = "Backend for 2048 Transformer Training Visualization"
+authors = ["Your Name <your.email@example.com>"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.9"
+fastapi = "^0.104.0"
+uvicorn = "^0.24.0"
+websockets = "^12.0"
+torch = { version = "2.6.0+cu124", source = "pytorch-cu124" }
+torchvision = { version = "0.21.0+cu124", source = "pytorch-cu124" }
+torchaudio = { version = "2.6.0+cu124", source = "pytorch-cu124" }
+gymnasium = "^0.29.0"
+numpy = "^1.24.0"
+pydantic = "^2.5.0"
+rich = "^13.7.0"
+python-multipart = "^0.0.6"
+python-json-logger = "^2.0.7"
+tensorboard = "^2.15.0"
+psutil = "^5.9.0"
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.9.0"
+isort = "^5.12.0"
+flake8 = "^6.1.0"
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.0"
+
+[[tool.poetry.source]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+priority = "supplemental"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+line_length = 88 
