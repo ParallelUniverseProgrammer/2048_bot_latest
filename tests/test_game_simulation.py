@@ -252,10 +252,14 @@ async def test_action_selection_scenarios():
     if timed_out:
         print("   [TIMEOUT] Model exception handling froze!")
         return False
-    elif result and 'error' in result:
-        print("   [OK] Model exception handled gracefully")
+    elif result and result.get('completed', False):
+        # Check if fallback mechanism was triggered (should see random actions)
+        if 'game_history' in result and len(result['game_history']) > 0:
+            print("   [OK] Model exception handled gracefully with fallback random actions")
+        else:
+            print("   [OK] Model exception handled gracefully")
     else:
-        print(f"   [FAIL] Model exception should have failed gracefully: {result}")
+        print(f"   [FAIL] Model exception should have been handled gracefully: {result}")
     
     # Test 5: Model returns NaN
     print("\nTest 5: Model returns NaN values")

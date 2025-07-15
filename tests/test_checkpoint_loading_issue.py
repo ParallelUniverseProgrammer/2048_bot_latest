@@ -3,10 +3,16 @@
 Test script to investigate checkpoint loading issues
 """
 
+import sys
+import os
+# Add project root to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 import requests
 import time
 import json
 from typing import Dict, Any
+from test_utils import BackendTester, TestLogger
 
 # Configuration
 BASE_URL = "http://localhost:8000"
@@ -123,33 +129,70 @@ def test_websocket_connection():
         print(f"   ERROR: WebSocket connection failed: {str(e)}")
 
 def main():
-    """Run all tests"""
-    print("STATUS: Starting Checkpoint Loading Investigation")
-    print("=" * 60)
+    """Run all tests with enhanced backend availability checking"""
+    logger = TestLogger()
+    backend_tester = BackendTester(BASE_URL, logger)
     
-    # Test basic connectivity
-    print("\nFIND: Testing Basic Connectivity")
-    print("=" * 50)
-    result = test_api_endpoint("/")
-    if result.get('error'):
-        print(f"ERROR: Server not accessible: {result['error']}")
-        print("   Please ensure the backend server is running on http://localhost:8000")
-        return
+    logger.banner("Checkpoint Loading Investigation")
+    
+    # Test backend availability with enhanced checking
+    logger.section("Testing Backend Availability")
+    
+    if backend_tester.is_backend_available():
+        logger.ok("Backend is accessible - proceeding with tests")
+        
+        # Run all tests with real backend
+        test_checkpoint_endpoints()
+        test_training_status()
+        test_websocket_connection()
+        
     else:
-        print("OK: Server is accessible")
+        logger.warning("Backend is not available - attempting to start mock backend")
+        
+        # Try to start mock backend
+        try:
+            from mock_backend import MockBackend
+            
+            logger.info("Starting mock backend server...")
+            mock_backend = MockBackend()
+            mock_backend.start()
+            
+            # Wait a moment for startup
+            time.sleep(2)
+            
+            # Test mock backend connectivity
+            if backend_tester.is_backend_available(use_cache=False):
+                logger.ok("Mock backend is running - proceeding with tests")
+                
+                # Run tests with mock backend
+                test_checkpoint_endpoints()
+                test_training_status()
+                test_websocket_connection()
+                
+                # Clean up mock backend
+                logger.info("Stopping mock backend...")
+                mock_backend.stop()
+                
+            else:
+                logger.error("Failed to start mock backend")
+                return
+                
+        except ImportError:
+            logger.error("Mock backend not available - cannot proceed with tests")
+            return
+        except Exception as e:
+            logger.error(f"Error starting mock backend: {e}")
+            return
     
-    # Run all tests
-    test_checkpoint_endpoints()
-    test_training_status()
-    test_websocket_connection()
+    logger.separator()
+    logger.success("Investigation Complete")
     
-    print("\n" + "=" * 60)
-    print("STATUS: Investigation Complete")
-    print("\nNext steps:")
-    print("1. Check if any endpoints are timing out")
-    print("2. Verify checkpoint files exist in backend/checkpoints/")
-    print("3. Check backend logs for errors")
-    print("4. Test frontend checkpoint loading with browser dev tools")
+    # Print next steps
+    logger.info("Next steps:")
+    print("   1. Check if any endpoints are timing out")
+    print("   2. Verify checkpoint files exist in backend/checkpoints/")
+    print("   3. Check backend logs for errors")
+    print("   4. Test frontend checkpoint loading with browser dev tools")
 
 if __name__ == "__main__":
     main() 
