@@ -156,6 +156,16 @@ export const useWebSocket = () => {
             
             // Process response data
             const data = await response.json()
+            
+            // Sync training status with backend to avoid stale localStorage state
+            if (data.is_training !== undefined || data.is_paused !== undefined) {
+              console.log('Syncing training status via polling:', data)
+              useTrainingStore.getState().setTrainingStatus(data.is_training, data.is_paused)
+              if (data.current_episode !== undefined) {
+                useTrainingStore.getState().setEpisode(data.current_episode)
+              }
+            }
+            
             updateTrainingData(data)
             
             // Check if we can upgrade back to WebSocket
@@ -227,6 +237,22 @@ export const useWebSocket = () => {
        if (data.loss_history && data.score_history) {
          updateTrainingData(data)
        }
+     } else if (data.type === 'training_status_update') {
+       console.log('Received training status update:', data)
+       useTrainingStore.getState().setTrainingStatus(data.is_training, data.is_paused)
+       if (data.current_episode !== undefined) {
+         useTrainingStore.getState().setEpisode(data.current_episode)
+       }
+     } else if (data.type === 'training_reset') {
+       console.log('Received training reset:', data)
+       useTrainingStore.getState().setTrainingStatus(false, false)
+       useTrainingStore.getState().setEpisode(0)
+     } else if (data.type === 'training_start') {
+       console.log('Received training start:', data)
+       useTrainingStore.getState().setTrainingStatus(true, false)
+       // Clear any loading states
+       useTrainingStore.getState().setLoadingState('isTrainingStarting', false)
+       useTrainingStore.getState().setLoadingState('loadingMessage', null)
      } else if (data.type === 'checkpoint_playback' || data.type === 'checkpoint_playback_light') {
        updateCheckpointPlaybackData(data)
      } else if (data.type === 'playback_status') {
@@ -249,6 +275,11 @@ export const useWebSocket = () => {
      } else if (data.type === 'new_game_started') {
        useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
        useTrainingStore.getState().setLoadingState('loadingMessage', null)
+     } else if (data.type === 'new_episode_started') {
+       console.log('Received new episode started:', data)
+       if (data.episode !== undefined) {
+         useTrainingStore.getState().setEpisode(data.episode)
+       }
      }
   }, [updateTrainingData, updateCheckpointPlaybackData])
 
@@ -405,6 +436,19 @@ export const useWebSocket = () => {
           clearInterval(pollingIntervalRef.current)
           pollingIntervalRef.current = null
         }
+
+        // Sync training status with backend to avoid stale localStorage state
+        fetch(`${config.api.baseUrl}/training/status`)
+          .then((res) => res.json())
+          .then((status) => {
+            console.log('Syncing training status with backend:', status)
+            // Update the training store with the actual backend status
+            useTrainingStore.getState().setTrainingStatus(status.is_training, status.is_paused)
+            useTrainingStore.getState().setEpisode(status.current_episode)
+          })
+          .catch((error) => {
+            console.warn('Failed to sync training status:', error)
+          })
 
         // If we were in playback mode before losing connection, ask backend for status so we can resync
         if (useTrainingStore.getState().isPlayingCheckpoint) {

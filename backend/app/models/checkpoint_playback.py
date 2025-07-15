@@ -502,10 +502,12 @@ class CheckpointPlayback:
                     await asyncio.sleep(0.1)
                     continue
                 
-                # Check if we have any connected clients
-                if websocket_manager.get_connection_count() == 0:
-                    print("No connected clients, pausing playback...")
-                    await asyncio.sleep(1.0)
+                # Check if we have any connected clients (but don't pause if using HTTP polling)
+                connection_count = websocket_manager.get_connection_count()
+                if connection_count == 0:
+                    print(f"No WebSocket clients connected ({connection_count}), but continuing for HTTP polling...")
+                    # Don't pause - allow HTTP polling to work
+                    await asyncio.sleep(0.1)
                     continue
                 
                 # If we have a current game in progress, resume it

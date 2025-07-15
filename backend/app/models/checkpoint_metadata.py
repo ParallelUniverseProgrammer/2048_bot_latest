@@ -22,7 +22,7 @@ class CheckpointMetadata:
     performance_metrics: Dict[str, Any]
     file_size: int  # bytes
     parent_checkpoint: Optional[str] = None
-    tags: List[str] = None
+    tags: Optional[List[str]] = None
     
     def __post_init__(self):
         if self.tags is None:
@@ -148,6 +148,16 @@ class CheckpointManager:
                     'avg_score': avg_score,
                     'final_loss': 0.0,  # Unknown for legacy checkpoints
                     'training_speed': 0.0,  # Unknown for legacy checkpoints
+                    # Enhanced metrics (N/A for legacy)
+                    'score_trend': 0.0,
+                    'loss_trend': 0.0,
+                    'max_tile_frequency': {},
+                    'training_efficiency': {
+                        'score_consistency': 0.0,
+                        'loss_stability': 0.0,
+                        'improvement_rate': 0.0,
+                        'plateau_detection': 0.0
+                    },
                 },
                 file_size=file_size,
                 tags=['legacy']
@@ -174,9 +184,9 @@ class CheckpointManager:
                                  training_duration: float,
                                  model_config: Dict[str, Any],
                                  performance_metrics: Dict[str, Any],
-                                 nickname: str = None,
-                                 parent_checkpoint: str = None,
-                                 tags: List[str] = None) -> CheckpointMetadata:
+                                 nickname: Optional[str] = None,
+                                 parent_checkpoint: Optional[str] = None,
+                                 tags: Optional[List[str]] = None) -> CheckpointMetadata:
         """Create new checkpoint metadata"""
         
         if nickname is None:

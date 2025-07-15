@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Activity, Brain, GamepadIcon, Network, Play, Pause, AlertTriangle, Archive } from 'lucide-react'
 
@@ -11,13 +11,39 @@ import CheckpointManager from './components/CheckpointManager'
 import { useTrainingStore } from './stores/trainingStore'
 import { useWebSocket } from './utils/websocket'
 import { useDeviceDetection } from './utils/deviceDetection'
+import config from './utils/config'
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'game' | 'network' | 'checkpoints'>('dashboard')
+  const [showIOSTooltip, setShowIOSTooltip] = useState(false)
   
   // Intelligent device detection
   const { displayMode } = useDeviceDetection()
   const isMobile = displayMode === 'mobile'
+  
+  // Show iOS tooltip for iOS Safari users
+  useEffect(() => {
+    const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && 
+                       /Safari/.test(navigator.userAgent) && 
+                       !/Chrome/.test(navigator.userAgent)
+    
+    if (isIOSSafari && isMobile) {
+      // Show tooltip after a short delay
+      const timer = setTimeout(() => {
+        setShowIOSTooltip(true)
+      }, 3000)
+      
+      // Hide tooltip after 8 seconds
+      const hideTimer = setTimeout(() => {
+        setShowIOSTooltip(false)
+      }, 8000)
+      
+      return () => {
+        clearTimeout(timer)
+        clearTimeout(hideTimer)
+      }
+    }
+  }, [isMobile])
   
   const { 
     isConnected, 
@@ -35,6 +61,27 @@ const App: React.FC = () => {
   
   // Initialize WebSocket connection
   useWebSocket()
+  
+  // Sync training status with backend on page load to avoid stale localStorage state
+  useEffect(() => {
+    const syncTrainingStatus = async () => {
+      try {
+        const response = await fetch(`${config.api.baseUrl}/training/status`)
+        if (response.ok) {
+          const status = await response.json()
+          console.log('Initial training status sync:', status)
+          useTrainingStore.getState().setTrainingStatus(status.is_training, status.is_paused)
+          useTrainingStore.getState().setEpisode(status.current_episode)
+        }
+      } catch (error) {
+        console.warn('Failed to sync initial training status:', error)
+      }
+    }
+    
+    // Sync after a short delay to ensure the store is hydrated
+    const timer = setTimeout(syncTrainingStatus, 100)
+    return () => clearTimeout(timer)
+  }, [])
   
   // Navigation handler for child components
   const handleNavigateToTab = (tab: string) => {
@@ -76,7 +123,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className={`min-h-screen relative transition-all duration-1000 ${
+    <div className={`h-screen flex flex-col relative transition-all duration-1000 ${
       isTraining && !isPaused 
         ? 'bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900' 
         : isPaused 
@@ -108,39 +155,26 @@ const App: React.FC = () => {
             {[...Array(6)].map((_, i) => (
               <motion.div
                 key={i}
-                className="absolute w-2 h-2 bg-blue-400/30 rounded-full"
+                className="absolute w-2 h-2 bg-blue-400 rounded-full opacity-60"
                 animate={{
-                  x: [0, 100, 200, 300, 400, 500],
-                  y: [0, -50, 0, -30, 0, -20],
-                  opacity: [0, 1, 0.5, 1, 0.3, 0],
+                  x: [0, Math.random() * window.innerWidth],
+                  y: [0, Math.random() * window.innerHeight],
+                  scale: [0, 1, 0],
+                  opacity: [0, 0.6, 0],
                 }}
                 transition={{
-                  duration: 6 + i * 0.5,
+                  duration: 8 + Math.random() * 4,
                   repeat: Infinity,
-                  delay: i * 0.8,
-                  ease: "linear"
+                  delay: Math.random() * 5,
+                  ease: "easeInOut"
                 }}
-                                 style={{
-                   left: `${10 + i * 15}%`,
-                   top: `${60 + i * 5}%`,
-                 } as React.CSSProperties}
+                style={{
+                  left: Math.random() * 100 + '%',
+                  top: Math.random() * 100 + '%',
+                }}
               />
             ))}
           </div>
-          
-          {/* Pulsing border effect */}
-          <motion.div
-            className="absolute inset-0 pointer-events-none border-2 border-blue-400/20 rounded-lg"
-            animate={{
-              opacity: [0.1, 0.5, 0.1],
-              scale: [1, 1.01, 1],
-            }}
-            transition={{
-              duration: 4,
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
-          />
         </>
       )}
       
@@ -159,9 +193,10 @@ const App: React.FC = () => {
           }}
         />
       )}
+
       {/* Header */}
       <motion.header 
-        className={`card-glass sticky top-0 z-40 ${isMobile ? 'px-3 py-2' : 'px-4 py-4 sm:px-6 lg:px-8'}`}
+        className={`card-glass flex-shrink-0 z-40 ${isMobile ? 'px-3 py-2' : 'px-4 py-3 sm:px-6 lg:px-8'}`}
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6 }}
@@ -275,7 +310,7 @@ const App: React.FC = () => {
         {/* Compact Status Bar - Only show essential info */}
         {trainingData && !isMobile && (
           <motion.div 
-            className="mt-3 flex items-center justify-between text-xs text-gray-400"
+            className="mt-2 flex items-center justify-between text-xs text-gray-400"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
@@ -289,22 +324,22 @@ const App: React.FC = () => {
         )}
       </motion.header>
 
-      {/* Navigation Tabs */}
+      {/* Navigation Tabs - Compact with Labels */}
       <motion.nav 
-        className={`card-glass mt-4 ${isMobile ? 'mobile-nav mx-3' : 'mx-4 sm:mx-6 lg:mx-8'}`}
+        className={`card-glass flex-shrink-0 mt-2 ${isMobile ? 'mx-3' : 'mx-4 sm:mx-6 lg:mx-8'}`}
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6, delay: 0.2 }}
       >
-        <div className="flex space-x-1 p-2">
+        <div className="flex justify-center space-x-1 p-2">
           {tabs.map((tab) => {
             const IconComponent = tab.icon
             return (
               <motion.button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`relative flex items-center space-x-2 rounded-lg font-medium transition-all duration-200 ${
-                  isMobile ? 'mobile-nav button' : 'px-4 py-3'
+                className={`relative flex flex-col items-center space-y-1 rounded-lg font-medium transition-all duration-200 ${
+                  isMobile ? 'px-3 py-2' : 'px-4 py-2'
                 } ${
                   activeTab === tab.id
                     ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
@@ -313,8 +348,8 @@ const App: React.FC = () => {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
-                <IconComponent className="w-5 h-5" />
-                <span className={isMobile ? 'hidden sm:inline' : ''}>{tab.label}</span>
+                <IconComponent className="w-4 h-4" />
+                <span className="text-xs">{tab.label}</span>
                 {activeTab === tab.id && (
                   <motion.div
                     className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg -z-10"
@@ -329,9 +364,9 @@ const App: React.FC = () => {
         </div>
       </motion.nav>
 
-      {/* Main Content */}
+      {/* Main Content - Scrollable */}
       <motion.main 
-        className={isMobile ? 'mobile-main' : 'px-4 py-6 sm:px-6 lg:px-8'}
+        className={`flex-1 overflow-auto ${isMobile ? 'mobile-main pb-6' : 'px-4 py-4 sm:px-6 lg:px-8 pb-6'}`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.6, delay: 0.4 }}
@@ -343,6 +378,7 @@ const App: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
+            className="h-full"
           >
             {activeTab === 'dashboard' && <TrainingDashboard />}
             {activeTab === 'game' && <GameBoard />}
@@ -351,6 +387,42 @@ const App: React.FC = () => {
           </motion.div>
         </AnimatePresence>
       </motion.main>
+
+      {/* iOS Tooltip - Only show for iOS Safari users */}
+      <AnimatePresence>
+        {showIOSTooltip && (
+          <motion.div
+            className="fixed bottom-4 left-4 right-4 z-50 bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 rounded-lg shadow-lg"
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{
+              paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+              paddingLeft: 'max(16px, env(safe-area-inset-left))',
+              paddingRight: 'max(16px, env(safe-area-inset-right))'
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                  📱
+                </div>
+                <div>
+                  <p className="font-semibold text-sm">Add to Home Screen</p>
+                  <p className="text-xs opacity-90">Tap the share button (📤) then "Add to Home Screen"</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowIOSTooltip(false)}
+                className="text-white opacity-70 hover:opacity-100 transition-opacity min-w-[32px] min-h-[32px] flex items-center justify-center"
+              >
+                ✕
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Footer */}
       {!isMobile && (

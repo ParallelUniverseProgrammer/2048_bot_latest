@@ -31,6 +31,7 @@ try:
     import qrcode
     import qrcode.image.svg
     import netifaces
+    from qrcode import constants
 except ImportError as e:
     print(f"Missing required package: {e}")
     print("Installing required packages...")
@@ -38,6 +39,7 @@ except ImportError as e:
     import qrcode
     import qrcode.image.svg
     import netifaces
+    from qrcode import constants
 
 class Colors:
     """Terminal color constants"""
@@ -113,17 +115,17 @@ class PortManager:
         """Kill any process using the specified port"""
         try:
             # Find processes using the port
-            for proc in psutil.process_iter(['pid', 'name', 'connections']):
+            for proc in psutil.process_iter(['pid', 'name']):
                 try:
-                    connections = proc.info['connections']
-                    if connections:
-                        for conn in connections:
-                            if conn.laddr.port == port:
-                                print(f"{Colors.WARNING}Killing process {proc.info['name']} (PID: {proc.info['pid']}) on port {port}{Colors.ENDC}")
-                                proc.terminate()
-                                proc.wait(timeout=5)
-                                return True
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+                    # Get connections for this process
+                    connections = proc.net_connections()
+                    for conn in connections:
+                        if hasattr(conn, 'laddr') and hasattr(conn.laddr, 'port') and conn.laddr.port == port:
+                            print(f"{Colors.WARNING}Killing process {proc.info['name']} (PID: {proc.info['pid']}) on port {port}{Colors.ENDC}")
+                            proc.terminate()
+                            proc.wait(timeout=5)
+                            return True
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired, psutil.ZombieProcess):
                     continue
         except Exception as e:
             print(f"{Colors.WARNING}Error killing process on port {port}: {e}{Colors.ENDC}")
@@ -304,7 +306,7 @@ class ProcessMonitor:
             self.logger.error(f"Error monitoring {self.name} stdout: {e}")
     
     def _monitor_stderr(self):
-        """Monitor stderr for errors"""
+        """Monitor stderr for errors and info messages"""
         try:
             if self.process.stderr:
                 for line in iter(self.process.stderr.readline, ''):
@@ -312,9 +314,28 @@ class ProcessMonitor:
                         break
                     line = line.strip()
                     if line:
-                        self.error_queue.put(line)
-                        self.logger.error(f"[{self.name}] ERROR: {line}")
-                        print(f"{Colors.FAIL}[{self.name}] ERROR: {line}{Colors.ENDC}")
+                        # Check if this is an INFO message from the backend
+                        if line.startswith('INFO:'):
+                            # Remove the INFO: prefix and treat as info message
+                            info_message = line[5:].strip()
+                            self.logger.info(f"[{self.name}] {info_message}")
+                            print(f"{Colors.OKBLUE}[{self.name}] {info_message}{Colors.ENDC}")
+                        elif line.startswith('WARNING:'):
+                            # Remove the WARNING: prefix and treat as warning message
+                            warning_message = line[8:].strip()
+                            self.logger.warning(f"[{self.name}] {warning_message}")
+                            print(f"{Colors.WARNING}[{self.name}] {warning_message}{Colors.ENDC}")
+                        elif line.startswith('ERROR:'):
+                            # Remove the ERROR: prefix and treat as error message
+                            error_message = line[6:].strip()
+                            self.error_queue.put(error_message)
+                            self.logger.error(f"[{self.name}] {error_message}")
+                            print(f"{Colors.FAIL}[{self.name}] {error_message}{Colors.ENDC}")
+                        else:
+                            # Default to treating as error if no log level prefix
+                            self.error_queue.put(line)
+                            self.logger.error(f"[{self.name}] {line}")
+                            print(f"{Colors.FAIL}[{self.name}] {line}{Colors.ENDC}")
         except Exception as e:
             self.logger.error(f"Error monitoring {self.name} stderr: {e}")
     
@@ -520,41 +541,46 @@ class ServerHealth:
         return False
 
 class QRCodeGenerator:
-    """Generates QR codes for mobile access"""
+    """Generates QR codes for mobile access with PWA installation support"""
     
     @staticmethod
     def generate_qr_code(url: str, output_path: Optional[str] = None) -> None:
-        """Generate and display QR code"""
+        """Generate and display QR code for mobile access"""
+        # Point directly to the main app
+        app_url = url
+        
         qr = qrcode.QRCode(
             version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            error_correction=constants.ERROR_CORRECT_L,
             box_size=10,
             border=4,
         )
-        qr.add_data(url)
+        qr.add_data(app_url)
         qr.make(fit=True)
         
         # Save image if path provided
         if output_path:
             img = qr.make_image(fill_color="black", back_color="white")
-            img.save(output_path)
+            with open(output_path, 'wb') as f:
+                img.save(f)
             print(f"{Colors.OKGREEN}QR code saved to: {output_path}{Colors.ENDC}")
         
         # Display in terminal
         print(f"\n{Colors.HEADER}{'='*50}{Colors.ENDC}")
         print(f"{Colors.HEADER}📱 MOBILE ACCESS QR CODE{Colors.ENDC}")
         print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
-        print(f"{Colors.OKBLUE}URL: {url}{Colors.ENDC}")
+        print(f"{Colors.OKBLUE}URL: {app_url}{Colors.ENDC}")
+        print(f"{Colors.OKCYAN}Scan this QR code to access the 2048 AI app{Colors.ENDC}")
         print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
         
         # Print QR code to terminal
         qr_terminal = qrcode.QRCode(
             version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            error_correction=constants.ERROR_CORRECT_L,
             box_size=1,
             border=2,
         )
-        qr_terminal.add_data(url)
+        qr_terminal.add_data(app_url)
         qr_terminal.make(fit=True)
         
         # Print as ASCII
@@ -563,6 +589,8 @@ class QRCodeGenerator:
             print(''.join(['██' if cell else '  ' for cell in row]))
         
         print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
+        print(f"{Colors.OKGREEN}📱 Scan this QR code to access the 2048 AI app on your device!{Colors.ENDC}")
+        print(f"{Colors.WARNING}💡 iOS users: Tap the share button (📤) then 'Add to Home Screen'{Colors.ENDC}")
 
 class Launcher:
     """Enhanced launcher with robust error handling and monitoring"""
@@ -755,7 +783,7 @@ class Launcher:
             self.process_manager.add_process("Backend", backend_process)
             
             # Wait for backend to be ready
-            if not ServerHealth.wait_for_backend(self.host_ip, self.backend_port, self.logger):
+            if self.host_ip and not ServerHealth.wait_for_backend(self.host_ip, self.backend_port, self.logger):
                 # Get recent errors for debugging
                 status = self.process_manager.get_process_status()
                 backend_status = status.get("Backend", {})
@@ -906,7 +934,7 @@ export default defineConfig({{
             self.process_manager.add_process("Frontend", frontend_process)
             
             # Wait for frontend to be ready
-            if not ServerHealth.wait_for_frontend(self.host_ip, self.frontend_port, self.logger):
+            if self.host_ip and not ServerHealth.wait_for_frontend(self.host_ip, self.frontend_port, self.logger):
                 # Get recent errors for debugging
                 status = self.process_manager.get_process_status()
                 frontend_status = status.get("Frontend", {})

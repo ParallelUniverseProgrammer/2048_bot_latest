@@ -17,9 +17,9 @@ const GameBoard: React.FC = () => {
   } = useTrainingStore()
   
   // Device detection for mobile optimization
-  const { displayMode } = useDeviceDetection()
-  const isMobile = displayMode === 'mobile'
-  const [showAttention, setShowAttention] = React.useState(false)
+  useDeviceDetection()
+  // Set attention ON by default
+  const [showAttention, setShowAttention] = React.useState(true)
   const [playbackStatus, setPlaybackStatus] = React.useState<any>(null)
   
   // Load playback status
@@ -44,7 +44,7 @@ const GameBoard: React.FC = () => {
   // Playback control functions
   const pausePlayback = async () => {
     try {
-              const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/pause`, { method: 'POST' })
+      const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/pause`, { method: 'POST' })
       if (!res.ok) throw new Error('Failed to pause playback')
     } catch (err) {
       console.error('Error pausing playback:', err)
@@ -53,7 +53,7 @@ const GameBoard: React.FC = () => {
 
   const resumePlayback = async () => {
     try {
-              const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/resume`, { method: 'POST' })
+      const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/resume`, { method: 'POST' })
       if (!res.ok) throw new Error('Failed to resume playback')
     } catch (err) {
       console.error('Error resuming playback:', err)
@@ -69,57 +69,6 @@ const GameBoard: React.FC = () => {
     }
   }
 
-  const recoverPlayback = async () => {
-    try {
-      console.log('Attempting to recover from stuck playback state...')
-      
-      // Clear all loading states first
-      useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
-      useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
-      useTrainingStore.getState().setLoadingState('loadingMessage', null)
-      
-      // Stop any existing playback
-      await stopPlayback()
-      
-      // Wait a moment for cleanup
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      // Check if we have a checkpoint to restart
-      if (playbackStatus?.current_checkpoint) {
-        console.log(`Restarting playback for checkpoint: ${playbackStatus.current_checkpoint}`)
-        
-        // Set loading state for recovery
-        useTrainingStore.getState().setLoadingState('isPlaybackStarting', true)
-        useTrainingStore.getState().setLoadingState('loadingMessage', 'Recovering playback...')
-        
-        // Start playback again
-        const res = await fetch(`${config.api.baseUrl}/checkpoints/${playbackStatus.current_checkpoint}/playback/start`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        })
-        
-        if (!res.ok) {
-          throw new Error('Failed to restart playback')
-        }
-        
-        console.log('Playback recovery successful')
-      } else {
-        // No checkpoint available, just clear the playback state
-        useTrainingStore.getState().setPlayingCheckpoint(false)
-        console.log('No checkpoint available for recovery, cleared playback state')
-      }
-      
-    } catch (err) {
-      console.error('Error recovering playback:', err)
-      // Clear loading states on error
-      useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
-      useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
-      useTrainingStore.getState().setLoadingState('loadingMessage', null)
-      // Also clear playback state
-      useTrainingStore.getState().setPlayingCheckpoint(false)
-    }
-  }
-
   const startNewGame = async () => {
     try {
       if (!playbackStatus?.current_checkpoint) {
@@ -131,7 +80,10 @@ const GameBoard: React.FC = () => {
       useTrainingStore.getState().setLoadingState('isNewGameStarting', true)
       useTrainingStore.getState().setLoadingState('loadingMessage', 'Starting new game...')
       
-              const res = await fetch(`${config.api.baseUrl}/checkpoints/${playbackStatus.current_checkpoint}/playback/start`, {
+      // Optimistically set playing state to prevent brief idle display
+      useTrainingStore.getState().setPlayingCheckpoint(true)
+      
+      const res = await fetch(`${config.api.baseUrl}/checkpoints/${playbackStatus.current_checkpoint}/playback/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       })
@@ -140,6 +92,7 @@ const GameBoard: React.FC = () => {
         // Clear loading state on error
         useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
         useTrainingStore.getState().setLoadingState('loadingMessage', null)
+        useTrainingStore.getState().setPlayingCheckpoint(false)
         throw new Error('Failed to start new game')
       }
       
@@ -150,11 +103,10 @@ const GameBoard: React.FC = () => {
       // Clear loading state on error
       useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
       useTrainingStore.getState().setLoadingState('loadingMessage', null)
+      useTrainingStore.getState().setPlayingCheckpoint(false)
     }
   }
 
-  
-  
   // Simplified state management - just track the current board
   const [displayBoard, setDisplayBoard] = React.useState<number[][]>([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
   
@@ -241,374 +193,209 @@ const GameBoard: React.FC = () => {
   }
 
   return (
-    <div className="space-y-8">
-      {/* Loading Indicators */}
+    <div className="h-full flex flex-col space-y-2 pb-6">
+      {/* Loading State */}
       {(loadingStates.isPlaybackStarting || loadingStates.isNewGameStarting) && (
         <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          className={`card-glass p-4 rounded-xl border ${
-            loadingStates.isPlaybackStarting 
-              ? 'border-purple-500/30 bg-purple-500/10' 
-              : 'border-green-500/30 bg-green-500/10'
-          }`}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="card-glass p-3 rounded-xl border border-blue-500/30 bg-blue-500/5 flex-shrink-0"
         >
           <div className="flex items-center space-x-3">
-            <Loader2 className={`w-5 h-5 animate-spin ${
-              loadingStates.isPlaybackStarting ? 'text-purple-400' : 'text-green-400'
-            }`} />
-            <div className="flex-1">
-              <div className={`text-sm font-medium ${
-                loadingStates.isPlaybackStarting ? 'text-purple-300' : 'text-green-300'
-              }`}>
-                {loadingStates.isPlaybackStarting ? 'Loading Checkpoint Playback' : 'Starting New Game'}
+            <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-blue-300 truncate">
+                {loadingStates.isPlaybackStarting ? 'Loading Playback' : 'Starting Game'}
               </div>
-              <div className={`text-xs ${
-                loadingStates.isPlaybackStarting ? 'text-purple-400/80' : 'text-green-400/80'
-              }`}>
-                {loadingStates.loadingMessage || 
-                  (loadingStates.isPlaybackStarting 
-                    ? 'Loading checkpoint model and initializing playback...' 
-                    : 'Preparing new game board and resetting state...'
-                  )
-                }
+              <div className="text-xs text-blue-400/80 truncate">
+                {loadingStates.loadingMessage || 'Please wait...'}
               </div>
-            </div>
-            <div className="flex items-center space-x-1">
-              {[0, 1, 2].map(i => (
-                <div 
-                  key={i}
-                  className={`w-2 h-2 rounded-full animate-pulse ${
-                    loadingStates.isPlaybackStarting ? 'bg-purple-400' : 'bg-green-400'
-                  }`}
-                  style={{ animationDelay: `${i * 200}ms` }}
-                />
-              ))}
             </div>
           </div>
         </motion.div>
       )}
 
-      {/* Status Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">
-          {currentData?.is_playback ? 'Checkpoint Playback' : 'Live Training'}
-        </h2>
-        
-        <div className="flex items-center space-x-2">
+      {/* Header with Status */}
+      <motion.div
+        className="card-glass p-3 rounded-xl flex-shrink-0"
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className={`w-2 h-2 rounded-full ${
+              currentData?.is_playback ? 'bg-purple-400' : 
+              isTraining ? 'bg-green-400 animate-pulse' : 'bg-gray-400'
+            }`} />
+            <span className="text-sm font-medium text-white">
+              {currentData?.is_playback ? 'Playback' : isTraining ? 'Training' : 'Idle'}
+            </span>
+          </div>
+          
           {currentData?.is_playback && (
-            <div className="px-3 py-1 bg-purple-500/20 text-purple-400 rounded-full text-sm">
+            <div className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded">
               {currentData.checkpoint_id}
             </div>
           )}
-          <div className={`px-3 py-1 rounded-full text-sm ${
-            currentData?.is_playback 
-              ? 'bg-purple-500/20 text-purple-400' 
-              : isTraining 
-                ? 'bg-green-500/20 text-green-400' 
-                : 'bg-gray-500/20 text-gray-400'
-          }`}>
-            {loadingStates.isPlaybackStarting ? 'Loading...' :
-             loadingStates.isNewGameStarting ? 'Starting...' :
-             currentData?.is_playback ? 'Playback' : 
-             isTraining ? 'Training' : 'Idle'}
-          </div>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Playback Controls - Show when checkpoint playback is active OR when loading playback */}
-      {(isPlayingCheckpoint || loadingStates.isPlaybackStarting) && (
+      {/* Playback Controls */}
+      {isPlayingCheckpoint && (
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          className="card-glass p-3 rounded-xl flex-shrink-0"
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="card-glass p-4 rounded-xl border border-green-500/20"
         >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-3">
-              <div className={`w-2 h-2 rounded-full ${
-                loadingStates.isPlaybackStarting ? 'bg-purple-400 animate-pulse' :
-                playbackStatus?.is_playing && !playbackStatus?.is_paused 
-                  ? 'bg-green-400 animate-pulse' 
-                  : playbackStatus?.is_paused 
-                    ? 'bg-yellow-400' 
-                    : 'bg-gray-400'
-              }`}></div>
-              <h3 className="text-lg font-semibold">Playback Controls</h3>
-              <span className={`text-sm px-2 py-1 rounded ${
-                loadingStates.isPlaybackStarting ? 'bg-purple-500/20 text-purple-400' :
-                playbackStatus?.is_playing && !playbackStatus?.is_paused ? 'bg-green-500/20 text-green-400' :
-                playbackStatus?.is_paused ? 'bg-yellow-500/20 text-yellow-400' : 'bg-gray-500/20 text-gray-400'
-              }`}>
-                {loadingStates.isPlaybackStarting ? 'Loading' :
-                 playbackStatus?.is_playing && !playbackStatus?.is_paused ? 'Playing' :
-                 playbackStatus?.is_paused ? 'Paused' : 'Stopped'}
-              </span>
-            </div>
-            
-            <div className="text-sm text-gray-400">
-              {playbackStatus?.current_checkpoint || 'Loading...'}
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm font-medium text-white">Playback Controls</div>
+            <div className="text-xs text-gray-400">
+              Step {checkpointPlaybackData?.step_data?.step || 0}
             </div>
           </div>
           
-          <div className={`${isMobile ? 'mobile-playback-controls' : 'flex items-center justify-between'}`}>
-            {/* Playback Buttons */}
-            <div className={`${isMobile ? 'mobile-playback-controls' : 'flex items-center space-x-3'}`}>
-              {!loadingStates.isPlaybackStarting && playbackStatus && (
-                <>
-                  {playbackStatus.is_playing && !playbackStatus.is_paused ? (
-                    <button
-                      onClick={pausePlayback}
-                      className={`flex items-center space-x-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors ${
-                        isMobile ? 'mobile-playback-controls button' : 'px-4 py-2'
-                      }`}
-                    >
-                      <PauseCircle className="w-4 h-4" />
-                      <span>Pause</span>
-                    </button>
-                  ) : playbackStatus.is_paused ? (
-                    <button
-                      onClick={resumePlayback}
-                      className={`flex items-center space-x-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors ${
-                        isMobile ? 'mobile-playback-controls button' : 'px-4 py-2'
-                      }`}
-                    >
-                      <PlayCircle className="w-4 h-4" />
-                      <span>Resume</span>
-                    </button>
-                  ) : null}
-                  
-                  <div className="flex items-center space-x-2">
-                    <>
-                      {playbackStatus.is_playing || playbackStatus.is_paused ? (
-                        <button
-                          onClick={stopPlayback}
-                          className={`flex items-center space-x-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors ${
-                            isMobile ? 'mobile-playback-controls button' : 'px-4 py-2'
-                          }`}
-                        >
-                          <StopCircle className="w-4 h-4" />
-                          <span>Stop</span>
-                        </button>
-                      ) : (
-                        <button
-                          onClick={startNewGame}
-                          className={`flex items-center space-x-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors ${
-                            isMobile ? 'mobile-playback-controls button' : 'px-4 py-2'
-                          }`}
-                        >
-                          <PlayCircle className="w-4 h-4" />
-                          <span>New Game</span>
-                        </button>
-                      )}
-                      
-                      {/* Recovery button - show when loading states are active for too long or system appears stuck */}
-                      {(loadingStates.isPlaybackStarting || loadingStates.isNewGameStarting || 
-                        (playbackStatus.is_playing && !isPlayingCheckpoint)) && (
-                        <button
-                          onClick={recoverPlayback}
-                          className={`flex items-center space-x-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors ${
-                            isMobile ? 'mobile-playback-controls button' : 'px-3 py-2 text-sm'
-                          }`}
-                          title="Recover from stuck playback state"
-                        >
-                          <RefreshCw className="w-4 h-4" />
-                          <span>Recover</span>
-                        </button>
-                      )}
-                    </>
-                  </div>
-                </>
-              )}
-              
-              {/* Show loading message when starting playback */}
-              {loadingStates.isPlaybackStarting && (
-                <div className="flex items-center space-x-2 px-4 py-2 bg-purple-500/20 text-purple-400 rounded-lg">
-                  <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
-                  <span>Loading checkpoint...</span>
-                </div>
-              )}
-            </div>
+          <div className="flex items-center space-x-2">
+            {playbackStatus?.is_playing && !playbackStatus?.is_paused ? (
+              <button
+                onClick={pausePlayback}
+                className="flex-1 flex items-center justify-center space-x-2 bg-yellow-500/20 text-yellow-400 rounded-lg py-2 text-sm font-medium"
+              >
+                <PauseCircle className="w-4 h-4" />
+                <span>Pause</span>
+              </button>
+            ) : (
+              <button
+                onClick={resumePlayback}
+                className="flex-1 flex items-center justify-center space-x-2 bg-green-500/20 text-green-400 rounded-lg py-2 text-sm font-medium"
+              >
+                <PlayCircle className="w-4 h-4" />
+                <span>Resume</span>
+              </button>
+            )}
+            
+            <button
+              onClick={stopPlayback}
+              className="flex-1 flex items-center justify-center space-x-2 bg-red-500/20 text-red-400 rounded-lg py-2 text-sm font-medium"
+            >
+              <StopCircle className="w-4 h-4" />
+              <span>Stop</span>
+            </button>
+            
+            <button
+              onClick={startNewGame}
+              className="flex-1 flex items-center justify-center space-x-2 bg-blue-500/20 text-blue-400 rounded-lg py-2 text-sm font-medium"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>New</span>
+            </button>
           </div>
         </motion.div>
       )}
 
-      {/* Game Info */}
-      <div className={`flex items-center justify-between ${isMobile ? 'flex-col space-y-4' : ''}`}>
-        <div className={`flex items-center ${isMobile ? 'w-full justify-between' : 'space-x-4'}`}>
-          <motion.div
-            className={`card-glass rounded-xl ${isMobile ? 'mobile-score-card flex-1 mr-2' : 'p-4'}`}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5 }}
-          >
-            <h3 className={`font-medium text-gray-400 mb-1 ${isMobile ? 'mobile-score-card h3' : 'text-sm'}`}>
-              Current Score
-            </h3>
-            <p className={`font-bold text-green-400 ${isMobile ? 'mobile-score-card p' : 'text-2xl'}`}>
+      {/* Game Stats */}
+      <motion.div
+        className="card-glass p-3 rounded-xl flex-shrink-0"
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <div className="grid grid-cols-3 gap-3">
+          <div className="text-center">
+            <div className="text-lg font-bold text-green-400">
               {currentData?.score?.toLocaleString() || '0'}
-            </p>
-          </motion.div>
-          
-          <motion.div
-            className={`card-glass rounded-xl ${isMobile ? 'mobile-score-card flex-1 ml-2' : 'p-4'}`}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-          >
-            <h3 className={`font-medium text-gray-400 mb-1 ${isMobile ? 'mobile-score-card h3' : 'text-sm'}`}>
-              {currentData?.is_playback ? 'Step' : 'Episode'}
-            </h3>
-            <p className={`font-bold text-blue-400 ${isMobile ? 'mobile-score-card p' : 'text-2xl'}`}>
+            </div>
+            <div className="text-xs text-gray-400">Score</div>
+          </div>
+          <div className="text-center">
+            <div className="text-lg font-bold text-blue-400">
               {currentData?.is_playback 
                 ? (checkpointPlaybackData?.step_data?.step?.toLocaleString() || '0')
                 : (currentData?.episode?.toLocaleString() || '0')
               }
-            </p>
-          </motion.div>
+            </div>
+            <div className="text-xs text-gray-400">
+              {currentData?.is_playback ? 'Step' : 'Episode'}
+            </div>
+          </div>
+          <div className="text-center">
+            <button
+              onClick={() => setShowAttention(!showAttention)}
+              className={`text-lg font-bold ${showAttention ? 'text-blue-400' : 'text-gray-400'}`}
+            >
+              {showAttention ? <EyeOff className="w-5 h-5 mx-auto" /> : <Eye className="w-5 h-5 mx-auto" />}
+            </button>
+            <div className="text-xs text-gray-400">Attention</div>
+          </div>
         </div>
+      </motion.div>
 
-        {/* Attention Toggle */}
-        <motion.button
-          onClick={() => setShowAttention(!showAttention)}
-          className={`${isMobile ? 'mobile-attention-btn' : 'btn-secondary'} flex items-center space-x-2 ${
-            showAttention ? 'bg-blue-500/20 text-blue-400' : ''
-          } ${isMobile ? 'w-full' : ''}`}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-        >
-          {showAttention ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          <span>Attention</span>
-        </motion.button>
-      </div>
-
-      <div className={`${isMobile ? 'mobile-grid-1' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}`}>
+      {/* Main Game Area */}
+      <div className="flex-1 flex flex-col space-y-2 min-h-0">
         {/* Game Board */}
         <motion.div
-          className={`${isMobile ? 'card-glass p-4 rounded-xl' : 'lg:col-span-2 card-glass p-6 rounded-xl'}`}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
+          className="card-glass p-4 rounded-xl flex-shrink-0"
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
         >
-          <h3 className={`font-semibold mb-4 flex items-center ${isMobile ? 'text-base' : 'text-lg'}`}>
-            <div className="w-5 h-5 mr-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded" />
-            Game Board
-            {isTraining && (
-              <div className="ml-2 w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-            )}
-          </h3>
-          
-          <div className={`grid grid-cols-4 gap-2 ${isMobile ? 'mobile-game-board' : 'max-w-xs mx-auto'}`}>
+          <div className="grid grid-cols-4 gap-2 max-w-sm mx-auto">
             {displayBoard.map((row, rowIndex) =>
               row.map((value, colIndex) => (
                 <div
                   key={`${rowIndex}-${colIndex}`}
-                  className={`game-tile aspect-square ${getTileColor(value)} ${getTextColor(value)} relative overflow-hidden transition-all duration-300 ease-in-out`}
+                  className={`game-tile aspect-square ${getTileColor(value)} ${getTextColor(value)} relative overflow-hidden`}
                   style={showAttention ? {
-                    border: `3px solid rgba(34, 197, 94, ${getAttentionOpacity(rowIndex, colIndex)})`,
-                    transition: 'border 300ms ease-in-out'
+                    border: `2px solid rgba(34, 197, 94, ${getAttentionOpacity(rowIndex, colIndex)})`,
                   } : {}}
                 >
-                  {/* Tile value */}
-                  <span className="text-sm sm:text-base font-bold">
+                  <span className="text-sm font-bold">
                     {value > 0 ? value : ''}
                   </span>
                 </div>
               ))
-            ) || (
-              // Empty board placeholder
-              Array.from({ length: 16 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="game-tile aspect-square bg-gray-700/30 text-transparent transition-all duration-300 ease-in-out"
-                >
-                  0
-                </div>
-              ))
             )}
           </div>
         </motion.div>
 
-        {/* Action Probabilities */}
-        <motion.div
-          className={`card-glass rounded-xl ${isMobile ? 'p-4' : 'p-6'}`}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-        >
-          <h3 className={`font-semibold mb-4 flex items-center ${isMobile ? 'text-base' : 'text-lg'}`}>
-            <ArrowUp className="w-5 h-5 mr-2 text-blue-400" />
-            {currentData?.is_playback && checkpointPlaybackData?.step_data?.done && checkpointPlaybackData?.step_data?.action === null 
-              ? 'Game Over' 
-              : (isMobile ? 'Next' : 'Next Action')
-            }
-          </h3>
-          
-          <div className="space-y-3">          
-            {currentData?.is_playback && checkpointPlaybackData?.step_data?.done && checkpointPlaybackData?.step_data?.action === null ? (
-              <motion.div
-                className="flex items-center justify-center p-6 rounded-lg bg-red-500/20 border border-red-500/30"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5 }}
-              >
-                <div className="text-center">
-                  <div className="text-red-400 font-bold text-lg mb-2">Game Over</div>
-                  <div className="text-gray-400 text-sm">No legal moves remaining</div>
-                  <div className="text-blue-400 font-medium mt-2">
-                    Final Score: {currentData?.score?.toLocaleString() || '0'}
-                  </div>
+        {/* Compact Next Action Bar */}
+        {actionProbabilities.length > 0 && (
+          <div className="flex items-center justify-between mt-1 px-2 py-1 bg-gray-800/80 rounded-lg max-w-xs mx-auto">
+            {/* Most likely action */}
+            {(() => {
+              const maxProb = Math.max(...actionProbabilities.map((a: any) => a.probability))
+              const mainAction = actionProbabilities.find((a: any) => a.probability === maxProb)
+              if (!mainAction) return null
+              const Icon = mainAction.icon
+              return (
+                <div className="flex items-center space-x-2">
+                  <Icon className={`w-5 h-5 ${mainAction.color}`} />
+                  <span className={`font-bold text-sm ${mainAction.color}`}>{(mainAction.probability * 100).toFixed(0)}%</span>
                 </div>
-              </motion.div>
-            ) : (
-              actionProbabilities.map((action: any, index: number) => {
-                const IconComponent = action.icon
-                const isHighest = action.probability === Math.max(...actionProbabilities.map((a: any) => a.probability))
-                
+              )
+            })()}
+            {/* Dots for other actions */}
+            <div className="flex items-center space-x-1 ml-2">
+              {actionProbabilities.map((action: any) => {
+                if (action.probability === Math.max(...actionProbabilities.map((a: any) => a.probability))) return null
                 return (
-                  <motion.div
-                    key={action.name}
-                    className={`flex items-center justify-between p-3 rounded-lg transition-all duration-300 ${
-                      isHighest ? 'bg-blue-500/20 border border-blue-500/30' : 'bg-gray-700/30'
-                    }`}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3, delay: 0.4 + index * 0.1 }}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <IconComponent className={`w-4 h-4 ${action.color}`} />
-                      <span className="font-medium">{action.name}</span>
-                    </div>
-                    <div className="text-right">
-                      <span className={`font-bold ${action.color}`}>
-                        {(action.probability * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                  </motion.div>
+                  <span key={action.name} className={`w-2 h-2 rounded-full ${action.color} opacity-70`} title={`${action.name}: ${(action.probability * 100).toFixed(1)}%`} />
                 )
-              })
-            )}
+              })}
+            </div>
           </div>
-        </motion.div>
+        )}
       </div>
 
-      {/* Training Status */}
+      {/* Training Status Footer */}
       {trainingData && (
         <motion.div
-          className="card-glass p-4 rounded-xl"
-          initial={{ opacity: 0, y: 20 }}
+          className="card-glass p-2 rounded-xl flex-shrink-0"
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.5 }}
         >
-          <div className="flex items-center justify-between text-sm text-gray-400">
-            <div className="flex items-center space-x-4">
-              <span>Reward: {trainingData.reward?.toFixed(3) || '0.000'}</span>
-              <span>Policy Loss: {trainingData.policy_loss != null ? trainingData.policy_loss.toFixed(4) : lastPolicyLoss != null ? lastPolicyLoss.toFixed(4) : 'N/A'}</span>
-              <span>Value Loss: {trainingData.value_loss != null ? trainingData.value_loss.toFixed(4) : lastValueLoss != null ? lastValueLoss.toFixed(4) : 'N/A'}</span>
-            </div>
-            <div className="hidden sm:block">
-              <span>Updated: {new Date(trainingData.timestamp * 1000).toLocaleTimeString()}</span>
-            </div>
+          <div className="flex items-center justify-between text-xs text-gray-400">
+            <span>R: {trainingData.reward?.toFixed(2) || '0.00'}</span>
+            <span>PL: {trainingData.policy_loss?.toFixed(3) || lastPolicyLoss?.toFixed(3) || 'N/A'}</span>
+            <span>VL: {trainingData.value_loss?.toFixed(3) || lastValueLoss?.toFixed(3) || 'N/A'}</span>
+            <span>{new Date(trainingData.timestamp * 1000).toLocaleTimeString()}</span>
           </div>
         </motion.div>
       )}

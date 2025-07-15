@@ -27,6 +27,16 @@ export interface TrainingData {
   max_game_length: number
   wall_clock_elapsed: number
   estimated_time_to_checkpoint: number
+  // Enhanced metrics
+  score_trend: number
+  loss_trend: number
+  max_tile_frequency: Record<number, number>
+  training_efficiency: {
+    score_consistency: number
+    loss_stability: number
+    improvement_rate: number
+    plateau_detection: number
+  }
 }
 
 export interface CheckpointPlaybackData {

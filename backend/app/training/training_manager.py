@@ -51,6 +51,12 @@ class TrainingManager:
         self._game_lengths: List[int] = []
         self._episode_start_times: List[float] = []
         self._checkpoint_interval = 100  # Save checkpoint every 100 episodes
+        
+        # Enhanced metrics tracking
+        self._recent_scores: List[int] = []  # Last 100 scores for trend analysis
+        self._recent_losses: List[float] = []  # Last 100 losses for trend analysis
+        self._max_tiles_achieved: List[int] = []  # Track max tiles achieved
+        self._efficiency_metrics: Dict[str, float] = {}  # Training efficiency metrics
 
     # ------------------------------------------------------------------ Control
     def update_config(self, config_dict: Dict[str, Any]):
@@ -139,7 +145,13 @@ class TrainingManager:
         self.is_training = False
         self.is_paused = False
         if self._task:
-            await self._task
+            if not self._task.done():
+                self._task.cancel()
+                print("Training task cancellation requested.")
+            else:
+                print("Training task already completed.")
+        # Do not await self._task; return immediately
+        # Optionally, schedule a background cleanup if needed
 
     # ------------------------------------------------------------------ Loop
     async def _training_loop(self):
@@ -188,7 +200,19 @@ class TrainingManager:
                     episode_end_time = time.time()
                     for result in episode_results:
                         game_length = result.get('length', 0)
+                        score = result.get('score', 0)
+                        loss = (result.get('losses', {}).get('policy_loss', 0) + 
+                               result.get('losses', {}).get('value_loss', 0)) if result.get('losses') else 0
+                        
                         self._game_lengths.append(game_length)
+                        self._recent_scores.append(score)
+                        if loss > 0:
+                            self._recent_losses.append(loss)
+                        
+                        # Track max tile achieved (estimate from score)
+                        max_tile = self._estimate_max_tile_from_score(score)
+                        self._max_tiles_achieved.append(max_tile)
+                    
                     self._episode_start_times.append(episode_start_time)
                     
                     # Keep only recent data to avoid memory issues
@@ -196,6 +220,12 @@ class TrainingManager:
                         self._game_lengths = self._game_lengths[-1000:]
                     if len(self._episode_start_times) > 1000:
                         self._episode_start_times = self._episode_start_times[-1000:]
+                    if len(self._recent_scores) > 100:
+                        self._recent_scores = self._recent_scores[-100:]
+                    if len(self._recent_losses) > 100:
+                        self._recent_losses = self._recent_losses[-100:]
+                    if len(self._max_tiles_achieved) > 100:
+                        self._max_tiles_achieved = self._max_tiles_achieved[-100:]
                     
                     # After each environment episode generate metrics & broadcast (normal priority for training updates)
                     for env_instance, result in zip(self.envs, episode_results):
@@ -245,6 +275,16 @@ class TrainingManager:
                             # Use latest computed loss from broadcast metrics; fallback to 0.0
                             'final_loss': metrics.get('loss', 0.0) if metrics.get('loss') is not None else 0.0,
                             'training_speed': training_speed,
+                            # Enhanced metrics
+                            'score_trend': metrics.get('score_trend', 0.0),
+                            'loss_trend': metrics.get('loss_trend', 0.0),
+                            'max_tile_frequency': metrics.get('max_tile_frequency', {}),
+                            'training_efficiency': metrics.get('training_efficiency', {
+                                'score_consistency': 0.0,
+                                'loss_stability': 0.0,
+                                'improvement_rate': 0.0,
+                                'plateau_detection': 0.0
+                            }),
                         }
                         
                         self.checkpoint_manager.create_checkpoint_metadata(
@@ -321,6 +361,12 @@ class TrainingManager:
         if training_speed > 0:
             estimated_time_to_checkpoint = (episodes_to_checkpoint / training_speed) * 60  # seconds
         
+        # Calculate enhanced metrics
+        score_trend = self._calculate_score_trend()
+        loss_trend = self._calculate_loss_trend()
+        max_tile_frequency = self._calculate_max_tile_frequency()
+        training_efficiency = self._calculate_training_efficiency()
+        
         metrics = {
             "type": "training_update",
             "timestamp": time.time(),
@@ -346,5 +392,122 @@ class TrainingManager:
             "max_game_length": max_game_length,
             "wall_clock_elapsed": wall_clock_elapsed,
             "estimated_time_to_checkpoint": estimated_time_to_checkpoint,
+            # Enhanced metrics
+            "score_trend": score_trend,
+            "loss_trend": loss_trend,
+            "max_tile_frequency": max_tile_frequency,
+            "training_efficiency": training_efficiency,
         }
-        return metrics 
+        return metrics
+    
+    def _estimate_max_tile_from_score(self, score: int) -> int:
+        """Estimate the maximum tile achieved based on score"""
+        # Rough estimation: higher scores typically mean higher max tiles
+        if score >= 100000:
+            return 8192
+        elif score >= 50000:
+            return 4096
+        elif score >= 20000:
+            return 2048
+        elif score >= 10000:
+            return 1024
+        elif score >= 5000:
+            return 512
+        elif score >= 2000:
+            return 256
+        elif score >= 1000:
+            return 128
+        else:
+            return 64
+    
+    def _calculate_score_trend(self) -> float:
+        """Calculate score trend over recent episodes (positive = improving)"""
+        if len(self._recent_scores) < 10:
+            return 0.0
+        
+        # Calculate trend using linear regression
+        n = len(self._recent_scores)
+        x = list(range(n))
+        y = self._recent_scores
+        
+        # Simple linear regression
+        sum_x = sum(x)
+        sum_y = sum(y)
+        sum_xy = sum(x[i] * y[i] for i in range(n))
+        sum_x2 = sum(x[i] ** 2 for i in range(n))
+        
+        if n * sum_x2 - sum_x ** 2 == 0:
+            return 0.0
+        
+        slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x ** 2)
+        return slope
+    
+    def _calculate_loss_trend(self) -> float:
+        """Calculate loss trend over recent episodes (negative = improving)"""
+        if len(self._recent_losses) < 10:
+            return 0.0
+        
+        # Calculate trend using linear regression
+        n = len(self._recent_losses)
+        x = list(range(n))
+        y = self._recent_losses
+        
+        # Simple linear regression
+        sum_x = sum(x)
+        sum_y = sum(y)
+        sum_xy = sum(x[i] * y[i] for i in range(n))
+        sum_x2 = sum(x[i] ** 2 for i in range(n))
+        
+        if n * sum_x2 - sum_x ** 2 == 0:
+            return 0.0
+        
+        slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x ** 2)
+        return slope
+    
+    def _calculate_max_tile_frequency(self) -> Dict[int, float]:
+        """Calculate frequency of different max tiles achieved"""
+        if not self._max_tiles_achieved:
+            return {}
+        
+        tile_counts = {}
+        total = len(self._max_tiles_achieved)
+        
+        for tile in self._max_tiles_achieved:
+            tile_counts[tile] = tile_counts.get(tile, 0) + 1
+        
+        return {tile: count / total for tile, count in tile_counts.items()}
+    
+    def _calculate_training_efficiency(self) -> Dict[str, float]:
+        """Calculate various training efficiency metrics"""
+        if not self._recent_scores or not self._recent_losses:
+            return {
+                'score_consistency': 0.0,
+                'loss_stability': 0.0,
+                'improvement_rate': 0.0,
+                'plateau_detection': 0.0
+            }
+        
+        # Score consistency (lower variance = more consistent)
+        score_mean = sum(self._recent_scores) / len(self._recent_scores)
+        score_variance = sum((s - score_mean) ** 2 for s in self._recent_scores) / len(self._recent_scores)
+        score_consistency = max(0, 1 - (score_variance / (score_mean ** 2 + 1)))
+        
+        # Loss stability (lower variance = more stable)
+        loss_mean = sum(self._recent_losses) / len(self._recent_losses)
+        loss_variance = sum((l - loss_mean) ** 2 for l in self._recent_losses) / len(self._recent_losses)
+        loss_stability = max(0, 1 - (loss_variance / (loss_mean ** 2 + 1)))
+        
+        # Improvement rate (positive trend = improving)
+        score_trend = self._calculate_score_trend()
+        improvement_rate = max(0, min(1, (score_trend + 1000) / 2000))  # Normalize to 0-1
+        
+        # Plateau detection (low variance + low trend = plateau)
+        plateau_score = 1 - (abs(score_trend) / 1000)  # Lower trend = higher plateau score
+        plateau_detection = (plateau_score + score_consistency) / 2
+        
+        return {
+            'score_consistency': score_consistency,
+            'loss_stability': loss_stability,
+            'improvement_rate': improvement_rate,
+            'plateau_detection': plateau_detection
+        } 

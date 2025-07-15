@@ -135,7 +135,14 @@ body {
   height: 300px;
 }
 
-.chart-container canvas {
+.chart-container-responsive {
+  @apply relative;
+  height: 100%;
+  min-height: 250px; /* Increased from 200px for better chart display */
+}
+
+.chart-container canvas,
+.chart-container-responsive canvas {
   @apply rounded-lg;
 }
 
@@ -200,6 +207,11 @@ body {
     min-height: 180px;
   }
   
+  .chart-container-responsive {
+    height: 100%;
+    min-height: 200px; /* Increased for better mobile chart display */
+  }
+  
   /* Improved game tile sizing */
   .game-tile {
     font-size: 14px; /* Increased from 10px for better readability */
@@ -222,18 +234,18 @@ body {
   
   /* Improved metrics cards */
   .metrics-card {
-    @apply p-4; /* Increased from p-3 */
-    min-height: 100px;
-    border-radius: 12px;
+    @apply p-3; /* Reduced from p-4 for more compact layout */
+    min-height: 80px; /* Reduced from 100px */
+    border-radius: 8px; /* Reduced from 12px */
   }
   
   .metrics-card h3 {
-    @apply text-sm; /* Increased from text-xs */
+    @apply text-xs; /* Consistent sizing */
     font-weight: 500;
   }
   
   .metrics-card p {
-    @apply text-xl; /* Increased from text-lg */
+    @apply text-base; /* Reduced from text-xl */
     font-weight: 600;
   }
   
@@ -263,7 +275,7 @@ body {
   
   /* Better main content spacing */
   .mobile-main {
-    @apply px-4 py-4; /* Increased from px-3 py-3 */
+    @apply px-3 py-3; /* Optimized for compact layout */
   }
   
   /* Hide less important elements */
@@ -289,11 +301,11 @@ body {
   
   /* Improved grid layouts */
   .mobile-grid-2 {
-    @apply grid-cols-2 gap-3; /* Increased gap */
+    @apply grid-cols-2 gap-2; /* Optimized gap for compact layout */
   }
   
   .mobile-grid-1 {
-    @apply grid-cols-1 gap-4; /* Increased gap */
+    @apply grid-cols-1 gap-3; /* Optimized gap for compact layout */
   }
   
   /* Improved game board container */
@@ -340,7 +352,7 @@ body {
   
   /* Better spacing for mobile stacked elements */
   .mobile-stack > * + * {
-    margin-top: 12px;
+    margin-top: 8px; /* Reduced for compact layout */
   }
   
   /* Improved attention button */
