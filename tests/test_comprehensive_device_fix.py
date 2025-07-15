@@ -55,9 +55,9 @@ def test_device_compatibility_pipeline():
             print(f"Policy logits device: {policy_logits.device}")
             print(f"Value device: {value.device}")
         
-        print("✓ Direct model test passed")
+        print("OK Direct model test passed")
     except Exception as e:
-        print(f"❌ Direct model test failed: {e}")
+        print(f"ERROR: Direct model test failed: {e}")
         traceback.print_exc()
         return False
     
@@ -73,7 +73,7 @@ def test_device_compatibility_pipeline():
     print(f"Available checkpoints: {[cp.id for cp in checkpoints]}")
     
     if not checkpoints:
-        print("❌ No checkpoints available for testing")
+        print("ERROR: No checkpoints available for testing")
         return False
     
     # Use the first checkpoint
@@ -88,23 +88,23 @@ def test_device_compatibility_pipeline():
     try:
         success = playback.load_checkpoint(checkpoint_id)
         if not success:
-            print("❌ Failed to load checkpoint")
+            print("ERROR: Failed to load checkpoint")
             return False
         
-        print(f"✓ Checkpoint loaded successfully")
+        print(f"OK Checkpoint loaded successfully")
         print(f"Model device: {next(playback.current_model.parameters()).device}")
         print(f"Playback device: {playback.device}")
         
         # Verify devices match
         model_device = next(playback.current_model.parameters()).device
         if model_device != playback.device:
-            print(f"❌ Device mismatch: model on {model_device}, playback expects {playback.device}")
+            print(f"ERROR: Device mismatch: model on {model_device}, playback expects {playback.device}")
             return False
         
-        print("✓ Device consistency verified")
+        print("OK Device consistency verified")
         
     except Exception as e:
-        print(f"❌ Checkpoint loading failed: {e}")
+        print(f"ERROR: Checkpoint loading failed: {e}")
         traceback.print_exc()
         return False
     
@@ -127,10 +127,10 @@ def test_device_compatibility_pipeline():
         print(f"State tensor device: {state_tensor.device}")
         print(f"State tensor shape: {state_tensor.shape}")
         
-        print("✓ Environment and state handling test passed")
+        print("OK Environment and state handling test passed")
         
     except Exception as e:
-        print(f"❌ Environment and state handling failed: {e}")
+        print(f"ERROR: Environment and state handling failed: {e}")
         traceback.print_exc()
         return False
     
@@ -140,7 +140,7 @@ def test_device_compatibility_pipeline():
         # Test the actual action selection methods used in playback
         action, action_probs, attention_weights = playback.select_action(state, legal_actions, env.game)
         
-        print(f"✓ Action selection successful")
+        print(f"OK Action selection successful")
         print(f"Selected action: {action}")
         print(f"Action probabilities: {action_probs}")
         
@@ -149,16 +149,16 @@ def test_device_compatibility_pipeline():
         for i in range(10):
             try:
                 action, action_probs, attention_weights = playback.select_action(state, legal_actions, env.game)
-                print(f"  Call {i+1}: action={action} ✓")
+                print(f"  Call {i+1}: action={action} OK")
             except Exception as e:
                 print(f"  Call {i+1}: ERROR - {e}")
                 traceback.print_exc()
                 return False
         
-        print("✓ Multiple action selections test passed")
+        print("OK Multiple action selections test passed")
         
     except Exception as e:
-        print(f"❌ Action selection failed: {e}")
+        print(f"ERROR: Action selection failed: {e}")
         traceback.print_exc()
         return False
     
@@ -191,14 +191,14 @@ def test_device_compatibility_pipeline():
                     break
                     
             except Exception as e:
-                print(f"❌ Game loop error at step {step_count}: {e}")
+                print(f"ERROR: Game loop error at step {step_count}: {e}")
                 traceback.print_exc()
                 return False
         
-        print(f"✓ Game loop simulation completed {step_count} steps")
+        print(f"OK Game loop simulation completed {step_count} steps")
         
     except Exception as e:
-        print(f"❌ Game loop simulation failed: {e}")
+        print(f"ERROR: Game loop simulation failed: {e}")
         traceback.print_exc()
         return False
     
@@ -219,7 +219,7 @@ def test_device_compatibility_pipeline():
             device=playback.device,
             deterministic=True
         )
-        print(f"✓ Direct playback function call: action={action}")
+        print(f"OK Direct playback function call: action={action}")
         
         # Test training function
         action, log_prob, attention_weights = select_action_with_fallback(
@@ -231,10 +231,10 @@ def test_device_compatibility_pipeline():
             sample_action=False,
             max_attempts=2
         )
-        print(f"✓ Direct training function call: action={action}, log_prob={log_prob:.4f}")
+        print(f"OK Direct training function call: action={action}, log_prob={log_prob:.4f}")
         
     except Exception as e:
-        print(f"❌ Direct function calls failed: {e}")
+        print(f"ERROR: Direct function calls failed: {e}")
         traceback.print_exc()
         return False
     
@@ -243,20 +243,20 @@ def test_device_compatibility_pipeline():
     try:
         result = playback.play_single_game()
         if isinstance(result, dict) and 'error' in result:
-            print(f"❌ Single game playback failed: {result['error']}")
+            print(f"ERROR: Single game playback failed: {result['error']}")
             return False
         
-        print(f"✓ Single game playback completed")
+        print(f"OK Single game playback completed")
         print(f"  Final score: {result.get('final_score', 'unknown')}")
         print(f"  Steps: {result.get('steps', 'unknown')}")
         print(f"  Max tile: {result.get('max_tile', 'unknown')}")
         
     except Exception as e:
-        print(f"❌ Single game playback failed: {e}")
+        print(f"ERROR: Single game playback failed: {e}")
         traceback.print_exc()
         return False
     
-    print("\n✅ All comprehensive device compatibility tests passed!")
+    print("\nOK: All comprehensive device compatibility tests passed!")
     return True
 
 if __name__ == "__main__":
@@ -264,5 +264,5 @@ if __name__ == "__main__":
     if not success:
         sys.exit(1)
     else:
-        print("\n🎉 Device compatibility is working correctly!")
+        print("\nSUCCESS: Device compatibility is working correctly!")
         print("The issue might be in a different part of the system or already fixed.") 

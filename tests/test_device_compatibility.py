@@ -84,7 +84,7 @@ class TestDeviceCompatibility(unittest.TestCase):
             self.assertIsInstance(action_probs_list, list)
             self.assertEqual(len(action_probs_list), 4)
             
-            print(f"✓ Action selection succeeded: action={action}")
+            print(f"OK Action selection succeeded: action={action}")
             
         except Exception as e:
             self.fail(f"Device compatibility error in action selection: {e}")
@@ -108,7 +108,7 @@ class TestDeviceCompatibility(unittest.TestCase):
             self.assertIn(action, self.legal_actions)
             self.assertIsInstance(log_prob, float)
             
-            print(f"✓ Action selection with fallback succeeded: action={action}, log_prob={log_prob}")
+            print(f"OK Action selection with fallback succeeded: action={action}, log_prob={log_prob}")
             
         except Exception as e:
             self.fail(f"Device compatibility error in action selection with fallback: {e}")
@@ -133,7 +133,7 @@ class TestDeviceCompatibility(unittest.TestCase):
             log_prob_2 = action_dist.log_prob(action_tensor_2)
             self.assertEqual(log_prob_2.device, self.device)
             
-            print(f"✓ Categorical distribution device compatibility verified")
+            print(f"OK Categorical distribution device compatibility verified")
             
         except Exception as e:
             self.fail(f"Device compatibility error in categorical distribution: {e}")

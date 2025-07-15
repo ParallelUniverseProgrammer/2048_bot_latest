@@ -89,6 +89,8 @@ class PPOTrainer:
         with torch.no_grad():
             state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
             policy_logits, value = self.model(state_tensor)
+            # Ensure logits are on trainer device to prevent CUDA/CPU mismatch
+            policy_logits = policy_logits.to(self.device)
             
             # Mask illegal actions for visualization
             action_mask = torch.full((4,), -float('inf'), device=self.device)

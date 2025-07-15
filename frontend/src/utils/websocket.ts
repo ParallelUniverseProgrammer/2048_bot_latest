@@ -169,8 +169,7 @@ export const useWebSocket = () => {
         // Start playback
         const restartResp = await fetch(`${config.api.baseUrl}/checkpoints/${status.current_checkpoint}/playback/start`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ speed: 1.0 })
+          headers: { 'Content-Type': 'application/json' }
         })
         
         if (restartResp.ok) {
@@ -434,10 +433,7 @@ export const useWebSocket = () => {
           } else if (data.type === 'training_complete') {
             console.log('Training completed:', data.message)
             setConnected(true) // Keep connection alive
-          } else if (data.type === 'playback_speed_changed') {
-            console.log('Playback speed changed:', data.message)
-            // Update playback status to reflect new speed
-            // The frontend will automatically update the speed dropdown
+
           } else if (data.type === 'heartbeat') {
             // Heartbeat received, connection is alive
             if (data.mobile_optimized) {

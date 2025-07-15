@@ -64,7 +64,7 @@ def create_test_checkpoint():
     
     checkpoint_path = checkpoint_dir / "test_checkpoint.pt"
     torch.save(checkpoint_data, checkpoint_path)
-    print(f"✓ Test checkpoint saved to {checkpoint_path}")
+    print(f"OK Test checkpoint saved to {checkpoint_path}")
     
     return checkpoint_path
 

@@ -39,8 +39,22 @@ websocket_manager = WebSocketManager()
 training_manager = TrainingManager(websocket_manager)
 checkpoint_playback = CheckpointPlayback(training_manager.checkpoint_manager)
 
-# Refresh checkpoint metadata on startup to infer model sizes
-training_manager.checkpoint_manager.refresh_metadata_cache()
+# ---------------------------------------------------------------------------
+# Bootstrap: ensure at least one checkpoint exists for test environments
+# ---------------------------------------------------------------------------
+try:
+    if len(training_manager.checkpoint_manager.list_checkpoints()) == 0:
+        print("[yellow]No checkpoints detected – generating a test checkpoint for initialisation")
+        from tests.create_test_checkpoint import create_test_checkpoint  # Local helper script
+
+        ckpt_path = create_test_checkpoint()
+        print(f"[green]Test checkpoint created at {ckpt_path}")
+
+except Exception as _e:
+    # Fail gracefully – checkpoint generation is best-effort only
+    print(f"[red]Warning: couldn’t generate test checkpoint automatically: {_e}")
+
+training_manager.checkpoint_manager.refresh_metadata_cache()  # Ensure metadata cache is up to date
 
 class TrainingConfig(BaseModel):
     model_size: str = "medium"
@@ -408,16 +422,11 @@ async def save_checkpoint_manual():
 
 # Checkpoint playback endpoints
 @app.post("/checkpoints/{checkpoint_id}/playback/start")
-async def start_checkpoint_playback(checkpoint_id: str, request: dict = None):
+async def start_checkpoint_playback(checkpoint_id: str):
     """Start live playback of a checkpoint"""
     try:
         # Stop any existing playback first
         checkpoint_playback.stop_playback()
-        
-        # Get speed from request if provided
-        speed = 1.0
-        if request:
-            speed = max(0.5, min(request.get("speed", 1.0), 5.0))  # Clamp between 0.5x and 5x
         
         # Load the checkpoint
         success = checkpoint_playback.load_checkpoint(checkpoint_id)
@@ -425,12 +434,11 @@ async def start_checkpoint_playback(checkpoint_id: str, request: dict = None):
             raise HTTPException(status_code=404, detail="Checkpoint not found or failed to load")
         
         # Start playback in background
-        asyncio.create_task(checkpoint_playback.start_live_playback(websocket_manager, speed))
+        asyncio.create_task(checkpoint_playback.start_live_playback(websocket_manager))
         
         return {
             "message": f"Playback started for checkpoint {checkpoint_id}",
             "checkpoint_id": checkpoint_id,
-            "speed": speed,
             "connected_clients": websocket_manager.get_connection_count()
         }
         
@@ -509,35 +517,7 @@ async def stop_checkpoint_playback():
         print(f"Error stopping playback: {e}")
         raise HTTPException(status_code=500, detail=f"Error stopping playback: {str(e)}")
 
-@app.post("/checkpoints/playback/speed")
-async def set_playback_speed(request: dict):
-    """Set playback speed"""
-    try:
-        speed = request.get("speed", 1.0)
-        speed = max(0.5, min(speed, 5.0))
-        
-        old_speed = checkpoint_playback.playback_speed
-        new_speed = checkpoint_playback.set_playback_speed(speed)
-        
-        # Send speed change notification to connected clients
-        await websocket_manager.broadcast({
-            'type': 'playback_speed_changed',
-            'old_speed': old_speed,
-            'new_speed': new_speed,
-            'checkpoint_id': checkpoint_playback.current_checkpoint_id,
-            'message': f'Playback speed changed from {old_speed}x to {new_speed}x'
-        })
-        
-        return {
-            "message": f"Playback speed set to {speed}",
-            "speed": speed,
-            "current_checkpoint": checkpoint_playback.current_checkpoint_id
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error setting playback speed: {e}")
-        raise HTTPException(status_code=500, detail=f"Error setting playback speed: {str(e)}")
+
 
 @app.get("/checkpoints/playback/status")
 async def get_playback_status():
@@ -554,7 +534,6 @@ async def get_playback_status():
         return {
             'is_playing': False,
             'is_paused': False,
-            'playback_speed': 1.0,
             'current_checkpoint': None,
             'model_loaded': False,
             'server_time': time.time(),

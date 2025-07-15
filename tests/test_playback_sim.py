@@ -69,7 +69,7 @@ async def _run_playback(websocket_manager, runtime: float = 6.0) -> CheckpointPl
     playback.current_config = {}
     playback.select_action = lambda state, legal, env_game: (legal[0], [0.25]*4, None)
     # Run playback in background
-    task = asyncio.create_task(playback.start_live_playback(websocket_manager, speed=5.0))
+            task = asyncio.create_task(playback.start_live_playback(websocket_manager))
     await asyncio.sleep(runtime)
     playback.stop_playback()
     # Allow graceful shutdown
@@ -85,21 +85,21 @@ async def main():
     print("\n[TEST] Scenario 1: All broadcasts succeed")
     pb1 = await _run_playback(NormalWS())
     assert not pb1.is_playing, "Playback should have stopped"
-    print("   ✓ completed without hang, errors:", len(pb1.get_error_history()))
+    print("   OK completed without hang, errors:", len(pb1.get_error_history()))
 
     print("\n[TEST] Scenario 2: send_text sleeps forever (timeout in wait_for)")
     pb2 = await _run_playback(TimeoutWS())
     assert not pb2.is_playing, "Playback should have stopped even after timeouts"
     assert pb2.consecutive_failures >= 1, "Should record failures"
-    print("   ✓ handled long-running send without hang, errors:", len(pb2.get_error_history()))
+    print("   OK handled long-running send without hang, errors:", len(pb2.get_error_history()))
 
     print("\n[TEST] Scenario 3: send_text raises TimeoutError")
     pb3 = await _run_playback(ExceptionWS())
     assert not pb3.is_playing, "Playback should have stopped after raised exception"
     assert pb3.consecutive_failures >= 1, "Should record failures"
-    print("   ✓ handled raised exception, errors:", len(pb3.get_error_history()))
+    print("   OK handled raised exception, errors:", len(pb3.get_error_history()))
 
-    print("\nAll playback robustness tests passed ✅")
+    print("\nAll playback robustness tests passed OK:")
 
 
 if __name__ == "__main__":

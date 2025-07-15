@@ -374,13 +374,13 @@ class FreezeDiagnostics:
             print(f"Checkpoint loading: {'SUCCESS' if success else 'FAILED'} ({duration:.2f}s)")
             
             if not success:
-                print("❌ Checkpoint loading failed - check error logs")
+                print("ERROR: Checkpoint loading failed - check error logs")
                 return False
             
             return True
             
         except Exception as e:
-            print(f"❌ Checkpoint loading exception: {e}")
+            print(f"ERROR: Checkpoint loading exception: {e}")
             return False
         
         finally:
@@ -407,7 +407,7 @@ class FreezeDiagnostics:
             duration = time.time() - start_time
             
             if 'error' in result:
-                print(f"❌ Single game failed: {result['error']}")
+                print(f"ERROR: Single game failed: {result['error']}")
                 return False
             
             print(f"Single game: SUCCESS ({duration:.2f}s)")
@@ -418,7 +418,7 @@ class FreezeDiagnostics:
             return True
             
         except Exception as e:
-            print(f"❌ Single game exception: {e}")
+            print(f"ERROR: Single game exception: {e}")
             return False
         
         finally:
@@ -448,7 +448,7 @@ class FreezeDiagnostics:
         try:
             # Start live playback
             playback_task = asyncio.create_task(
-                self.playback.start_live_playback(self.websocket_manager, speed=2.0)
+                self.playback.start_live_playback(self.websocket_manager)
             )
             
             # Monitor for specified duration
@@ -464,14 +464,14 @@ class FreezeDiagnostics:
             # Wait for graceful shutdown
             try:
                 await asyncio.wait_for(playback_task, timeout=10.0)
-                print("✅ Live playback completed successfully")
+                print("OK: Live playback completed successfully")
                 return True
             except asyncio.TimeoutError:
-                print("❌ Live playback hung during shutdown!")
+                print("ERROR: Live playback hung during shutdown!")
                 return False
             
         except Exception as e:
-            print(f"❌ Live playback exception: {e}")
+            print(f"ERROR: Live playback exception: {e}")
             return False
         
         finally:
@@ -515,7 +515,7 @@ class FreezeDiagnostics:
                         'stuck_duration': stuck_count * 2,
                         'last_broadcast_count': last_broadcast_count
                     })
-                    print(f"⚠️  Playback appears stuck (no broadcasts for {stuck_count * 2}s)")
+                    print(f"WARNING:  Playback appears stuck (no broadcasts for {stuck_count * 2}s)")
             else:
                 stuck_count = 0
             
@@ -526,7 +526,7 @@ class FreezeDiagnostics:
                 self.playback_monitor.log_event('playback_unhealthy', {
                     'consecutive_failures': self.playback.consecutive_failures
                 })
-                print(f"⚠️  Playback unhealthy (failures: {self.playback.consecutive_failures})")
+                print(f"WARNING:  Playback unhealthy (failures: {self.playback.consecutive_failures})")
     
     def save_diagnostic_report(self, filename: str):
         """Save diagnostic report to file"""
@@ -556,9 +556,9 @@ async def main():
     # Setup for real system
     try:
         diagnostics.setup_for_real_system()
-        print("✅ Connected to real system")
+        print("OK: Connected to real system")
     except Exception as e:
-        print(f"❌ Failed to connect to real system: {e}")
+        print(f"ERROR: Failed to connect to real system: {e}")
         print("Make sure the backend is running and accessible")
         return 1
     
@@ -566,7 +566,7 @@ async def main():
     try:
         checkpoints = diagnostics.checkpoint_manager.list_checkpoints()
         if not checkpoints:
-            print("❌ No checkpoints found")
+            print("ERROR: No checkpoints found")
             return 1
         
         print(f"Found {len(checkpoints)} checkpoints")
@@ -576,7 +576,7 @@ async def main():
         print(f"Using checkpoint: {checkpoint_id}")
         
     except Exception as e:
-        print(f"❌ Failed to list checkpoints: {e}")
+        print(f"ERROR: Failed to list checkpoints: {e}")
         return 1
     
     # Run diagnostics
@@ -584,13 +584,13 @@ async def main():
         # Test checkpoint loading
         success = await diagnostics.diagnose_checkpoint_loading(checkpoint_id)
         if not success:
-            print("❌ Checkpoint loading failed - cannot continue")
+            print("ERROR: Checkpoint loading failed - cannot continue")
             return 1
         
         # Test single game
         success = await diagnostics.diagnose_single_game(checkpoint_id)
         if not success:
-            print("❌ Single game failed - but continuing with live playback test")
+            print("ERROR: Single game failed - but continuing with live playback test")
         
         # Test live playback (this is where freezing likely occurs)
         success = await diagnostics.diagnose_live_playback(checkpoint_id, duration_seconds=20)
@@ -600,15 +600,15 @@ async def main():
         diagnostics.save_diagnostic_report(report_filename)
         
         if success:
-            print("\n✅ All diagnostics completed successfully!")
+            print("\nOK: All diagnostics completed successfully!")
             print("If freezing occurs, check the diagnostic report for details.")
         else:
-            print("\n❌ Diagnostics detected issues!")
+            print("\nERROR: Diagnostics detected issues!")
             print("Check the diagnostic report for detailed analysis.")
             return 1
     
     except Exception as e:
-        print(f"❌ Diagnostic error: {e}")
+        print(f"ERROR: Diagnostic error: {e}")
         return 1
     
     return 0

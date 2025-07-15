@@ -145,9 +145,9 @@ def test_gpu_usage():
         
         # Check if we're actually using GPU
         if torch.cuda.memory_allocated() > 0:
-            print("✅ GPU is being used!")
+            print("OK: GPU is being used!")
         else:
-            print("❌ GPU is NOT being used!")
+            print("ERROR: GPU is NOT being used!")
 
 if __name__ == "__main__":
     test_gpu_usage() 

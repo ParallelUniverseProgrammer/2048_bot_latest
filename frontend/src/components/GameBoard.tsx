@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Eye, EyeOff, PlayCircle, PauseCircle, StopCircle, Gauge, Loader2, RefreshCw } from 'lucide-react'
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Eye, EyeOff, PlayCircle, PauseCircle, StopCircle, Loader2, RefreshCw } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 import config from '../utils/config'
 
@@ -15,7 +15,6 @@ const GameBoard: React.FC = () => {
     loadingStates
   } = useTrainingStore()
   const [showAttention, setShowAttention] = React.useState(false)
-  const [playbackSpeed, setPlaybackSpeed] = React.useState(1.0)
   const [playbackStatus, setPlaybackStatus] = React.useState<any>(null)
   
   // Load playback status
@@ -26,11 +25,6 @@ const GameBoard: React.FC = () => {
         if (res.ok) {
           const data = await res.json()
           setPlaybackStatus(data)
-          
-          // Sync local playback speed with server speed
-          if (data.playback_speed && data.playback_speed !== playbackSpeed) {
-            setPlaybackSpeed(data.playback_speed)
-          }
         }
       } catch (err) {
         // Ignore errors
@@ -40,7 +34,7 @@ const GameBoard: React.FC = () => {
     loadPlaybackStatus()
     const interval = setInterval(loadPlaybackStatus, 1000)
     return () => clearInterval(interval)
-  }, [playbackSpeed])
+  }, [])
 
   // Playback control functions
   const pausePlayback = async () => {
@@ -96,8 +90,7 @@ const GameBoard: React.FC = () => {
         // Start playback again
         const res = await fetch(`${config.api.baseUrl}/checkpoints/${playbackStatus.current_checkpoint}/playback/start`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ speed: playbackSpeed })
+          headers: { 'Content-Type': 'application/json' }
         })
         
         if (!res.ok) {
@@ -135,8 +128,7 @@ const GameBoard: React.FC = () => {
       
               const res = await fetch(`${config.api.baseUrl}/checkpoints/${playbackStatus.current_checkpoint}/playback/start`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ speed: playbackSpeed })
+        headers: { 'Content-Type': 'application/json' }
       })
       
       if (!res.ok) {
@@ -156,19 +148,7 @@ const GameBoard: React.FC = () => {
     }
   }
 
-  const setPlaybackSpeedAPI = async (speed: number) => {
-    try {
-              const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/speed`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ speed })
-      })
-      if (!res.ok) throw new Error('Failed to set playback speed')
-      setPlaybackSpeed(speed)
-    } catch (err) {
-      console.error('Error setting playback speed:', err)
-    }
-  }
+  
   
   // Simplified state management - just track the current board
   const [displayBoard, setDisplayBoard] = React.useState<number[][]>([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
@@ -367,25 +347,6 @@ const GameBoard: React.FC = () => {
           </div>
           
           <div className="flex items-center justify-between">
-            {/* Speed Control */}
-            <div className="flex items-center space-x-2">
-              <Gauge className="w-4 h-4 text-gray-400" />
-              <select
-                value={playbackSpeed}
-                onChange={(e) => setPlaybackSpeedAPI(parseFloat(e.target.value))}
-                disabled={loadingStates.isPlaybackStarting}
-                className={`bg-gray-700 text-white rounded px-3 py-1 text-sm border border-gray-600 focus:border-blue-500 focus:outline-none ${
-                  loadingStates.isPlaybackStarting ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
-              >
-                <option value={0.5}>0.5x</option>
-                <option value={1.0}>1.0x</option>
-                <option value={1.5}>1.5x</option>
-                <option value={2.0}>2.0x</option>
-                <option value={3.0}>3.0x</option>
-              </select>
-            </div>
-            
             {/* Playback Buttons */}
             <div className="flex items-center space-x-3">
               {!loadingStates.isPlaybackStarting && playbackStatus && (

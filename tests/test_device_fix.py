@@ -66,13 +66,13 @@ def test_device_compatibility_fix():
             deterministic=True
         )
         
-        print(f"✓ Playback action selection successful!")
+        print(f"OK Playback action selection successful!")
         print(f"  Selected action: {action}")
         print(f"  Action probabilities: {action_probs}")
         print(f"  Attention weights shape: {attention_weights.shape if attention_weights is not None else None}")
         
     except Exception as e:
-        print(f"❌ Playback action selection error: {e}")
+        print(f"ERROR: Playback action selection error: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -91,7 +91,7 @@ def test_device_compatibility_fix():
             max_attempts=2
         )
         
-        print(f"✓ Training action selection successful!")
+        print(f"OK Training action selection successful!")
         print(f"  Selected action: {action}")
         print(f"  Log probability: {log_prob}")
         print(f"  Attention weights shape: {attention_weights.shape if attention_weights is not None else None}")
@@ -109,18 +109,18 @@ def test_device_compatibility_fix():
                     sample_action=False,
                     max_attempts=2
                 )
-                print(f"  Selection {i+1}: action={action}, log_prob={log_prob:.4f} ✓")
+                print(f"  Selection {i+1}: action={action}, log_prob={log_prob:.4f} OK")
             except Exception as e:
                 print(f"  Selection {i+1}: ERROR - {e}")
                 import traceback
                 traceback.print_exc()
                 return False
         
-        print("\n✅ All device compatibility tests passed!")
+        print("\nOK: All device compatibility tests passed!")
         return True
         
     except Exception as e:
-        print(f"❌ Training action selection error: {e}")
+        print(f"ERROR: Training action selection error: {e}")
         print(f"Error type: {type(e)}")
         
         # Show more detailed error information

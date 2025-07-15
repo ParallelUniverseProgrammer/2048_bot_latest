@@ -31,7 +31,6 @@ class CheckpointPlayback:
         self.is_paused = False
         self.game_history = []
         self.current_step = 0
-        self.playback_speed = 1.0  # seconds between moves
         
         # Pause/resume state
         self.current_game_result = None
@@ -53,10 +52,6 @@ class CheckpointPlayback:
             'target_fps': 10,  # Target 10 updates per second max
             'adaptive_skip': 1  # Skip every N steps
         }
-        
-        # Speed change tracking for responsive sleep
-        self._speed_change_time = time.time()
-        self._last_speed = self.playback_speed
         
         # Health monitoring
         self.last_heartbeat = time.time()
@@ -105,32 +100,7 @@ class CheckpointPlayback:
         """Update heartbeat timestamp"""
         self.last_heartbeat = time.time()
     
-    async def _responsive_sleep(self, target_duration: float):
-        """Sleep with ability to respond to speed changes"""
-        if target_duration <= 0:
-            return
-            
-        start_time = time.time()
-        speed_change_time = self._speed_change_time
-        
-        while time.time() - start_time < target_duration:
-            # Check if speed changed during sleep
-            if self._speed_change_time > speed_change_time:
-                # Speed changed, recalculate remaining time
-                elapsed = time.time() - start_time
-                remaining = target_duration - elapsed
-                
-                # Recalculate based on new speed
-                new_target = remaining * (self._last_speed / self.playback_speed)
-                if new_target <= 0:
-                    break
-                    
-                # Continue with shorter sleep
-                await asyncio.sleep(min(0.1, new_target))
-                speed_change_time = self._speed_change_time
-            else:
-                # No speed change, sleep normally
-                await asyncio.sleep(min(0.1, target_duration - (time.time() - start_time)))
+
     
     def _is_healthy(self) -> bool:
         """Check if playback system is healthy"""
@@ -194,9 +164,8 @@ class CheckpointPlayback:
         elif connection_count <= 2 and avg_broadcast_time < 0.2:
             self.message_throttle['adaptive_skip'] = max(1, self.message_throttle['adaptive_skip'] - 1)
         
-        # Enable lightweight mode for high-speed playback or many connections
-        self.lightweight_mode = (self.playback_speed > 2.0 or 
-                               connection_count > 4 or 
+        # Enable lightweight mode for many connections or slow performance
+        self.lightweight_mode = (connection_count > 4 or 
                                avg_broadcast_time > 0.4)
     
     def _create_lightweight_message(self, step_data: Dict[str, Any], game_result: Dict[str, Any], 
@@ -470,7 +439,7 @@ class CheckpointPlayback:
             print(f"Full traceback: {traceback.format_exc()}")
             return {"error": f"Game failed: {str(e)}"}
     
-    async def start_live_playback(self, websocket_manager, speed: float = 1.0):
+    async def start_live_playback(self, websocket_manager):
         """Start live playback streaming to websocket with performance optimizations"""
         if self.current_model is None:
             self._log_error("No model loaded for playback", "start_live_playback")
@@ -478,22 +447,17 @@ class CheckpointPlayback:
         
         self.is_playing = True
         self.is_paused = False
-        self.playback_speed = speed
         
         # Reset message throttling settings
         self.message_throttle['last_step_broadcast'] = 0
         self.message_throttle['step_skip_count'] = 0
         self.message_throttle['adaptive_skip'] = 1
         
-        # Adjust initial settings based on speed
-        if speed > 2.0:
-            self.message_throttle['target_fps'] = 5  # Lower FPS for high speed
-            self.lightweight_mode = True
-        else:
-            self.message_throttle['target_fps'] = 10
-            self.lightweight_mode = False
+        # Set default performance settings
+        self.message_throttle['target_fps'] = 10
+        self.lightweight_mode = False
         
-        print(f"Starting live playback for checkpoint {self.current_checkpoint_id} at speed {speed}")
+        print(f"Starting live playback for checkpoint {self.current_checkpoint_id}")
         
         # Send initial status message
         success = await self._safe_broadcast(websocket_manager, {
@@ -601,8 +565,8 @@ class CheckpointPlayback:
                     
                     # Check if we should broadcast this step
                     if not self._should_broadcast_step(step_idx):
-                        # Still need to wait for playback speed
-                        wait_time = max(0.05, 0.5 / self.playback_speed)  # Minimum 50ms wait
+                        # Still need to wait for consistent timing
+                        wait_time = 0.5  # Fixed 500ms wait between steps
                         await asyncio.sleep(wait_time)
                         continue
                     
@@ -657,11 +621,9 @@ class CheckpointPlayback:
                             await asyncio.sleep(2.0)
                             self.consecutive_failures = 0
                     
-                    # Wait based on playback speed (adaptive)
-                    base_wait = 1.0 / self.playback_speed
-                    adaptive_wait = base_wait * (1.0 + self.adaptive_broadcast_interval)
-                    wait_time = max(0.05, min(adaptive_wait, 2.0))  # Clamp between 50ms and 2s
-                    await self._responsive_sleep(wait_time)
+                    # Wait based on fixed timing
+                    wait_time = 0.5  # Fixed 500ms between steps
+                    await asyncio.sleep(wait_time)
                     
                     # Check if this was the last step
                     if step_idx == len(game_result['game_history']) - 1:
@@ -685,11 +647,11 @@ class CheckpointPlayback:
                     self.current_game_result = None
                     self.current_step_index = 0
                     
-                    # Brief pause between games (adaptive)
+                    # Brief pause between games
                     if self.is_playing:
-                        pause_time = max(0.5, 2.0 / self.playback_speed)
+                        pause_time = 2.0  # Fixed 2 second pause between games
                         print(f"Waiting {pause_time:.1f}s before next game...")
-                        await self._responsive_sleep(pause_time)
+                        await asyncio.sleep(pause_time)
                 
         except asyncio.CancelledError:
             print("Playback cancelled")
@@ -777,32 +739,6 @@ class CheckpointPlayback:
         self.current_game_count = 0
         print("Playback stopped by user")
     
-    def set_playback_speed(self, speed: float):
-        """Set playback speed and adjust performance settings"""
-        old_speed = self.playback_speed
-        self.playback_speed = max(0.1, min(5.0, speed))
-        
-        # Track speed change for responsive sleep
-        self._last_speed = old_speed
-        self._speed_change_time = time.time()
-        
-        # Adjust performance settings based on speed
-        if speed > 2.0:
-            self.message_throttle['target_fps'] = 5
-            self.lightweight_mode = True
-        elif speed > 1.0:
-            self.message_throttle['target_fps'] = 8
-            self.lightweight_mode = False
-        else:
-            self.message_throttle['target_fps'] = 10
-            self.lightweight_mode = False
-        
-        # Send speed change notification to frontend
-        print(f"Playback speed changed from {old_speed} to {self.playback_speed}, lightweight_mode={self.lightweight_mode}")
-        
-        # Return the new speed for potential use by the caller
-        return self.playback_speed
-    
     def get_playback_status(self) -> Dict[str, Any]:
         """Get current playback status with performance metrics"""
         return {
@@ -812,7 +748,6 @@ class CheckpointPlayback:
             'model_loaded': self.current_model is not None,
             'current_game': self.current_game_count,
             'current_step': self.current_step_index,
-            'playback_speed': self.playback_speed,
             'is_healthy': self._is_healthy(),
             'performance_metrics': self.performance_metrics,
             'adaptive_settings': {

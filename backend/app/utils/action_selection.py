@@ -46,6 +46,8 @@ def select_action_with_fallback(
         
         # Get policy and value from model
         policy_logits, value = model(state_tensor)
+        # Ensure logits are on the correct device to avoid CUDA/CPU mismatch
+        policy_logits = policy_logits.to(device)
         
         # Mask illegal actions
         action_mask = torch.full((4,), -float('inf'), device=device)
@@ -125,6 +127,8 @@ def select_action_with_fallback_for_playback(
         
         # Get policy and value from model
         policy_logits, value = model(state_tensor)
+        # Ensure logits are on the correct device to avoid CUDA/CPU mismatch
+        policy_logits = policy_logits.to(device)
         
         # Mask illegal actions
         action_mask = torch.full((4,), -float('inf'), device=device)

@@ -220,9 +220,9 @@ async def test_websocket_performance():
     )
     
     if improvements_working:
-        print("✅ Performance improvements are working!")
+        print("OK: Performance improvements are working!")
     else:
-        print("❌ Performance improvements may not be working properly")
+        print("ERROR: Performance improvements may not be working properly")
     
     return improvements_working
 
@@ -257,12 +257,12 @@ async def test_checkpoint_playback_performance():
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(f"{base_url}/checkpoints/{checkpoint_id}/playback/start", 
-                                  json={"speed": 2.0}) as response:
+                                  ) as response:
                 if response.status != 200:
                     print("Failed to start playback")
                     return False
                 
-                print("Started checkpoint playback at 2x speed")
+                print("Started checkpoint playback")
     except Exception as e:
         print(f"Error starting playback: {e}")
         return False
@@ -315,9 +315,9 @@ async def test_checkpoint_playback_performance():
     adaptive_working = total_lightweight > 0 and total_playback_messages > 0
     
     if adaptive_working:
-        print("✅ Adaptive playback performance is working!")
+        print("OK: Adaptive playback performance is working!")
     else:
-        print("❌ Adaptive playback performance may not be working")
+        print("ERROR: Adaptive playback performance may not be working")
     
     return adaptive_working
 
@@ -334,11 +334,11 @@ async def main():
     # Overall result
     print("\n=== Final Results ===")
     if websocket_test_passed and playback_test_passed:
-        print("🎉 All performance tests passed!")
+        print("SUCCESS: All performance tests passed!")
         print("The freezing issue should be resolved.")
         return True
     else:
-        print("⚠️  Some performance tests failed.")
+        print("WARNING:  Some performance tests failed.")
         print("The freezing issue may still occur under load.")
         return False
 

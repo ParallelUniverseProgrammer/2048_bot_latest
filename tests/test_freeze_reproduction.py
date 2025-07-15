@@ -114,7 +114,7 @@ class FreezeReproductionTest:
             'timestamp': time.time()
         }
         self.test_results.append(result)
-        print(f"{'✅' if success else '❌'} {test_name}: {duration:.2f}s")
+        print(f"{'OK:' if success else 'ERROR:'} {test_name}: {duration:.2f}s")
         if error:
             print(f"   Error: {error}")
             
@@ -355,7 +355,7 @@ class FreezeReproductionTest:
     
     async def run_all_tests(self):
         """Run all freeze reproduction tests"""
-        print("🧪 Starting Freeze Reproduction Tests")
+        print("TESTING: Starting Freeze Reproduction Tests")
         print("=" * 50)
         
         await self.test_websocket_broadcast_deadlock()
@@ -365,14 +365,14 @@ class FreezeReproductionTest:
         
         # Summary
         print("\n" + "=" * 50)
-        print("📊 Test Summary:")
+        print("SUMMARY: Test Summary:")
         print("=" * 50)
         
         passed = sum(1 for r in self.test_results if r['success'])
         total = len(self.test_results)
         
         for result in self.test_results:
-            status = "✅ PASS" if result['success'] else "❌ FAIL"
+            status = "OK: PASS" if result['success'] else "ERROR: FAIL"
             print(f"{status} {result['test']} ({result['duration']:.2f}s)")
             if result['error']:
                 print(f"    Error: {result['error']}")
@@ -380,10 +380,10 @@ class FreezeReproductionTest:
         print(f"\nOverall: {passed}/{total} tests passed")
         
         if passed < total:
-            print("\n🔍 Potential freezing issues detected!")
+            print("\nFIND: Potential freezing issues detected!")
             print("Check the failed tests above for specific problems.")
         else:
-            print("\n✅ All tests passed - no obvious freezing issues detected")
+            print("\nOK: All tests passed - no obvious freezing issues detected")
             print("The freezing might be related to specific conditions not covered by these tests.")
 
 async def main():

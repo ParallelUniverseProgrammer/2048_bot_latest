@@ -60,9 +60,6 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
-  // Get training store loading states to prevent conflicts
-  const { loadingStates } = useTrainingStore()
-  
   // UI state
   const [searchTerm, setSearchTerm] = useState('')
   const [filterTag, setFilterTag] = useState<string>('all')
@@ -306,8 +303,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       
               const res = await fetch(`${config.api.baseUrl}/checkpoints/${checkpointId}/playback/start`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ speed: 1.0 })
+        headers: { 'Content-Type': 'application/json' }
       })
       
       if (!res.ok) {
@@ -328,26 +324,15 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   }
 
   // Check if we should show loading state
-  const shouldShowLoading = loading || 
-    loadingStates.isTrainingStarting || 
-    loadingStates.isPlaybackStarting || 
-    loadingStates.isNewGameStarting ||
-    loadingStates.isTrainingStopping ||
-    loadingStates.isTrainingResetting
+  // Only show loading for checkpoint-specific operations, not training operations
+  const shouldShowLoading = loading
 
   if (shouldShowLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="flex items-center space-x-2">
           <RefreshCw className="w-5 h-5 animate-spin text-blue-400" />
-          <span className="text-gray-400">
-            {loadingStates.isTrainingStarting ? 'Starting training...' :
-             loadingStates.isPlaybackStarting ? 'Starting playback...' :
-             loadingStates.isNewGameStarting ? 'Starting new game...' :
-             loadingStates.isTrainingStopping ? 'Stopping training...' :
-             loadingStates.isTrainingResetting ? 'Resetting training...' :
-             'Loading checkpoints...'}
-          </span>
+          <span className="text-gray-400">Loading checkpoints...</span>
         </div>
       </div>
     )
