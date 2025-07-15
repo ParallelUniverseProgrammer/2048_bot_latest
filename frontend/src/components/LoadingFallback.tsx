@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Loader2, AlertTriangle } from 'lucide-react'
+import { Loader2, AlertTriangle, WifiOff } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
-import { isMobileSafari } from '../utils/mobile-detection'
+import { 
+  isMobileSafari, 
+  getLoadingFallbackTimeout, 
+  getMaxReconnectAttempts, 
+  getConnectionRetryDelay
+} from '../utils/mobile-detection'
 
 interface LoadingFallbackProps {
   children: React.ReactNode
@@ -11,27 +16,56 @@ interface LoadingFallbackProps {
 const LoadingFallback: React.FC<LoadingFallbackProps> = ({ children }) => {
   const [showFallback, setShowFallback] = useState(false)
   const [loadingTimeout, setLoadingTimeout] = useState(false)
+  const [retryAttempt, setRetryAttempt] = useState(0)
+  const [timeRemaining, setTimeRemaining] = useState(0)
   const { isConnected, connectionError } = useTrainingStore()
 
   useEffect(() => {
-    // If we're on mobile Safari and haven't connected within 10 seconds, show fallback
     if (isMobileSafari()) {
-      const timeout = setTimeout(() => {
+      const fallbackTimeout = getLoadingFallbackTimeout()
+      
+      // Set up the main fallback timeout
+      const mainTimeout = setTimeout(() => {
         if (!isConnected) {
           setLoadingTimeout(true)
           setShowFallback(true)
         }
-      }, 10000) // 10 second timeout
+      }, fallbackTimeout)
 
-      return () => clearTimeout(timeout)
+      // Set up retry progress tracking
+      const maxAttempts = getMaxReconnectAttempts()
+      const baseDelay = getConnectionRetryDelay()
+      let currentTime = 0
+      
+      const trackRetries = () => {
+        for (let i = 1; i <= maxAttempts; i++) {
+          const delay = Math.min(baseDelay * Math.pow(2, i - 1), 30000)
+          currentTime += delay
+          
+          setTimeout(() => {
+            if (!isConnected && !loadingTimeout) {
+              setRetryAttempt(i)
+              setTimeRemaining(Math.max(0, (fallbackTimeout - currentTime) / 1000))
+            }
+          }, currentTime)
+        }
+      }
+      
+      trackRetries()
+
+      return () => {
+        clearTimeout(mainTimeout)
+      }
     }
-  }, [isConnected])
+  }, [isConnected, loadingTimeout])
 
   useEffect(() => {
     // If we get connected later, hide the fallback
     if (isConnected && showFallback) {
       setShowFallback(false)
       setLoadingTimeout(false)
+      setRetryAttempt(0)
+      setTimeRemaining(0)
     }
   }, [isConnected, showFallback])
 
@@ -50,7 +84,10 @@ const LoadingFallback: React.FC<LoadingFallbackProps> = ({ children }) => {
           </div>
           
           <p className="text-gray-300 mb-4">
-            Having trouble connecting to the training server from mobile Safari.
+            {loadingTimeout 
+              ? "Could not connect to the training server after multiple attempts." 
+              : "Having trouble connecting to the training server from mobile Safari."
+            }
           </p>
           
           <div className="space-y-2 text-sm text-gray-400 mb-4">
@@ -69,7 +106,12 @@ const LoadingFallback: React.FC<LoadingFallbackProps> = ({ children }) => {
             </button>
             
             <button
-              onClick={() => setShowFallback(false)}
+              onClick={() => {
+                setShowFallback(false)
+                setLoadingTimeout(false)
+                setRetryAttempt(0)
+                setTimeRemaining(0)
+              }}
               className="w-full bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
             >
               Try Again
@@ -91,21 +133,53 @@ const LoadingFallback: React.FC<LoadingFallbackProps> = ({ children }) => {
   return (
     <>
       {children}
-      {/* Show a loading overlay for mobile Safari if taking too long */}
+      {/* Enhanced loading overlay for mobile Safari with retry progress */}
       {isMobileSafari() && !isConnected && !loadingTimeout && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-gray-800 rounded-lg p-6 text-center"
+            className="bg-gray-800 rounded-lg p-6 text-center max-w-sm w-full mx-4"
           >
-            <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-4" />
+            <div className="flex items-center justify-center mb-4">
+              {retryAttempt > 0 ? (
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                >
+                  <WifiOff className="h-8 w-8 text-yellow-400" />
+                </motion.div>
+              ) : (
+                <Loader2 className="h-8 w-8 text-blue-400 animate-spin" />
+              )}
+            </div>
+            
             <h3 className="text-lg font-semibold text-white mb-2">
-              Connecting to Training Server
+              {retryAttempt > 0 ? `Retrying Connection` : 'Connecting to Training Server'}
             </h3>
-            <p className="text-gray-300 text-sm">
-              Setting up connection for mobile Safari...
+            
+            <p className="text-gray-300 text-sm mb-4">
+              {retryAttempt > 0 
+                ? `Attempt ${retryAttempt} of ${getMaxReconnectAttempts()}` 
+                : 'Setting up connection for mobile Safari...'
+              }
             </p>
+            
+            {retryAttempt > 0 && timeRemaining > 0 && (
+              <div className="mb-4">
+                <div className="bg-gray-700 rounded-full h-2 overflow-hidden">
+                  <motion.div
+                    className="bg-blue-500 h-full rounded-full"
+                    initial={{ width: '0%' }}
+                    animate={{ width: `${((getMaxReconnectAttempts() - retryAttempt) / getMaxReconnectAttempts()) * 100}%` }}
+                    transition={{ duration: 0.5 }}
+                  />
+                </div>
+                <p className="text-gray-400 text-xs mt-2">
+                  {Math.round(timeRemaining)}s remaining before fallback
+                </p>
+              </div>
+            )}
           </motion.div>
         </div>
       )}

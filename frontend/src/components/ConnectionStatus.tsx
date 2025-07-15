@@ -1,65 +1,61 @@
 import React from 'react'
 import { motion } from 'framer-motion'
-import { Wifi, WifiOff, AlertCircle } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 
 const ConnectionStatus: React.FC = () => {
   const { isConnected, connectionError } = useTrainingStore()
+  
+  // Check if we're in polling fallback mode
+  const isPollingFallback = connectionError?.includes('polling fallback')
+  const isOffline = connectionError?.includes('offline')
+  const isNetworkPoor = connectionError?.includes('Poor network')
 
-  if (isConnected) {
-    return (
-      <motion.div
-        className="flex items-center space-x-1 text-xs text-green-400/80"
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.3 }}
-      >
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-        >
-          <Wifi className="w-3 h-3" />
-        </motion.div>
-        <span className="hidden md:inline">Connected</span>
-      </motion.div>
-    )
-  }
+  // Determine status and styling
+  let status = 'Connecting...'
+  let bgColor = 'bg-gray-500'
+  let textColor = 'text-gray-300'
+  let glowColor = 'shadow-gray-500/30'
 
-  if (connectionError) {
-    return (
-      <motion.div
-        className="flex items-center space-x-1 text-xs text-red-400/80"
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.3 }}
-      >
-        <motion.div
-          animate={{ scale: [1, 1.2, 1] }}
-          transition={{ duration: 2, repeat: Infinity }}
-        >
-          <AlertCircle className="w-3 h-3" />
-        </motion.div>
-        <span className="hidden md:inline">
-          {connectionError.length > 15 ? 'Error' : connectionError}
-        </span>
-      </motion.div>
-    )
+  if (isConnected && !isPollingFallback) {
+    status = 'Connected'
+    bgColor = 'bg-green-600'
+    textColor = 'text-white'
+    glowColor = 'shadow-green-500/40'
+  } else if (isConnected && isPollingFallback) {
+    status = 'Polling'
+    bgColor = 'bg-yellow-600'
+    textColor = 'text-white'
+    glowColor = 'shadow-yellow-500/40'
+  } else if (isOffline) {
+    status = 'Offline'
+    bgColor = 'bg-red-600'
+    textColor = 'text-white'
+    glowColor = 'shadow-red-500/40'
+  } else if (isNetworkPoor) {
+    status = 'Poor Network'
+    bgColor = 'bg-orange-600'
+    textColor = 'text-white'
+    glowColor = 'shadow-orange-500/40'
+  } else if (connectionError) {
+    status = 'Error'
+    bgColor = 'bg-red-600'
+    textColor = 'text-white'
+    glowColor = 'shadow-red-500/40'
   }
 
   return (
     <motion.div
-      className="flex items-center space-x-1 text-xs text-gray-400/60"
-      initial={{ opacity: 0, scale: 0.8 }}
+      className={`
+        px-3 py-1 rounded-md text-xs font-medium
+        ${bgColor} ${textColor} ${glowColor}
+        shadow-lg transition-all duration-300
+      `}
+      initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.2 }}
+      whileHover={{ scale: 1.05 }}
     >
-      <motion.div
-        animate={{ opacity: [0.3, 1, 0.3] }}
-        transition={{ duration: 2, repeat: Infinity }}
-      >
-        <WifiOff className="w-3 h-3" />
-      </motion.div>
-      <span className="hidden md:inline">Connecting...</span>
+      {status}
     </motion.div>
   )
 }

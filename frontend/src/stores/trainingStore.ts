@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import config from '../utils/config'
 
 export interface TrainingData {
@@ -57,6 +58,9 @@ export interface LoadingStates {
   isTrainingStopping: boolean
   isTrainingResetting: boolean
   loadingMessage: string | null
+  // Add timeout tracking
+  playbackStartTimeout: number | null
+  newGameStartTimeout: number | null
 }
 
 export interface TrainingState {
@@ -106,298 +110,415 @@ export interface TrainingState {
   resetTraining: () => void
 }
 
-export const useTrainingStore = create<TrainingState>((set, get) => ({
-  // Initial state
-  isConnected: false,
-  connectionError: null,
-  isTraining: false,
-  isPaused: false,
-  currentEpisode: 0,
-  totalEpisodes: 10000,
-  modelSize: 'medium',
-  trainingData: null,
-  lossHistory: {episodes: [], values: []},
-  scoreHistory: {episodes: [], values: []},
-  
-  // Checkpoint playback data
-  checkpointPlaybackData: null,
-  isPlayingCheckpoint: false,
-  
-  // Loading states
-  loadingStates: {
-    isTrainingStarting: false,
-    isPlaybackStarting: false,
-    isNewGameStarting: false,
-    isTrainingStopping: false,
-    isTrainingResetting: false,
-    loadingMessage: null,
-  },
-  
-  // Persisted values
-  lastPolicyLoss: null,
-  lastValueLoss: null,
-  
-  // Actions
-  setConnected: (connected) => set({ isConnected: connected }),
-  
-  setConnectionError: (error) => set({ connectionError: error }),
-  
-  setTrainingStatus: (training, paused = false) => set({ 
-    isTraining: training, 
-    isPaused: paused 
-  }),
-  
-  setEpisode: (episode) => set({ currentEpisode: episode }),
-  
-  updateTrainingData: (data) => {
-    const state = get()
-    set({
-      trainingData: data,
-      currentEpisode: data.episode,
-      lossHistory: data.loss_history || state.lossHistory,
-      scoreHistory: data.score_history || state.scoreHistory,
-      // Persist policy and value loss values when they're not null
-      lastPolicyLoss: data.policy_loss !== null ? data.policy_loss : state.lastPolicyLoss,
-      lastValueLoss: data.value_loss !== null ? data.value_loss : state.lastValueLoss,
-      // Clear training start loading state when first data arrives
+export const useTrainingStore = create<TrainingState>()(
+  persist(
+    (set, get) => ({
+      // Initial state
+      isConnected: false,
+      connectionError: null,
+      isTraining: false,
+      isPaused: false,
+      currentEpisode: 0,
+      totalEpisodes: 10000,
+      modelSize: 'medium',
+      trainingData: null,
+      lossHistory: {episodes: [], values: []},
+      scoreHistory: {episodes: [], values: []},
+      
+      // Checkpoint playback data
+      checkpointPlaybackData: null,
+      isPlayingCheckpoint: false,
+      
+      // Loading states
       loadingStates: {
-        ...state.loadingStates,
         isTrainingStarting: false,
-        loadingMessage: null
-      }
-    })
-  },
-  
-  updateCheckpointPlaybackData: (data) => {
-    const state = get()
-    set({
-      checkpointPlaybackData: data,
-      isPlayingCheckpoint: true,
-      // Clear playback loading state when first data arrives
-      loadingStates: {
-        ...state.loadingStates,
         isPlaybackStarting: false,
         isNewGameStarting: false,
-        loadingMessage: null
-      }
-    })
-  },
-  
-  setPlayingCheckpoint: (playing) => {
-    set({ isPlayingCheckpoint: playing })
-  },
-  
-  setModelSize: (size) => {
-    set({ modelSize: size })
-  },
-
-  setLoadingState: (key, value) => {
-    const currentStates = get().loadingStates
-    set({
-      loadingStates: {
-        ...currentStates,
-        [key]: value
-      }
-    })
-  },
-  
-  startTraining: async () => {
-    // Set loading state for training start
-    set(prev => ({ 
-      loadingStates: { 
-        ...prev.loadingStates, 
-        isTrainingStarting: true, 
-        loadingMessage: 'Initializing model and training environment...' 
-      } 
-    }))
-    
-    // Optimistic update for immediate UI feedback
-    set({ isTraining: true, isPaused: false })
-    
-    try {
-      const response = await fetch(`${config.api.baseUrl}${config.api.endpoints.training.start}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          model_size: get().modelSize 
-        })
-      })
+        isTrainingStopping: false,
+        isTrainingResetting: false,
+        loadingMessage: null,
+        playbackStartTimeout: null,
+        newGameStartTimeout: null,
+      },
       
-      if (!response.ok) {
-        // Revert on error
-        set({ 
-          isTraining: false, 
+      // Persisted values
+      lastPolicyLoss: null,
+      lastValueLoss: null,
+      
+      // Actions
+      setConnected: (connected) => set({ isConnected: connected }),
+      
+      setConnectionError: (error) => set({ connectionError: error }),
+      
+      setTrainingStatus: (training, paused = false) => set({ 
+        isTraining: training, 
+        isPaused: paused 
+      }),
+      
+      setEpisode: (episode) => set({ currentEpisode: episode }),
+      
+      updateTrainingData: (data) => {
+        const state = get()
+        set({
+          trainingData: data,
+          currentEpisode: data.episode,
+          lossHistory: data.loss_history || state.lossHistory,
+          scoreHistory: data.score_history || state.scoreHistory,
+          // Persist policy and value loss values when they're not null
+          lastPolicyLoss: data.policy_loss !== null ? data.policy_loss : state.lastPolicyLoss,
+          lastValueLoss: data.value_loss !== null ? data.value_loss : state.lastValueLoss,
+          // Clear training start loading state when first data arrives
+          loadingStates: {
+            ...state.loadingStates,
+            isTrainingStarting: false,
+            loadingMessage: null
+          }
+        })
+      },
+      
+      updateCheckpointPlaybackData: (data) => {
+        const state = get()
+        
+        // Clear any existing timeouts
+        if (state.loadingStates.playbackStartTimeout) {
+          clearTimeout(state.loadingStates.playbackStartTimeout)
+        }
+        if (state.loadingStates.newGameStartTimeout) {
+          clearTimeout(state.loadingStates.newGameStartTimeout)
+        }
+        
+        set({
+          checkpointPlaybackData: data,
+          isPlayingCheckpoint: true,
+          // Clear playback loading state when first data arrives
+          loadingStates: {
+            ...state.loadingStates,
+            isPlaybackStarting: false,
+            isNewGameStarting: false,
+            loadingMessage: null,
+            playbackStartTimeout: null,
+            newGameStartTimeout: null,
+          }
+        })
+      },
+      
+      setPlayingCheckpoint: (playing) => {
+        const state = get()
+        
+        // If stopping playback, clear loading states and timeouts
+        if (!playing) {
+          if (state.loadingStates.playbackStartTimeout) {
+            clearTimeout(state.loadingStates.playbackStartTimeout)
+          }
+          if (state.loadingStates.newGameStartTimeout) {
+            clearTimeout(state.loadingStates.newGameStartTimeout)
+          }
+          
+          set({ 
+            isPlayingCheckpoint: playing,
+            loadingStates: {
+              ...state.loadingStates,
+              isPlaybackStarting: false,
+              isNewGameStarting: false,
+              loadingMessage: null,
+              playbackStartTimeout: null,
+              newGameStartTimeout: null,
+            }
+          })
+        } else {
+          set({ isPlayingCheckpoint: playing })
+        }
+      },
+      
+      setModelSize: (size) => {
+        set({ modelSize: size })
+      },
+
+      setLoadingState: (key, value) => {
+        const currentStates = get().loadingStates
+        const newStates = {
+          ...currentStates,
+          [key]: value
+        }
+        
+        // Add timeout for playback starting
+        if (key === 'isPlaybackStarting' && value === true) {
+          // Clear any existing timeout
+          if (currentStates.playbackStartTimeout) {
+            clearTimeout(currentStates.playbackStartTimeout)
+          }
+          
+          // Set timeout to clear loading state after 30 seconds
+          const timeout = setTimeout(() => {
+            console.warn('Playback start timeout - clearing loading state')
+            get().setLoadingState('isPlaybackStarting', false)
+            get().setLoadingState('loadingMessage', null)
+            get().setLoadingState('playbackStartTimeout', null)
+          }, 30000)
+          
+          newStates.playbackStartTimeout = timeout
+        }
+        
+        // Add timeout for new game starting
+        if (key === 'isNewGameStarting' && value === true) {
+          // Clear any existing timeout
+          if (currentStates.newGameStartTimeout) {
+            clearTimeout(currentStates.newGameStartTimeout)
+          }
+          
+          // Set timeout to clear loading state after 15 seconds
+          const timeout = setTimeout(() => {
+            console.warn('New game start timeout - clearing loading state')
+            get().setLoadingState('isNewGameStarting', false)
+            get().setLoadingState('loadingMessage', null)
+            get().setLoadingState('newGameStartTimeout', null)
+          }, 15000)
+          
+          newStates.newGameStartTimeout = timeout
+        }
+        
+        // Clear timeout if manually setting to false
+        if (key === 'isPlaybackStarting' && value === false && currentStates.playbackStartTimeout) {
+          clearTimeout(currentStates.playbackStartTimeout)
+          newStates.playbackStartTimeout = null
+        }
+        
+        if (key === 'isNewGameStarting' && value === false && currentStates.newGameStartTimeout) {
+          clearTimeout(currentStates.newGameStartTimeout)
+          newStates.newGameStartTimeout = null
+        }
+        
+        set({
+          loadingStates: newStates
+        })
+      },
+      
+      startTraining: async () => {
+        // Set loading state for training start
+        set(prev => ({ 
           loadingStates: { 
-            ...get().loadingStates, 
-            isTrainingStarting: false, 
-            loadingMessage: null 
+            ...prev.loadingStates, 
+            isTrainingStarting: true, 
+            loadingMessage: 'Initializing model and training environment...' 
           } 
-        })
-        throw new Error('Failed to start training')
-      }
-      
-      // Keep loading state active until first training data arrives
-      
-    } catch (error) {
-      console.error('Error starting training:', error)
-      set({ 
-        connectionError: error instanceof Error ? error.message : 'Failed to start training',
-        isTraining: false, // Revert the optimistic update
-        loadingStates: { 
-          ...get().loadingStates, 
-          isTrainingStarting: false, 
-          loadingMessage: null 
+        }))
+        
+        // Optimistic update for immediate UI feedback
+        set({ isTraining: true, isPaused: false })
+        
+        try {
+          const response = await fetch(`${config.api.baseUrl}${config.api.endpoints.training.start}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              model_size: get().modelSize 
+            })
+          })
+          
+          if (!response.ok) {
+            // Revert on error
+            set({ 
+              isTraining: false, 
+              loadingStates: { 
+                ...get().loadingStates, 
+                isTrainingStarting: false, 
+                loadingMessage: null 
+              } 
+            })
+            throw new Error('Failed to start training')
+          }
+          
+          // Keep loading state active until first training data arrives
+          
+        } catch (error) {
+          console.error('Error starting training:', error)
+          set({ 
+            connectionError: error instanceof Error ? error.message : 'Failed to start training',
+            isTraining: false, // Revert the optimistic update
+            loadingStates: { 
+              ...get().loadingStates, 
+              isTrainingStarting: false, 
+              loadingMessage: null 
+            }
+          })
         }
-      })
-    }
-  },
-  
-  pauseTraining: async () => {
-    // Optimistic update for immediate UI feedback
-    set({ isTraining: true, isPaused: true })
-    
-    try {
-      const response = await fetch(`${config.api.baseUrl}${config.api.endpoints.training.pause}`, {
-        method: 'POST',
-      })
+      },
       
-      if (!response.ok) {
-        // Revert on error
-        set({ isPaused: false })
-        throw new Error('Failed to pause training')
-      }
-    } catch (error) {
-      console.error('Error pausing training:', error)
-      set({ 
-        connectionError: error instanceof Error ? error.message : 'Failed to pause training',
-        isPaused: false // Revert the optimistic update
-      })
-    }
-  },
+      pauseTraining: async () => {
+        // Optimistic update for immediate UI feedback
+        set({ isTraining: true, isPaused: true })
+        
+        try {
+          const response = await fetch(`${config.api.baseUrl}${config.api.endpoints.training.pause}`, {
+            method: 'POST',
+          })
+          
+          if (!response.ok) {
+            // Revert on error
+            set({ isPaused: false })
+            throw new Error('Failed to pause training')
+          }
+        } catch (error) {
+          console.error('Error pausing training:', error)
+          set({ 
+            connectionError: error instanceof Error ? error.message : 'Failed to pause training',
+            isPaused: false // Revert the optimistic update
+          })
+        }
+      },
 
-  resumeTraining: async () => {
-    // Optimistic update for immediate UI feedback
-    set({ isTraining: true, isPaused: false })
-    
-    try {
-      const response = await fetch(`${config.api.baseUrl}${config.api.endpoints.training.resume}`, {
-        method: 'POST',
-      })
-      
-      if (!response.ok) {
-        // Revert on error
-        set({ isPaused: true })
-        throw new Error('Failed to resume training')
-      }
-    } catch (error) {
-      console.error('Error resuming training:', error)
-      set({ 
-        connectionError: error instanceof Error ? error.message : 'Failed to resume training',
-        isPaused: true // Revert the optimistic update
-      })
-    }
-  },
-  
-  stopTraining: async () => {
-    const previousState = { isTraining: true, isPaused: false }
-    
-    // Set stopping state for UI feedback
-    set(prev => ({ 
-      loadingStates: { 
-        ...prev.loadingStates, 
-        isTrainingStopping: true 
-      } 
-    }))
-    
-    // Optimistic update for immediate UI feedback
-    set({ isTraining: false, isPaused: false })
-    
-    try {
-      const response = await fetch(`${config.api.baseUrl}${config.api.endpoints.training.stop}`, {
-        method: 'POST',
-      })
-      
-      if (!response.ok) {
-        // Revert on error
-        set(previousState)
-        throw new Error('Failed to stop training')
-      }
-    } catch (error) {
-      console.error('Error stopping training:', error)
-      set({ 
-        connectionError: error instanceof Error ? error.message : 'Failed to stop training',
-        ...previousState // Revert the optimistic update
-      })
-    } finally {
-      // Clear stopping state
-      set(prev => ({ 
-        loadingStates: { 
-          ...prev.loadingStates, 
-          isTrainingStopping: false 
-        } 
-      }))
-    }
-  },
-  
-  resetTraining: async () => {
-    try {
-      // Set loading state
-      set(state => ({
-        loadingStates: {
-          ...state.loadingStates,
-          isTrainingResetting: true,
-          loadingMessage: 'Resetting to fresh model...'
+      resumeTraining: async () => {
+        // Optimistic update for immediate UI feedback
+        set({ isTraining: true, isPaused: false })
+        
+        try {
+          const response = await fetch(`${config.api.baseUrl}${config.api.endpoints.training.resume}`, {
+            method: 'POST',
+          })
+          
+          if (!response.ok) {
+            // Revert on error
+            set({ isPaused: true })
+            throw new Error('Failed to resume training')
+          }
+        } catch (error) {
+          console.error('Error resuming training:', error)
+          set({ 
+            connectionError: error instanceof Error ? error.message : 'Failed to resume training',
+            isPaused: true // Revert the optimistic update
+          })
         }
-      }))
+      },
       
-      const response = await fetch(`${config.api.baseUrl}${config.api.endpoints.training.reset}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const result = await response.json()
-      console.log('Training reset:', result.message)
-      
-      // Reset store state
-      set({
-        isTraining: false,
-        isPaused: false,
-        currentEpisode: 0,
-        trainingData: null,
-        lossHistory: {episodes: [], values: []},
-        scoreHistory: {episodes: [], values: []},
-        lastPolicyLoss: null,
-        lastValueLoss: null,
-        checkpointPlaybackData: null,
-        isPlayingCheckpoint: false,
-        loadingStates: {
-          isTrainingStarting: false,
-          isPlaybackStarting: false,
-          isNewGameStarting: false,
-          isTrainingStopping: false,
-          isTrainingResetting: false,
-          loadingMessage: null,
-        },
-      })
-      
-      return result
-    } catch (error) {
-      console.error('Failed to reset training:', error)
-      // Clear loading state on error
-      set(state => ({
-        loadingStates: {
-          ...state.loadingStates,
-          isTrainingResetting: false,
-          loadingMessage: null
+      stopTraining: async () => {
+        const previousState = { isTraining: true, isPaused: false }
+        
+        // Set stopping state for UI feedback
+        set(prev => ({ 
+          loadingStates: { 
+            ...prev.loadingStates, 
+            isTrainingStopping: true 
+          } 
+        }))
+        
+        // Optimistic update for immediate UI feedback
+        set({ isTraining: false, isPaused: false })
+        
+        try {
+          const response = await fetch(`${config.api.baseUrl}${config.api.endpoints.training.stop}`, {
+            method: 'POST',
+          })
+          
+          if (!response.ok) {
+            // Revert on error
+            set(previousState)
+            throw new Error('Failed to stop training')
+          }
+        } catch (error) {
+          console.error('Error stopping training:', error)
+          set({ 
+            connectionError: error instanceof Error ? error.message : 'Failed to stop training',
+            ...previousState // Revert the optimistic update
+          })
+        } finally {
+          // Clear stopping state
+          set(prev => ({ 
+            loadingStates: { 
+              ...prev.loadingStates, 
+              isTrainingStopping: false 
+            } 
+          }))
         }
-      }))
-      throw error
+      },
+      
+      resetTraining: async () => {
+        try {
+          // Set loading state
+          set(state => ({
+            loadingStates: {
+              ...state.loadingStates,
+              isTrainingResetting: true,
+              loadingMessage: 'Resetting to fresh model...'
+            }
+          }))
+          
+          const response = await fetch(`${config.api.baseUrl}${config.api.endpoints.training.reset}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          })
+          
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`)
+          }
+          
+          const result = await response.json()
+          console.log('Training reset:', result.message)
+          
+          // Reset store state
+          set({
+            isTraining: false,
+            isPaused: false,
+            currentEpisode: 0,
+            trainingData: null,
+            lossHistory: {episodes: [], values: []},
+            scoreHistory: {episodes: [], values: []},
+            lastPolicyLoss: null,
+            lastValueLoss: null,
+            checkpointPlaybackData: null,
+            isPlayingCheckpoint: false,
+            loadingStates: {
+              isTrainingStarting: false,
+              isPlaybackStarting: false,
+              isNewGameStarting: false,
+              isTrainingStopping: false,
+              isTrainingResetting: false,
+              loadingMessage: null,
+              playbackStartTimeout: null,
+              newGameStartTimeout: null,
+            },
+          })
+          
+          return result
+        } catch (error) {
+          console.error('Failed to reset training:', error)
+          // Clear loading state on error
+          set(state => ({
+            loadingStates: {
+              ...state.loadingStates,
+              isTrainingResetting: false,
+              loadingMessage: null
+            }
+          }))
+          throw error
+        }
+      },
+    }),
+    {
+      name: 'training-store',
+      partialize: (state) => ({
+        // Persist only important state across page refreshes
+        isTraining: state.isTraining,
+        isPaused: state.isPaused,
+        currentEpisode: state.currentEpisode,
+        totalEpisodes: state.totalEpisodes,
+        modelSize: state.modelSize,
+        isPlayingCheckpoint: state.isPlayingCheckpoint,
+        lastPolicyLoss: state.lastPolicyLoss,
+        lastValueLoss: state.lastValueLoss,
+        // Persist recent history (last 100 points)
+        lossHistory: {
+          episodes: state.lossHistory.episodes.slice(-100),
+          values: state.lossHistory.values.slice(-100)
+        },
+        scoreHistory: {
+          episodes: state.scoreHistory.episodes.slice(-100),
+          values: state.scoreHistory.values.slice(-100)
+        }
+      }),
+      // Don't persist connection state and loading states as they should be reset on page load
+      skipHydration: false,
     }
-  },
-})) 
+  )
+) 

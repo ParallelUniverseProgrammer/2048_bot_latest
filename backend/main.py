@@ -417,7 +417,7 @@ async def start_checkpoint_playback(checkpoint_id: str, request: dict = None):
         # Get speed from request if provided
         speed = 1.0
         if request:
-            speed = request.get("speed", 1.0)
+            speed = max(0.5, min(request.get("speed", 1.0), 5.0))  # Clamp between 0.5x and 5x
         
         # Load the checkpoint
         success = checkpoint_playback.load_checkpoint(checkpoint_id)
@@ -514,8 +514,7 @@ async def set_playback_speed(request: dict):
     """Set playback speed"""
     try:
         speed = request.get("speed", 1.0)
-        if not isinstance(speed, (int, float)) or speed <= 0:
-            raise HTTPException(status_code=400, detail="Speed must be a positive number")
+        speed = max(0.5, min(speed, 5.0))
         
         checkpoint_playback.set_playback_speed(speed)
         return {
@@ -552,6 +551,54 @@ async def get_playback_status():
             'error': str(e)
         }
 
+@app.get("/checkpoints/playback/current")
+async def get_current_playback_data():
+    """Get current playback step data for polling fallback"""
+    try:
+        status = checkpoint_playback.get_playback_status()
+        
+        if not status['is_playing'] or not status['model_loaded']:
+            return {
+                'has_data': False,
+                'status': status,
+                'error': 'No active playback or model not loaded'
+            }
+        
+        # Get the current step data from the playback system
+        current_data = checkpoint_playback.get_current_step_data()
+        
+        if current_data is None:
+            return {
+                'has_data': False,
+                'status': status,
+                'error': 'No current step data available'
+            }
+        
+        return {
+            'has_data': True,
+            'status': status,
+            'playback_data': {
+                'type': 'checkpoint_playback',
+                'checkpoint_id': status['current_checkpoint'],
+                'step_data': current_data['step_data'],
+                'game_summary': current_data['game_summary'],
+                'timestamp': time.time()
+            }
+        }
+        
+    except Exception as e:
+        print(f"Error getting current playback data: {e}")
+        return {
+            'has_data': False,
+            'status': {
+                'is_playing': False,
+                'is_paused': False,
+                'current_checkpoint': None,
+                'error': str(e)
+            },
+            'error': str(e)
+        }
+
 @app.get("/checkpoints/playback/model")
 async def get_playback_model_info():
     """Get information about the currently loaded playback model"""
@@ -565,34 +612,95 @@ async def get_playback_model_info():
             "model_loaded": False
         }
 
+@app.get("/checkpoints/playback/errors")
+async def get_playback_errors():
+    """Get recent playback error history for debugging"""
+    try:
+        return {
+            "error_history": checkpoint_playback.get_error_history(),
+            "error_count": len(checkpoint_playback.get_error_history()),
+            "current_status": checkpoint_playback.get_playback_status()
+        }
+    except Exception as e:
+        print(f"Error getting playback errors: {e}")
+        return {
+            "error": "Failed to get error history",
+            "details": str(e),
+            "error_history": []
+        }
+
+@app.post("/checkpoints/playback/clear-errors")
+async def clear_playback_errors():
+    """Clear playback error history"""
+    try:
+        checkpoint_playback.clear_error_history()
+        return {
+            "message": "Error history cleared",
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        print(f"Error clearing playback errors: {e}")
+        return {
+            "error": "Failed to clear error history",
+            "details": str(e)
+        }
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket_manager.connect(websocket)
+    # Get user agent from headers for mobile detection
+    user_agent = websocket.headers.get("user-agent", "")
+    
+    await websocket_manager.connect(websocket, user_agent)
+    
+    # Get connection info for adaptive behavior
+    conn_info = websocket_manager.get_connection_info(websocket)
+    adaptive_timeout = conn_info.get_adaptive_timeout() if conn_info else 1.0
+    
     try:
         while True:
             # Keep connection alive and handle any incoming messages
             try:
-                # Use a timeout to prevent hanging on disconnected clients
-                data = await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
-                # Echo back for testing
-                await websocket.send_text(json.dumps({
-                    "type": "echo",
-                    "message": f"Received: {data}",
-                    "timestamp": time.time()
-                }))
-            except asyncio.TimeoutError:
-                # No message received within timeout, send heartbeat
+                # Use adaptive timeout based on device type
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=adaptive_timeout)
+                
+                # Parse the incoming message
                 try:
+                    message = json.loads(data)
+                    
+                    # Handle ping for latency measurement
+                    if message.get('type') == 'ping':
+                        await websocket.send_text(json.dumps({
+                            "type": "pong",
+                            "timestamp": message.get('timestamp'),
+                            "server_time": time.time()
+                        }))
+                        continue
+                    
+                    # Echo back other messages for testing with mobile-aware response
                     await websocket.send_text(json.dumps({
-                        "type": "heartbeat",
-                        "timestamp": time.time()
+                        "type": "echo",
+                        "message": f"Received: {data}",
+                        "timestamp": time.time(),
+                        "mobile_optimized": conn_info.is_mobile if conn_info else False
                     }))
-                except:
-                    # Client disconnected during heartbeat
-                    break
+                    
+                except json.JSONDecodeError:
+                    # Handle plain text messages
+                    await websocket.send_text(json.dumps({
+                        "type": "echo",
+                        "message": f"Received: {data}",
+                        "timestamp": time.time(),
+                        "mobile_optimized": conn_info.is_mobile if conn_info else False
+                    }))
+                
+            except asyncio.TimeoutError:
+                # No message received within timeout - adaptive heartbeat is handled by manager
+                continue
+                
             except WebSocketDisconnect:
                 # Client disconnected normally
                 break
+                
             except Exception as e:
                 print(f"WebSocket message error: {e}")
                 # Continue trying to receive messages
@@ -604,6 +712,12 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"WebSocket error: {e}")
     finally:
         websocket_manager.disconnect(websocket)
+
+# Add endpoint to get connection statistics
+@app.get("/ws/stats")
+async def get_websocket_stats():
+    """Get WebSocket connection statistics"""
+    return websocket_manager.get_connection_stats()
 
 # Remove mock_training_loop in favour of TrainingManager
 

@@ -1,12 +1,12 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Activity, Brain, GamepadIcon, Network, Play, Pause, Cpu, MemoryStick, AlertTriangle, Archive, Loader2, RotateCcw } from 'lucide-react'
+import { Activity, Brain, GamepadIcon, Network, Play, Pause, AlertTriangle, Archive } from 'lucide-react'
 
 import TrainingDashboard from './components/TrainingDashboard'
 import GameBoard from './components/GameBoard'
 import NetworkVisualizer from './components/NetworkVisualizer'
 import ConnectionStatus from './components/ConnectionStatus'
-import TrainingMetrics from './components/TrainingMetrics'
+
 import CheckpointManager from './components/CheckpointManager'
 import { useTrainingStore } from './stores/trainingStore'
 import { useWebSocket } from './utils/websocket'
@@ -161,37 +161,39 @@ const App: React.FC = () => {
       )}
       {/* Header */}
       <motion.header 
-        className={`card-glass sticky top-0 z-40 ${isMobile ? 'mobile-header' : 'px-4 py-4 sm:px-6 lg:px-8'}`}
+        className={`card-glass sticky top-0 z-40 ${isMobile ? 'px-3 py-2' : 'px-4 py-4 sm:px-6 lg:px-8'}`}
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6 }}
       >
         <div className="flex items-center justify-between">
-          {/* Logo and Title */}
-          <div className="flex items-center space-x-4">
+          {/* Logo and Title - Simplified */}
+          <div className="flex items-center space-x-3">
             <motion.div
               className={`flex items-center justify-center ${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl`}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
-              <Brain className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-white`} />
+              <Brain className={`${isMobile ? 'w-4 h-4' : 'w-6 h-6'} text-white`} />
             </motion.div>
             <div>
-              <h1 className={`font-bold text-gradient ${isMobile ? 'mobile-header h1' : 'text-lg sm:text-xl'}`}>
-                2048 Transformer
+              <h1 className={`font-bold text-gradient ${isMobile ? 'text-sm' : 'text-lg sm:text-xl'}`}>
+                {isMobile ? '2048 AI' : '2048 Transformer'}
               </h1>
-              <p className={`text-gray-400 ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                Episode {currentEpisode.toLocaleString()}
-              </p>
+              {!isMobile && (
+                <p className="text-xs text-gray-400">
+                  Episode {currentEpisode.toLocaleString()}
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Connection Status */}
-          <ConnectionStatus />
+          {/* Right side - Connection + Main Control */}
+          <div className="flex items-center space-x-3">
+            {/* Connection Status */}
+            <ConnectionStatus />
 
-          {/* Training Controls */}
-          <div className={`flex items-center ${isMobile ? 'space-x-2' : 'space-x-4'}`}>
-            {/* Primary Play/Pause Button */}
+            {/* Single Primary Control Button */}
             <motion.button
               onClick={() => handleTrainingControl(
                 isPaused ? 'resume' : 
@@ -200,7 +202,7 @@ const App: React.FC = () => {
               )}
               className={`
                 relative flex items-center justify-center rounded-xl font-bold transition-all duration-300 
-                ${isMobile ? 'w-12 h-12 text-xs' : 'px-8 py-4 text-lg space-x-3'}
+                ${isMobile ? 'w-10 h-10' : 'px-6 py-3 space-x-2'}
                 ${loadingStates.isTrainingStarting 
                   ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg shadow-blue-500/30' 
                   : isTraining && !isPaused 
@@ -215,115 +217,33 @@ const App: React.FC = () => {
               whileTap={isConnected && !loadingStates.isTrainingStarting ? { scale: 0.95 } : {}}
               disabled={!isConnected || loadingStates.isTrainingStarting}
             >
-              {/* Loading animation for training start */}
-              {loadingStates.isTrainingStarting && (
-                <motion.div
-                  className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-400 to-purple-400 opacity-20"
-                  animate={{
-                    scale: [1, 1.1, 1],
-                    opacity: [0.2, 0.4, 0.2],
-                  }}
-                  transition={{
-                    duration: 2,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
-                />
-              )}
-              
-              {/* Continuous training animation */}
-              {isTraining && !isPaused && !loadingStates.isTrainingStarting && (
-                <motion.div
-                  className="absolute inset-0 rounded-xl bg-gradient-to-r from-orange-400 to-red-400 opacity-20"
-                  animate={{
-                    scale: [1, 1.1, 1],
-                    opacity: [0.2, 0.4, 0.2],
-                  }}
-                  transition={{
-                    duration: 2,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
-                />
-              )}
-              
-              {/* Pause animation */}
-              {isPaused && !loadingStates.isTrainingStarting && (
-                <motion.div
-                  className="absolute inset-0 rounded-xl bg-gradient-to-r from-yellow-400 to-orange-400 opacity-20"
-                  animate={{
-                    scale: [1, 1.05, 1],
-                    opacity: [0.2, 0.3, 0.2],
-                  }}
-                  transition={{
-                    duration: 3,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
-                />
-              )}
-              
               {/* Button content */}
-              <div className={`relative z-10 flex items-center ${isMobile ? 'justify-center' : 'space-x-3'}`}>
+              <div className="relative z-10 flex items-center space-x-2">
                 {loadingStates.isTrainingStarting ? (
                   <>
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    {!isMobile && <span>Starting...</span>}
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    {!isMobile && <span className="text-sm">Starting...</span>}
                   </>
                 ) : isPaused ? (
                   <>
-                    <Play className="w-5 h-5" />
-                    {!isMobile && <span>Resume</span>}
+                    <Play className="w-4 h-4" />
+                    {!isMobile && <span className="text-sm">Resume</span>}
                   </>
                 ) : isTraining && !isPaused ? (
                   <>
-                    <Pause className="w-5 h-5" />
-                    {!isMobile && <span>Pause</span>}
+                    <Pause className="w-4 h-4" />
+                    {!isMobile && <span className="text-sm">Pause</span>}
                   </>
                 ) : (
                   <>
-                    <Play className="w-5 h-5" />
-                    {!isMobile && <span>Start Training</span>}
+                    <Play className="w-4 h-4" />
+                    {!isMobile && <span className="text-sm">Start</span>}
                   </>
                 )}
               </div>
-              
-              {/* Training indicator */}
-              {isTraining && !isPaused && (
-                <motion.div
-                  className="w-2 h-2 bg-white rounded-full"
-                  animate={{
-                    scale: [1, 1.5, 1],
-                    opacity: [1, 0.5, 1],
-                  }}
-                  transition={{
-                    duration: 1,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
-                />
-              )}
-              
-              {/* Pause indicator */}
-              {isPaused && (
-                <motion.div
-                  className="flex space-x-1"
-                  animate={{
-                    opacity: [0.5, 1, 0.5],
-                  }}
-                  transition={{
-                    duration: 1,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
-                >
-                  <div className="w-1 h-4 bg-white rounded-full" />
-                  <div className="w-1 h-4 bg-white rounded-full" />
-                </motion.div>
-              )}
             </motion.button>
 
-            {/* Emergency Stop Button */}
+            {/* Secondary Actions Menu (Stop/Reset) - Only show when needed */}
             <AnimatePresence>
               {(isTraining || isPaused) && (
                 <motion.button
@@ -331,10 +251,10 @@ const App: React.FC = () => {
                   disabled={loadingStates.isTrainingStopping}
                   className={`
                     relative flex items-center justify-center rounded-xl font-bold transition-all duration-200
-                    ${isMobile ? 'w-10 h-10 text-xs' : 'px-6 py-4 text-lg space-x-2'}
+                    ${isMobile ? 'w-8 h-8' : 'px-4 py-3 space-x-1'}
                     bg-gradient-to-r from-red-600 to-red-800 text-white 
-                    shadow-lg shadow-red-600/40 border-2 border-red-400
-                    hover:from-red-700 hover:to-red-900 hover:shadow-red-600/60
+                    shadow-lg shadow-red-600/40
+                    hover:from-red-700 hover:to-red-900
                     active:scale-95
                     ${loadingStates.isTrainingStopping ? 'opacity-75 cursor-not-allowed' : ''}
                   `}
@@ -344,185 +264,27 @@ const App: React.FC = () => {
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  {/* Warning animation */}
-                  <motion.div
-                    className="absolute inset-0 rounded-xl bg-red-400 opacity-20"
-                    animate={{
-                      scale: [1, 1.1, 1],
-                      opacity: [0.2, 0.5, 0.2],
-                    }}
-                    transition={{
-                      duration: 2,
-                      repeat: Infinity,
-                      ease: "easeInOut"
-                    }}
-                  />
-                  
-                  <motion.div
-                    animate={{
-                      rotate: [0, 5, -5, 0],
-                    }}
-                    transition={{
-                      duration: 0.5,
-                      repeat: Infinity,
-                      ease: "easeInOut"
-                    }}
-                  >
-                    <AlertTriangle className="w-5 h-5" />
-                  </motion.div>
-                  
-                  {!isMobile && (
-                    <span className="relative z-10">
-                      {loadingStates.isTrainingStopping ? 'SHUTTING DOWN' : 'STOP'}
-                    </span>
-                  )}
-                  
-                  {loadingStates.isTrainingStopping && !isMobile && (
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                    >
-                      <Loader2 className="w-4 h-4" />
-                    </motion.div>
-                  )}
-                  
-                  {/* Danger indicators - hide on mobile */}
-                  {!isMobile && (
-                    <motion.div
-                      className="w-2 h-2 bg-red-200 rounded-full"
-                      animate={{
-                        scale: [1, 1.5, 1],
-                        opacity: [0.7, 1, 0.7],
-                      }}
-                      transition={{
-                        duration: 1,
-                        repeat: Infinity,
-                        ease: "easeInOut"
-                      }}
-                    />
-                  )}
-                </motion.button>
-              )}
-            </AnimatePresence>
-
-            {/* Reset Button */}
-            <AnimatePresence>
-              {!isTraining && !isPaused && (
-                <motion.button
-                  onClick={() => handleTrainingControl('reset')}
-                  disabled={loadingStates.isTrainingResetting}
-                  className={`
-                    relative flex items-center justify-center rounded-xl font-bold transition-all duration-200
-                    ${isMobile ? 'w-10 h-10 text-xs' : 'px-6 py-4 text-lg space-x-2'}
-                    bg-gradient-to-r from-gray-600 to-gray-800 text-white 
-                    shadow-lg shadow-gray-600/40 border-2 border-gray-400
-                    hover:from-gray-700 hover:to-gray-900 hover:shadow-gray-600/60
-                    active:scale-95
-                    ${loadingStates.isTrainingResetting ? 'opacity-75 cursor-not-allowed' : ''}
-                  `}
-                  initial={{ opacity: 0, scale: 0.8, x: -20 }}
-                  animate={{ opacity: 1, scale: 1, x: 0 }}
-                  exit={{ opacity: 0, scale: 0.8, x: -20 }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  {/* Reset animation */}
-                  <motion.div
-                    className="absolute inset-0 rounded-xl bg-gray-400 opacity-20"
-                    animate={{
-                      scale: [1, 1.1, 1],
-                      opacity: [0.2, 0.5, 0.2],
-                    }}
-                    transition={{
-                      duration: 2,
-                      repeat: Infinity,
-                      ease: "easeInOut"
-                    }}
-                  />
-                  
-                  <motion.div
-                    animate={{
-                      rotate: loadingStates.isTrainingResetting ? 360 : 0,
-                    }}
-                    transition={{
-                      duration: loadingStates.isTrainingResetting ? 1 : 0.5,
-                      repeat: loadingStates.isTrainingResetting ? Infinity : 0,
-                      ease: "linear"
-                    }}
-                  >
-                    <RotateCcw className="w-5 h-5" />
-                  </motion.div>
-                  
-                  {!isMobile && (
-                    <span className="relative z-10">
-                      {loadingStates.isTrainingResetting ? 'RESETTING' : 'RESET'}
-                    </span>
-                  )}
-                  
-                  {loadingStates.isTrainingResetting && !isMobile && (
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                    >
-                      <Loader2 className="w-4 h-4" />
-                    </motion.div>
-                  )}
-                  
-                  {/* Neutral indicators - hide on mobile */}
-                  {!isMobile && (
-                    <motion.div
-                      className="w-2 h-2 bg-gray-200 rounded-full"
-                      animate={{
-                        scale: [1, 1.5, 1],
-                        opacity: [0.7, 1, 0.7],
-                      }}
-                      transition={{
-                        duration: 1,
-                        repeat: Infinity,
-                        ease: "easeInOut"
-                      }}
-                    />
-                  )}
+                  <AlertTriangle className="w-4 h-4" />
+                  {!isMobile && <span className="text-xs">Stop</span>}
                 </motion.button>
               )}
             </AnimatePresence>
           </div>
         </div>
 
-        {/* System Stats */}
-        {trainingData && (
+        {/* Compact Status Bar - Only show essential info */}
+        {trainingData && !isMobile && (
           <motion.div 
-            className={`mt-4 flex items-center justify-between text-gray-400 ${isMobile ? 'text-xs mobile-hide' : 'text-sm'}`}
+            className="mt-3 flex items-center justify-between text-xs text-gray-400"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
           >
             <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-1">
-                <Cpu className="w-4 h-4" />
-                <span>GPU: {trainingData.gpu_memory?.toFixed(1)}GB</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <MemoryStick className="w-4 h-4" />
-                <span>Params: {trainingData.model_params}M</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <Activity className="w-4 h-4" />
-                <span>Score: {trainingData.score?.toLocaleString()}</span>
-              </div>
+              <span>Episode {currentEpisode.toLocaleString()}</span>
+              <span>Score: {trainingData.score?.toLocaleString()}</span>
+              <span>GPU: {trainingData.gpu_memory?.toFixed(1)}GB</span>
             </div>
-          </motion.div>
-        )}
-
-        {/* Training Metrics */}
-        {trainingData && (
-          <motion.div 
-            className={`mt-4 ${isMobile ? 'mobile-metrics' : ''}`}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-          >
-            <TrainingMetrics />
           </motion.div>
         )}
       </motion.header>

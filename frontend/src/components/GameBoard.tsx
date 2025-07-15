@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Eye, EyeOff, PlayCircle, PauseCircle, StopCircle, Gauge, Loader2 } from 'lucide-react'
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Eye, EyeOff, PlayCircle, PauseCircle, StopCircle, Gauge, Loader2, RefreshCw } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 import config from '../utils/config'
 
@@ -58,10 +58,62 @@ const GameBoard: React.FC = () => {
 
   const stopPlayback = async () => {
     try {
-              const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/stop`, { method: 'POST' })
+      const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/stop`, { method: 'POST' })
       if (!res.ok) throw new Error('Failed to stop playback')
     } catch (err) {
       console.error('Error stopping playback:', err)
+    }
+  }
+
+  const recoverPlayback = async () => {
+    try {
+      console.log('Attempting to recover from stuck playback state...')
+      
+      // Clear all loading states first
+      useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
+      useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
+      useTrainingStore.getState().setLoadingState('loadingMessage', null)
+      
+      // Stop any existing playback
+      await stopPlayback()
+      
+      // Wait a moment for cleanup
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Check if we have a checkpoint to restart
+      if (playbackStatus?.current_checkpoint) {
+        console.log(`Restarting playback for checkpoint: ${playbackStatus.current_checkpoint}`)
+        
+        // Set loading state for recovery
+        useTrainingStore.getState().setLoadingState('isPlaybackStarting', true)
+        useTrainingStore.getState().setLoadingState('loadingMessage', 'Recovering playback...')
+        
+        // Start playback again
+        const res = await fetch(`${config.api.baseUrl}/checkpoints/${playbackStatus.current_checkpoint}/playback/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ speed: playbackSpeed })
+        })
+        
+        if (!res.ok) {
+          throw new Error('Failed to restart playback')
+        }
+        
+        console.log('Playback recovery successful')
+      } else {
+        // No checkpoint available, just clear the playback state
+        useTrainingStore.getState().setPlayingCheckpoint(false)
+        console.log('No checkpoint available for recovery, cleared playback state')
+      }
+      
+    } catch (err) {
+      console.error('Error recovering playback:', err)
+      // Clear loading states on error
+      useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
+      useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
+      useTrainingStore.getState().setLoadingState('loadingMessage', null)
+      // Also clear playback state
+      useTrainingStore.getState().setPlayingCheckpoint(false)
     }
   }
 
@@ -330,7 +382,7 @@ const GameBoard: React.FC = () => {
             </div>
             
             {/* Playback Buttons */}
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-3">
               {!loadingStates.isPlaybackStarting && playbackStatus && (
                 <>
                   {playbackStatus.is_playing && !playbackStatus.is_paused ? (
@@ -351,7 +403,7 @@ const GameBoard: React.FC = () => {
                     </button>
                   ) : null}
                   
-                  {playbackStatus.model_loaded && (
+                  <div className="flex items-center space-x-2">
                     <>
                       {playbackStatus.is_playing || playbackStatus.is_paused ? (
                         <button
@@ -370,8 +422,21 @@ const GameBoard: React.FC = () => {
                           <span>New Game</span>
                         </button>
                       )}
+                      
+                      {/* Recovery button - show when loading states are active for too long or system appears stuck */}
+                      {(loadingStates.isPlaybackStarting || loadingStates.isNewGameStarting || 
+                        (playbackStatus.is_playing && !isPlayingCheckpoint)) && (
+                        <button
+                          onClick={recoverPlayback}
+                          className="flex items-center space-x-2 px-3 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors text-sm"
+                          title="Recover from stuck playback state"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                          <span>Recover</span>
+                        </button>
+                      )}
                     </>
-                  )}
+                  </div>
                 </>
               )}
               
