@@ -48,52 +48,64 @@ class TestLogger:
             'blue': '\033[94m',
             'magenta': '\033[95m',
             'cyan': '\033[96m',
-            'white': '\033[97m',
             'bold': '\033[1m',
             'reset': '\033[0m'
         }
-        return colors.get(color, '')
+        
+        return colors.get(color, "")
     
-    def _format_message(self, message: str, prefix: str = "", color: str = "") -> str:
-        """Format message with optional timestamp, prefix, and color"""
+    def _format_message(self, message: str, prefix: str = "", color: str = ""):
+        """Format message with timestamp and color"""
         indent = "  " * self.indent_level
         
+        if self.show_timestamps:
+            timestamp = time.strftime("[%H:%M:%S]")
+        else:
+            timestamp = ""
+        
+        color_code = self._get_color_code(color)
+        reset_code = self._get_color_code('reset')
+        
         if prefix:
-            formatted_prefix = f"{self._get_color_code('bold')}{prefix}{self._get_color_code('reset')}"
-            message = f"{formatted_prefix} {message}"
-        
-        if color:
-            message = f"{self._get_color_code(color)}{message}{self._get_color_code('reset')}"
-        
-        if self.show_timestamps and message.strip() and not message.startswith("="):
-            timestamp = time.strftime("%H:%M:%S")
-            return f"{indent}[{timestamp}] {message}"
-        
-        return f"{indent}{message}"
-    
-    def log(self, message: str = ""):
-        """Log a message with standardized formatting"""
-        print(self._format_message(message))
-    
-    def ok(self, message: str):
-        """Log a success message"""
-        print(self._format_message(message, "OK:", "green"))
-    
-    def error(self, message: str):
-        """Log an error message"""
-        print(self._format_message(message, "ERROR:", "red"))
-    
-    def warning(self, message: str):
-        """Log a warning message"""
-        print(self._format_message(message, "WARNING:", "yellow"))
+            return f"{color_code}{timestamp} {prefix} {indent}{message}{reset_code}"
+        else:
+            return f"{color_code}{timestamp} {indent}{message}{reset_code}"
     
     def info(self, message: str):
         """Log an info message"""
         print(self._format_message(message, "INFO:", "blue"))
     
+    def ok(self, message: str):
+        """Log a success message"""
+        print(self._format_message(message, "OK:", "green"))
+    
+    def warning(self, message: str):
+        """Log a warning message"""
+        print(self._format_message(message, "WARNING:", "yellow"))
+    
+    def error(self, message: str):
+        """Log an error message"""
+        print(self._format_message(message, "ERROR:", "red"))
+    
+    def log(self, message: str):
+        """Log a plain message"""
+        print(self._format_message(message))
+    
+    def debug(self, message: str):
+        """Log a debug message"""
+        print(self._format_message(message, "DEBUG:", "cyan"))
+    
     def game(self, message: str):
         """Log a game-related message"""
         print(self._format_message(message, "GAME:", "magenta"))
+    
+    def find(self, message: str):
+        """Log a find-related message"""
+        print(self._format_message(message, "FIND:", "cyan"))
+    
+    def status(self, message: str):
+        """Log a status message"""
+        print(self._format_message(message, "STATUS:", "blue"))
     
     def starting(self, message: str):
         """Log a starting message"""
@@ -195,32 +207,112 @@ class TestLogger:
         print(self._format_message(step_msg, "STEP:", "cyan"))
 
 class BackendTester:
-    """Common backend testing functionality"""
+    """Common backend testing functionality with enhanced availability checking"""
     
     def __init__(self, base_url: str = DEFAULT_BASE_URL, logger: TestLogger = None, timeout: int = DEFAULT_TIMEOUT):
         self.base_url = base_url
         self.logger = logger or TestLogger()
         self.timeout = timeout
+        self._connectivity_cache = None
+        self._last_connectivity_check = 0
+        self._cache_duration = 30  # Cache connectivity result for 30 seconds
+    
+    def is_backend_available(self, use_cache: bool = True) -> bool:
+        """Check if backend is available with caching and retry logic"""
+        current_time = time.time()
+        
+        # Use cached result if available and fresh
+        if use_cache and self._connectivity_cache is not None:
+            if current_time - self._last_connectivity_check < self._cache_duration:
+                return self._connectivity_cache
+        
+        # Try to connect with retry logic
+        max_retries = 3
+        retry_delay = 1
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(f"{self.base_url}/", timeout=5)
+                if response.status_code == 200:
+                    self._connectivity_cache = True
+                    self._last_connectivity_check = current_time
+                    if attempt > 0:
+                        self.logger.ok(f"Backend is accessible (attempt {attempt + 1})")
+                    return True
+                else:
+                    self.logger.warning(f"Backend returned HTTP {response.status_code} (attempt {attempt + 1})")
+                    
+            except requests.exceptions.Timeout:
+                self.logger.warning(f"Backend connectivity timeout (attempt {attempt + 1})")
+            except requests.exceptions.ConnectionError:
+                self.logger.warning(f"Backend connection failed (attempt {attempt + 1})")
+            except Exception as e:
+                self.logger.warning(f"Backend connectivity error: {e} (attempt {attempt + 1})")
+            
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+        
+        # All attempts failed
+        self._connectivity_cache = False
+        self._last_connectivity_check = current_time
+        self.logger.error("Backend is not available after multiple attempts")
+        return False
     
     def test_connectivity(self) -> bool:
-        """Test that backend is accessible"""
-        try:
-            response = requests.get(f"{self.base_url}/", timeout=10)
-            if response.status_code == 200:
-                self.logger.ok("Backend is accessible")
+        """Test that backend is accessible (legacy method - calls is_backend_available)"""
+        return self.is_backend_available()
+    
+    def wait_for_backend(self, max_wait_time: int = 120, check_interval: int = 5) -> bool:
+        """Wait for backend to become available"""
+        self.logger.info(f"Waiting for backend to become available (max {max_wait_time}s)...")
+        
+        start_time = time.time()
+        attempt = 0
+        
+        while time.time() - start_time < max_wait_time:
+            attempt += 1
+            if self.is_backend_available(use_cache=False):
+                self.logger.ok(f"Backend became available after {time.time() - start_time:.1f}s")
                 return True
-            else:
-                self.logger.error(f"Backend returned HTTP {response.status_code}")
-                return False
-        except requests.exceptions.Timeout:
-            self.logger.error("Backend connectivity timeout")
+            
+            self.logger.info(f"Attempt {attempt}: Backend not ready, waiting {check_interval}s...")
+            time.sleep(check_interval)
+        
+        self.logger.error(f"Backend did not become available within {max_wait_time}s")
+        return False
+    
+    def require_backend_or_skip(self, test_name: str = "test") -> bool:
+        """Check if backend is available, skip test if not"""
+        if not self.is_backend_available():
+            self.logger.warning(f"SKIPPED: {test_name} - Backend not available")
+            self.logger.info("To run this test, ensure the backend server is running:")
+            self.logger.info("  cd backend && python main.py")
             return False
-        except requests.exceptions.ConnectionError:
-            self.logger.error("Backend connection failed - server may not be running")
-            return False
-        except Exception as e:
-            self.logger.error(f"Backend connectivity failed: {e}")
-            return False
+        return True
+    
+    def get_checkpoints_with_fallback(self) -> List[Dict[str, Any]]:
+        """Get list of available checkpoints with fallback for offline testing"""
+        if not self.is_backend_available():
+            self.logger.warning("Backend not available, using mock checkpoint data")
+            return [
+                {
+                    "id": "mock_checkpoint_1",
+                    "name": "Mock Checkpoint 1",
+                    "episode": 1000,
+                    "score": 5000,
+                    "timestamp": "2025-01-01T00:00:00Z"
+                },
+                {
+                    "id": "mock_checkpoint_2", 
+                    "name": "Mock Checkpoint 2",
+                    "episode": 2000,
+                    "score": 10000,
+                    "timestamp": "2025-01-02T00:00:00Z"
+                }
+            ]
+        
+        return self.get_checkpoints()
     
     def get_checkpoints(self) -> List[Dict[str, Any]]:
         """Get list of available checkpoints"""
@@ -288,8 +380,12 @@ class BackendTester:
         
         self.logger.info("Testing basic backend endpoints...")
         
-        # Test connectivity
-        results['connectivity'] = self.test_connectivity()
+        # Test connectivity first
+        results['connectivity'] = self.is_backend_available()
+        
+        if not results['connectivity']:
+            self.logger.warning("Backend not available, skipping endpoint tests")
+            return results
         
         # Test checkpoints endpoint
         checkpoints = self.get_checkpoints()
@@ -523,4 +619,61 @@ class PlaybackTester:
             return result
             
         except Exception as e:
-            return {"success": False, "error": f"Error testing playback controls: {e}"} 
+            return {"success": False, "error": f"Error testing playback controls: {e}"}
+
+
+# Global backend tester instance for shared use
+_global_backend_tester = None
+
+def get_backend_tester(base_url: str = DEFAULT_BASE_URL, logger: 'TestLogger' = None) -> 'BackendTester':
+    """Get a global backend tester instance"""
+    global _global_backend_tester
+    if _global_backend_tester is None:
+        _global_backend_tester = BackendTester(base_url, logger)
+    return _global_backend_tester
+
+def requires_backend(test_name: str = None):
+    """Decorator to skip tests if backend is not available"""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            backend_tester = get_backend_tester()
+            actual_test_name = test_name or func.__name__
+            
+            if not backend_tester.require_backend_or_skip(actual_test_name):
+                return {"skipped": True, "reason": "Backend not available"}
+            
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+def with_backend_fallback(fallback_result=None):
+    """Decorator to provide fallback results when backend is not available"""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            backend_tester = get_backend_tester()
+            
+            if not backend_tester.is_backend_available():
+                logger = backend_tester.logger
+                logger.warning(f"Backend not available for {func.__name__}, using fallback")
+                return fallback_result
+            
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+def check_backend_or_exit(exit_code: int = 1, wait_time: int = 30):
+    """Check if backend is available or exit with error code"""
+    backend_tester = get_backend_tester()
+    
+    if not backend_tester.is_backend_available():
+        backend_tester.logger.error("Backend is not available!")
+        backend_tester.logger.info("Starting backend server...")
+        backend_tester.logger.info("  cd backend && python main.py")
+        backend_tester.logger.info("")
+        backend_tester.logger.info(f"Waiting {wait_time}s for backend to start...")
+        
+        if not backend_tester.wait_for_backend(wait_time):
+            backend_tester.logger.error("Backend failed to start. Exiting.")
+            exit(exit_code)
+    
+    return backend_tester 
