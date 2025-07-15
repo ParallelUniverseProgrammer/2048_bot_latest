@@ -719,6 +719,11 @@ async def get_websocket_stats():
     """Get WebSocket connection statistics"""
     return websocket_manager.get_connection_stats()
 
+@app.get("/ws/performance")
+async def get_websocket_performance():
+    """Get WebSocket performance statistics"""
+    return websocket_manager.get_performance_stats()
+
 # Remove mock_training_loop in favour of TrainingManager
 
 if __name__ == "__main__":

@@ -16,14 +16,14 @@ from app.models.checkpoint_metadata import CheckpointManager
 from app.utils.action_selection import select_action_with_fallback_for_playback
 
 class CheckpointPlayback:
-    """System for playing back saved checkpoints"""
+    """System for playing back saved checkpoints with performance optimizations"""
     
     def __init__(self, checkpoint_manager: CheckpointManager):
         self.checkpoint_manager = checkpoint_manager
         self.current_model = None
         self.current_config = None
         self.current_checkpoint_id = None
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.env = Gym2048Env()
         
         # Playback state
@@ -38,17 +38,44 @@ class CheckpointPlayback:
         self.current_step_index = 0
         self.current_game_count = 0
         
+        # Performance optimizations
+        self.adaptive_broadcast_interval = 0.5  # Start with 500ms between broadcasts
+        self.min_broadcast_interval = 0.1  # Minimum 100ms
+        self.max_broadcast_interval = 2.0  # Maximum 2s
+        self.last_broadcast_time = 0
+        self.broadcast_performance_history = []
+        self.lightweight_mode = False  # Enable for high-speed playback
+        
+        # Message throttling
+        self.message_throttle = {
+            'last_step_broadcast': 0,
+            'step_skip_count': 0,
+            'target_fps': 10,  # Target 10 updates per second max
+            'adaptive_skip': 1  # Skip every N steps
+        }
+        
         # Health monitoring
         self.last_heartbeat = time.time()
         self.last_broadcast_success = time.time()
         self.consecutive_failures = 0
         self.max_consecutive_failures = 5
         self.heartbeat_interval = 10.0  # seconds
-        self.broadcast_timeout = 5.0  # seconds
+        self.broadcast_timeout = 3.0  # Reduced from 5.0 for faster recovery
         
         # Error tracking
         self.error_history = []
         self.max_error_history = 50
+        
+        # Performance monitoring
+        self.performance_metrics = {
+            'total_broadcasts': 0,
+            'successful_broadcasts': 0,
+            'failed_broadcasts': 0,
+            'avg_broadcast_time': 0,
+            'slow_broadcasts': 0,
+            'steps_skipped': 0,
+            'games_completed': 0
+        }
     
     def _log_error(self, error: str, context: str = ""):
         """Log error with timestamp and context"""
@@ -92,21 +119,133 @@ class CheckpointPlayback:
         
         return True
     
+    def _should_broadcast_step(self, step_idx: int) -> bool:
+        """Determine if we should broadcast this step based on throttling rules"""
+        current_time = time.time()
+        
+        # Check time-based throttling
+        time_since_last = current_time - self.message_throttle['last_step_broadcast']
+        min_interval = 1.0 / self.message_throttle['target_fps']
+        
+        if time_since_last < min_interval:
+            return False
+        
+        # Check step-based throttling (adaptive skipping)
+        if self.message_throttle['step_skip_count'] < self.message_throttle['adaptive_skip']:
+            self.message_throttle['step_skip_count'] += 1
+            self.performance_metrics['steps_skipped'] += 1
+            return False
+        
+        # Reset skip count and allow broadcast
+        self.message_throttle['step_skip_count'] = 0
+        return True
+    
+    def _adjust_adaptive_settings(self, broadcast_time: float, connection_count: int):
+        """Adjust adaptive settings based on performance"""
+        # Track broadcast performance
+        self.broadcast_performance_history.append(broadcast_time)
+        if len(self.broadcast_performance_history) > 20:
+            self.broadcast_performance_history.pop(0)
+        
+        avg_broadcast_time = sum(self.broadcast_performance_history) / len(self.broadcast_performance_history)
+        
+        # Adjust broadcast interval based on performance
+        if avg_broadcast_time > 0.5:  # Slow broadcasts
+            self.adaptive_broadcast_interval = min(self.max_broadcast_interval, 
+                                                 self.adaptive_broadcast_interval * 1.2)
+        elif avg_broadcast_time < 0.1:  # Fast broadcasts
+            self.adaptive_broadcast_interval = max(self.min_broadcast_interval,
+                                                 self.adaptive_broadcast_interval * 0.9)
+        
+        # Adjust skip rate based on connection count and performance
+        if connection_count > 3 and avg_broadcast_time > 0.3:
+            self.message_throttle['adaptive_skip'] = min(5, self.message_throttle['adaptive_skip'] + 1)
+        elif connection_count <= 2 and avg_broadcast_time < 0.2:
+            self.message_throttle['adaptive_skip'] = max(1, self.message_throttle['adaptive_skip'] - 1)
+        
+        # Enable lightweight mode for high-speed playback or many connections
+        self.lightweight_mode = (self.playback_speed > 2.0 or 
+                               connection_count > 4 or 
+                               avg_broadcast_time > 0.4)
+    
+    def _create_lightweight_message(self, step_data: Dict[str, Any], game_result: Dict[str, Any], 
+                                  checkpoint_id: str, game_count: int) -> Dict[str, Any]:
+        """Create lightweight message for high-performance scenarios"""
+        return {
+            'type': 'checkpoint_playback_light',
+            'checkpoint_id': checkpoint_id,
+            'game_number': game_count,
+            'step': step_data['step'],
+            'board_state': step_data['board_state'],
+            'score': step_data['score'],
+            'action': step_data['action'],
+            'timestamp': step_data['timestamp'],
+            'game_progress': {
+                'current_step': step_data['step'],
+                'total_steps': game_result['steps'],
+                'final_score': game_result['final_score']
+            }
+        }
+    
+    def _create_full_message(self, step_data: Dict[str, Any], game_result: Dict[str, Any], 
+                           checkpoint_id: str, game_count: int) -> Dict[str, Any]:
+        """Create full message with all data"""
+        return {
+            'type': 'checkpoint_playback',
+            'checkpoint_id': checkpoint_id,
+            'game_number': game_count,
+            'step_data': step_data,
+            'game_summary': {
+                'final_score': game_result['final_score'],
+                'total_steps': game_result['steps'],
+                'max_tile': game_result['max_tile']
+            },
+            'performance_info': {
+                'adaptive_skip': self.message_throttle['adaptive_skip'],
+                'lightweight_mode': self.lightweight_mode,
+                'broadcast_interval': self.adaptive_broadcast_interval
+            }
+        }
+
     async def _safe_broadcast(self, websocket_manager, message: Dict[str, Any], context: str = "") -> bool:
-        """Safely broadcast message with error handling and timeout"""
+        """Safely broadcast message with error handling, timeout, and performance tracking"""
         try:
             # Add health check data to message
             message['playback_health'] = {
                 'last_heartbeat': self.last_heartbeat,
                 'consecutive_failures': self.consecutive_failures,
-                'is_healthy': self._is_healthy()
+                'is_healthy': self._is_healthy(),
+                'performance_metrics': self.performance_metrics
             }
             
-            # Use asyncio.wait_for to add timeout
+            broadcast_start = time.perf_counter()
+            
+            # Use shorter timeout for better responsiveness
             await asyncio.wait_for(
                 websocket_manager.broadcast(message),
                 timeout=self.broadcast_timeout
             )
+            
+            broadcast_time = time.perf_counter() - broadcast_start
+            
+            # Update performance metrics
+            self.performance_metrics['total_broadcasts'] += 1
+            self.performance_metrics['successful_broadcasts'] += 1
+            
+            if self.performance_metrics['avg_broadcast_time'] == 0:
+                self.performance_metrics['avg_broadcast_time'] = broadcast_time
+            else:
+                self.performance_metrics['avg_broadcast_time'] = (
+                    0.9 * self.performance_metrics['avg_broadcast_time'] + 
+                    0.1 * broadcast_time
+                )
+            
+            if broadcast_time > 0.5:
+                self.performance_metrics['slow_broadcasts'] += 1
+            
+            # Adjust adaptive settings
+            connection_count = websocket_manager.get_connection_count()
+            self._adjust_adaptive_settings(broadcast_time, connection_count)
             
             self.last_broadcast_success = time.time()
             self.consecutive_failures = 0
@@ -114,6 +253,7 @@ class CheckpointPlayback:
             
         except asyncio.TimeoutError:
             self.consecutive_failures += 1
+            self.performance_metrics['failed_broadcasts'] += 1
             self._log_error(f"Broadcast timeout after {self.broadcast_timeout}s", context)
             
             # If we have too many consecutive failures, try to recover
@@ -124,6 +264,7 @@ class CheckpointPlayback:
             return False
         except Exception as e:
             self.consecutive_failures += 1
+            self.performance_metrics['failed_broadcasts'] += 1
             self._log_error(f"Broadcast failed: {str(e)}", context)
             
             # If we have too many consecutive failures, try to recover
@@ -137,7 +278,7 @@ class CheckpointPlayback:
         """Attempt to recover from broadcast failures"""
         try:
             # Wait a bit to allow connections to recover
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(1.0)  # Reduced from 2.0
             
             # Send a simple heartbeat to test connection
             test_message = {
@@ -161,7 +302,7 @@ class CheckpointPlayback:
         except Exception as e:
             self._log_error(f"Broadcast recovery failed: {str(e)}", "_attempt_broadcast_recovery")
             # Don't reset consecutive failures - let the caller handle it
-    
+
     def load_checkpoint(self, checkpoint_id: str) -> bool:
         """Load a checkpoint for playback"""
         try:
@@ -194,10 +335,19 @@ class CheckpointPlayback:
             self.current_config = config
             self.current_checkpoint_id = checkpoint_id
             
-            # Reset health monitoring
+            # Reset health monitoring and performance metrics
             self._update_heartbeat()
             self.last_broadcast_success = time.time()
             self.consecutive_failures = 0
+            self.performance_metrics = {
+                'total_broadcasts': 0,
+                'successful_broadcasts': 0,
+                'failed_broadcasts': 0,
+                'avg_broadcast_time': 0,
+                'slow_broadcasts': 0,
+                'steps_skipped': 0,
+                'games_completed': 0
+            }
             
             print(f"Successfully loaded checkpoint {checkpoint_id}")
             return True
@@ -206,30 +356,7 @@ class CheckpointPlayback:
             self._log_error(f"Exception loading checkpoint: {str(e)}", f"load_checkpoint({checkpoint_id})")
             print(f"Full traceback: {traceback.format_exc()}")
             return False
-    
-    def select_action(self, state: np.ndarray, legal_actions: List[int], env_game) -> Tuple[int, List[float], Optional[np.ndarray]]:
-        """Select action using loaded model with fallback for invalid moves"""
-        if self.current_model is None:
-            return 0, [0.25, 0.25, 0.25, 0.25], None
-        
-        try:
-            # Use fallback mechanism to select action
-            action, action_probs, attention_weights = select_action_with_fallback_for_playback(
-                model=self.current_model,
-                state=state,
-                legal_actions=legal_actions,
-                env_game=env_game,
-                device=self.device,
-                deterministic=True  # Use deterministic selection for playback
-            )
-            
-            return action, action_probs, attention_weights
-            
-        except Exception as e:
-            self._log_error(f"Error in action selection: {str(e)}", "select_action")
-            # Return fallback action
-            return legal_actions[0] if legal_actions else 0, [0.25, 0.25, 0.25, 0.25], None
-    
+
     def play_single_game(self) -> Dict[str, Any]:
         """Play a single game and return the full game history"""
         if self.current_model is None:
@@ -258,7 +385,7 @@ class CheckpointPlayback:
                     # Select action
                     action, action_probs, attention_weights = self.select_action(state, legal_actions, self.env.game)
                     
-                    # Store step data
+                    # Store step data (optimized for memory)
                     step_data = {
                         'step': step_count,
                         'board_state': [list(row) for row in self.env.game.board],
@@ -274,47 +401,37 @@ class CheckpointPlayback:
                     obs, reward, done, truncated, info = self.env.step(action)
                     # For 2048, treat truncated as done
                     done = done or truncated
-                    total_reward += reward
-                    step_count += 1
                     
-                    # Add reward to step data
+                    total_reward += reward
                     step_data['reward'] = reward
                     step_data['done'] = done
                     
                     game_history.append(step_data)
+                    step_count += 1
                     
                     if done:
-                        # Add final step showing the board state after the last move
-                        final_step_data = {
-                            'step': step_count,
-                            'board_state': [list(row) for row in self.env.game.board],
-                            'score': self.env.game.score,
-                            'action': None,
-                            'action_probs': [0.0, 0.0, 0.0, 0.0],
-                            'legal_actions': [],
-                            'attention_weights': None,
-                            'timestamp': time.time(),
-                            'reward': 0,
-                            'done': True
-                        }
-                        game_history.append(final_step_data)
+                        print(f"Game finished at step {step_count} with score {self.env.game.score}")
                         break
                         
                 except Exception as e:
                     self._log_error(f"Error in game step {step_count}: {str(e)}", "play_single_game")
-                    # Try to continue the game
-                    continue
+                    print(f"Step error traceback: {traceback.format_exc()}")
+                    break
+            
+            # Calculate final metrics
+            final_score = self.env.game.score
+            max_tile = np.max(self.env.game.board)
             
             result = {
-                'checkpoint_id': self.current_checkpoint_id,
                 'game_history': game_history,
-                'final_score': self.env.game.score,
-                'total_reward': total_reward,
+                'final_score': final_score,
+                'max_tile': int(max_tile),
                 'steps': step_count,
-                'max_tile': self.env.game.get_max_tile()
+                'total_reward': total_reward,
+                'completed': step_count < max_steps and self.env.is_done()
             }
             
-            print(f"Game completed: {step_count} steps, score={self.env.game.score}, max_tile={self.env.game.get_max_tile()}")
+            print(f"Game completed: score={final_score}, max_tile={max_tile}, steps={step_count}")
             return result
             
         except Exception as e:
@@ -323,7 +440,7 @@ class CheckpointPlayback:
             return {"error": f"Game failed: {str(e)}"}
     
     async def start_live_playback(self, websocket_manager, speed: float = 1.0):
-        """Start live playback streaming to websocket"""
+        """Start live playback streaming to websocket with performance optimizations"""
         if self.current_model is None:
             self._log_error("No model loaded for playback", "start_live_playback")
             return
@@ -332,6 +449,19 @@ class CheckpointPlayback:
         self.is_paused = False
         self.playback_speed = speed
         
+        # Reset message throttling settings
+        self.message_throttle['last_step_broadcast'] = 0
+        self.message_throttle['step_skip_count'] = 0
+        self.message_throttle['adaptive_skip'] = 1
+        
+        # Adjust initial settings based on speed
+        if speed > 2.0:
+            self.message_throttle['target_fps'] = 5  # Lower FPS for high speed
+            self.lightweight_mode = True
+        else:
+            self.message_throttle['target_fps'] = 10
+            self.lightweight_mode = False
+        
         print(f"Starting live playback for checkpoint {self.current_checkpoint_id} at speed {speed}")
         
         # Send initial status message
@@ -339,7 +469,12 @@ class CheckpointPlayback:
             'type': 'playback_status',
             'message': f'Starting playback for checkpoint {self.current_checkpoint_id}',
             'checkpoint_id': self.current_checkpoint_id,
-            'status': 'starting'
+            'status': 'starting',
+            'performance_mode': {
+                'lightweight_mode': self.lightweight_mode,
+                'target_fps': self.message_throttle['target_fps'],
+                'adaptive_skip': self.message_throttle['adaptive_skip']
+            }
         }, "initial_status")
         
         if not success:
@@ -424,24 +559,25 @@ class CheckpointPlayback:
                     step_start_time = time.time()
                     last_step_time = time.time()
                 
-                # Stream game history step by step
+                # Stream game history step by step with optimizations
                 game_finished = False
-                for step_idx, step_data in enumerate(game_result['game_history'][start_step:], start_step):
-                    if not self.is_playing:
-                        print("Playback stopped during game streaming")
-                        self.current_game_result = None
-                        self.current_step_index = 0
-                        return
-                    
-                    if self.is_paused:
-                        print(f"Playback paused at step {step_idx} of game {game_count}")
-                        self.current_step_index = step_idx
+                for step_idx in range(start_step, len(game_result['game_history'])):
+                    if not self.is_playing or self.is_paused:
                         break
                     
-                    # Check for step timeout (detect stuck states like "stuck at move 17")
+                    step_data = game_result['game_history'][step_idx]
                     current_time = time.time()
-                    step_duration = current_time - last_step_time
-                    total_step_time = current_time - step_start_time
+                    
+                    # Check if we should broadcast this step
+                    if not self._should_broadcast_step(step_idx):
+                        # Still need to wait for playback speed
+                        wait_time = max(0.05, 0.5 / self.playback_speed)  # Minimum 50ms wait
+                        await asyncio.sleep(wait_time)
+                        continue
+                    
+                    # Update timing checks
+                    step_duration = current_time - step_start_time
+                    total_step_time = current_time - last_step_time
                     
                     # If a single step takes too long (> 30 seconds) or we've been on the same step for too long
                     if step_duration > 30.0 or (step_idx == self.current_step_index and total_step_time > 60.0):
@@ -461,62 +597,39 @@ class CheckpointPlayback:
                         step_start_time = current_time
                         
                         # Small delay to prevent rapid retries
-                        await asyncio.sleep(1.0)
+                        await asyncio.sleep(0.5)  # Reduced from 1.0
                     
                     # Update current step index
                     self.current_step_index = step_idx
                     last_step_time = current_time
                     
-                    # Send step data to frontend
-                    message = {
-                        'type': 'checkpoint_playback',
-                        'checkpoint_id': self.current_checkpoint_id,
-                        'game_number': game_count,
-                        'step_data': step_data if self.playback_speed <= 2.0 else {
-                            # Lightweight payload for high-speed playback (>2x)
-                            'step': step_data['step'],
-                            'board_state': step_data['board_state'],
-                            'score': step_data['score'],
-                            'action': step_data['action'],
-                            'timestamp': step_data['timestamp']
-                        },
-                        'game_summary': {
-                            'final_score': game_result['final_score'],
-                            'total_steps': game_result['steps'],
-                            'max_tile': game_result['max_tile']
-                        }
-                    }
-                    
-                    success = await self._safe_broadcast(websocket_manager, message, f"step_{step_idx}")
-                    if not success:
-                        self._log_error(f"Failed to broadcast step {step_idx}", "start_live_playback")
-                        # Don't break immediately, try a few more times
-                        if self.consecutive_failures >= 3:
-                            print(f"Too many consecutive broadcast failures, trying recovery...")
-                            
-                            # Attempt recovery instead of breaking
-                            await self._attempt_broadcast_recovery(websocket_manager)
-                            
-                            # If still failing after recovery, pause briefly and continue
-                            if self.consecutive_failures >= self.max_consecutive_failures:
-                                print(f"Recovery failed, pausing playback for 5 seconds...")
-                                await asyncio.sleep(5.0)
-                                
-                                # Reset failure count to give it another chance
-                                self.consecutive_failures = 0
-                                
-                                # Send a status update about the issue
-                                await self._safe_broadcast(websocket_manager, {
-                                    'type': 'playback_status',
-                                    'message': f'Playback experiencing connection issues, continuing...',
-                                    'checkpoint_id': self.current_checkpoint_id,
-                                    'status': 'recovering'
-                                }, "recovery_status")
+                    # Create appropriate message based on mode
+                    if self.lightweight_mode:
+                        message = self._create_lightweight_message(step_data, game_result, 
+                                                                 self.current_checkpoint_id, game_count)
                     else:
-                        print(f"Broadcasted step {step_idx} of game {game_count}")
+                        message = self._create_full_message(step_data, game_result, 
+                                                          self.current_checkpoint_id, game_count)
                     
-                    # Wait based on playback speed
-                    wait_time = max(0.1, 1.0 / self.playback_speed)
+                    # Broadcast step data
+                    success = await self._safe_broadcast(websocket_manager, message, f"step_{step_idx}")
+                    
+                    if success:
+                        self.message_throttle['last_step_broadcast'] = current_time
+                        if step_idx % 10 == 0:  # Log every 10th step
+                            print(f"Broadcasted step {step_idx} of game {game_count}")
+                    else:
+                        self._log_error(f"Failed to broadcast step {step_idx}", "start_live_playback")
+                        # Don't break immediately, the recovery mechanism will handle it
+                        if self.consecutive_failures >= self.max_consecutive_failures:
+                            print(f"Too many consecutive failures, pausing for recovery...")
+                            await asyncio.sleep(2.0)
+                            self.consecutive_failures = 0
+                    
+                    # Wait based on playback speed (adaptive)
+                    base_wait = 1.0 / self.playback_speed
+                    adaptive_wait = base_wait * (1.0 + self.adaptive_broadcast_interval)
+                    wait_time = max(0.05, min(adaptive_wait, 2.0))  # Clamp between 50ms and 2s
                     await asyncio.sleep(wait_time)
                     
                     # Check if this was the last step
@@ -525,23 +638,27 @@ class CheckpointPlayback:
                 
                 # If we finished the game completely, send completion message and reset
                 if game_finished:
+                    self.performance_metrics['games_completed'] += 1
+                    
                     await self._safe_broadcast(websocket_manager, {
                         'type': 'game_completed',
                         'checkpoint_id': self.current_checkpoint_id,
                         'game_number': game_count,
                         'final_score': game_result['final_score'],
                         'total_steps': game_result['steps'],
-                        'max_tile': game_result['max_tile']
+                        'max_tile': game_result['max_tile'],
+                        'performance_summary': self.performance_metrics
                     }, "game_completed")
                     
                     # Reset game state for next game
                     self.current_game_result = None
                     self.current_step_index = 0
                     
-                    # Brief pause between games
+                    # Brief pause between games (adaptive)
                     if self.is_playing:
-                        print(f"Waiting 2.0s before next game...")
-                        await asyncio.sleep(2.0)
+                        pause_time = max(0.5, 2.0 / self.playback_speed)
+                        print(f"Waiting {pause_time:.1f}s before next game...")
+                        await asyncio.sleep(pause_time)
                 
         except asyncio.CancelledError:
             print("Playback cancelled")
@@ -575,7 +692,8 @@ class CheckpointPlayback:
                 'checkpoint_id': self.current_checkpoint_id,
                 'status': 'stopped',
                 'games_played': self.current_game_count,
-                'error_history': self.error_history[-5:]  # Send last 5 errors
+                'performance_summary': self.performance_metrics,
+                'error_history': self.error_history[-3:]  # Send last 3 errors
             }, "final_status")
     
     async def _heartbeat_loop(self, websocket_manager):
@@ -587,7 +705,7 @@ class CheckpointPlayback:
                 if not self.is_playing:
                     break
                 
-                # Send heartbeat
+                # Send heartbeat with performance info
                 await self._safe_broadcast(websocket_manager, {
                     'type': 'playback_heartbeat',
                     'checkpoint_id': self.current_checkpoint_id,
@@ -595,7 +713,13 @@ class CheckpointPlayback:
                     'game_count': self.current_game_count,
                     'step_index': self.current_step_index,
                     'is_healthy': self._is_healthy(),
-                    'consecutive_failures': self.consecutive_failures
+                    'consecutive_failures': self.consecutive_failures,
+                    'performance_metrics': self.performance_metrics,
+                    'adaptive_settings': {
+                        'broadcast_interval': self.adaptive_broadcast_interval,
+                        'lightweight_mode': self.lightweight_mode,
+                        'adaptive_skip': self.message_throttle['adaptive_skip']
+                    }
                 }, "heartbeat")
                 
         except asyncio.CancelledError:
@@ -623,78 +747,72 @@ class CheckpointPlayback:
         print("Playback stopped by user")
     
     def set_playback_speed(self, speed: float):
-        """Set playback speed (seconds between moves)"""
+        """Set playback speed and adjust performance settings"""
         self.playback_speed = max(0.1, min(5.0, speed))
-        print(f"Playback speed set to {self.playback_speed}")
-    
-    def get_model_info(self) -> Dict[str, Any]:
-        """Get information about the currently loaded model"""
-        if self.current_model is None:
-            return {"error": "No model loaded"}
         
-        metadata = self.checkpoint_manager.get_checkpoint_metadata(self.current_checkpoint_id)
+        # Adjust performance settings based on speed
+        if speed > 2.0:
+            self.message_throttle['target_fps'] = 5
+            self.lightweight_mode = True
+        elif speed > 1.0:
+            self.message_throttle['target_fps'] = 8
+            self.lightweight_mode = False
+        else:
+            self.message_throttle['target_fps'] = 10
+            self.lightweight_mode = False
         
-        return {
-            'checkpoint_id': self.current_checkpoint_id,
-            'nickname': metadata.nickname if metadata else 'Unknown',
-            'episode': metadata.episode if metadata else 0,
-            'model_config': metadata.model_config if metadata else {},
-            'performance_metrics': metadata.performance_metrics if metadata else {},
-            'parameter_count': self.current_model.count_parameters() if hasattr(self.current_model, 'count_parameters') else 0,
-            'device': str(self.device)
-        }
+        print(f"Playback speed set to {self.playback_speed}, lightweight_mode={self.lightweight_mode}")
     
     def get_playback_status(self) -> Dict[str, Any]:
-        """Get current playback status"""
+        """Get current playback status with performance metrics"""
         return {
             'is_playing': self.is_playing,
             'is_paused': self.is_paused,
-            'playback_speed': self.playback_speed,
             'current_checkpoint': self.current_checkpoint_id,
             'model_loaded': self.current_model is not None,
+            'current_game': self.current_game_count,
+            'current_step': self.current_step_index,
+            'playback_speed': self.playback_speed,
             'is_healthy': self._is_healthy(),
-            'last_heartbeat': self.last_heartbeat,
-            'consecutive_failures': self.consecutive_failures,
-            'error_count': len(self.error_history)
-        }
-    
-    def get_current_step_data(self) -> Optional[Dict[str, Any]]:
-        """Get current playback step data for polling fallback"""
-        if not self.is_playing or self.current_model is None:
-            return None
-        
-        if self.current_game_result is None:
-            return None
-        
-        # Get the current step from the game history
-        game_history = self.current_game_result.get('game_history', [])
-        if not game_history or self.current_step_index >= len(game_history):
-            return None
-        
-        current_step = game_history[self.current_step_index]
-        
-        return {
-            'step_data': current_step,
-            'game_summary': {
-                'final_score': self.current_game_result.get('final_score', 0),
-                'total_steps': self.current_game_result.get('steps', 0),
-                'max_tile': self.current_game_result.get('max_tile', 0)
-            },
-            'game_number': self.current_game_count,
-            'step_index': self.current_step_index,
-            'total_steps': len(game_history),
-            'health_status': {
-                'is_healthy': self._is_healthy(),
-                'last_heartbeat': self.last_heartbeat,
-                'consecutive_failures': self.consecutive_failures
+            'performance_metrics': self.performance_metrics,
+            'adaptive_settings': {
+                'broadcast_interval': self.adaptive_broadcast_interval,
+                'lightweight_mode': self.lightweight_mode,
+                'adaptive_skip': self.message_throttle['adaptive_skip'],
+                'target_fps': self.message_throttle['target_fps']
             }
         }
     
-    def get_error_history(self) -> List[Dict[str, Any]]:
-        """Get recent error history"""
-        return self.error_history.copy()
-    
-    def clear_error_history(self):
-        """Clear error history"""
-        self.error_history.clear()
-        print("Error history cleared") 
+    def get_current_step_data(self) -> Optional[Dict[str, Any]]:
+        """Get current step data for polling fallback"""
+        if (not self.is_playing or 
+            self.current_game_result is None or 
+            self.current_step_index >= len(self.current_game_result['game_history'])):
+            return None
+        
+        step_data = self.current_game_result['game_history'][self.current_step_index]
+        
+        # Return lightweight data for polling
+        return {
+            'step_data': {
+                'step': step_data['step'],
+                'board_state': step_data['board_state'],
+                'score': step_data['score'],
+                'action': step_data['action'],
+                'timestamp': step_data['timestamp']
+            },
+            'game_summary': {
+                'final_score': self.current_game_result['final_score'],
+                'total_steps': self.current_game_result['steps'],
+                'max_tile': self.current_game_result['max_tile']
+            }
+        }
+
+    def select_action(self, state: np.ndarray, legal_actions: List[int], game) -> Tuple[int, np.ndarray, Optional[np.ndarray]]:
+        """Select action using the loaded model"""
+        if self.current_model is None:
+            raise ValueError("No model loaded")
+        
+        return select_action_with_fallback_for_playback(
+            self.current_model, state, legal_actions, game, self.device
+        ) 

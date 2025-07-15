@@ -119,7 +119,7 @@ class TrainingManager:
     async def _send_training_start_message(self):
         """Send training start message via WebSocket"""
         try:
-            await self.ws_manager.broadcast({
+            await self.ws_manager.broadcast_high_priority({
                 'type': 'training_start',
                 'message': 'Training session started',
                 'model_config': self.current_config.__dict__ if self.current_config else {},
@@ -153,7 +153,7 @@ class TrainingManager:
                     # Send new episode start message for first few episodes
                     if self.current_episode % 50 == 0:  # Every 50th episode
                         try:
-                            await self.ws_manager.broadcast({
+                            await self.ws_manager.broadcast_high_priority({
                                 'type': 'new_episode_started',
                                 'episode': self.current_episode,
                                 'message': f'Starting training episode {self.current_episode}'
@@ -165,9 +165,21 @@ class TrainingManager:
                     episode_start_time = time.time()
                     
                     # Train one episode **per environment** using PPO in parallel threads.
-                    episode_results: List[Dict[str, Any]] = await asyncio.gather(*[
+                    gather_coro = asyncio.gather(*[
                         asyncio.to_thread(self.trainer.train_episode, env) for env in self.envs
                     ])
+                    try:
+                        episode_results: List[Dict[str, Any]] = await asyncio.wait_for(gather_coro, timeout=60.0)
+                    except asyncio.TimeoutError:
+                        print(f"[red]Training episode timeout after 60s (episode {self.current_episode}) – cancelling tasks")
+                        gather_coro.cancel()
+                        # Attempt graceful cancellation
+                        try:
+                            await gather_coro
+                        except Exception:
+                            pass
+                        # Re-raise to trigger outer retry logic
+                        raise
 
                     # Convenience: last result for logging / checkpoint metrics
                     last_res = episode_results[-1] if episode_results else {}
@@ -185,10 +197,10 @@ class TrainingManager:
                     if len(self._episode_start_times) > 1000:
                         self._episode_start_times = self._episode_start_times[-1000:]
                     
-                    # After each environment episode generate metrics & broadcast
+                    # After each environment episode generate metrics & broadcast (normal priority for training updates)
                     for env_instance, result in zip(self.envs, episode_results):
                         metrics = self._build_metrics(result, env_instance)
-                        await self.ws_manager.broadcast(metrics)
+                        await self.ws_manager.broadcast(metrics, priority="normal")
 
                     # Extract metrics we need later for checkpoint bookkeeping
                     training_speed = metrics['training_speed']
@@ -264,7 +276,7 @@ class TrainingManager:
             self.is_training = False
             
         # Training complete
-        await self.ws_manager.broadcast({
+        await self.ws_manager.broadcast_high_priority({
             "type": "training_complete",
             "message": "Training finished",
             "final_episode": self.current_episode,

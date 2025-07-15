@@ -125,6 +125,7 @@ class PPOTrainer:
                         value: float, log_prob: float, done: bool):
         """Store transition in experience buffer (thread-safe)"""
         
+        lock_start = time.perf_counter()
         with self._buffer_lock:
             self.buffer['states'].append(state.copy())
             self.buffer['actions'].append(action)
@@ -132,6 +133,9 @@ class PPOTrainer:
             self.buffer['values'].append(value)
             self.buffer['log_probs'].append(log_prob)
             self.buffer['dones'].append(done)
+        lock_duration = time.perf_counter() - lock_start
+        if lock_duration > 0.01:
+            print(f"[yellow]store_transition lock duration {lock_duration:.4f}s")
     
     def compute_advantages(self, rewards: List[float], values: List[float], 
                           dones: List[bool], gamma: float = 0.99, 
@@ -170,6 +174,7 @@ class PPOTrainer:
     def update_policy(self) -> Dict[str, float]:
         """Update policy using PPO (thread-safe)"""
 
+        lock_start = time.perf_counter()
         with self._buffer_lock:
             if len(self.buffer['states']) < self.batch_size:
                 return {'policy_loss': None, 'value_loss': None, 'entropy': None}
@@ -183,6 +188,10 @@ class PPOTrainer:
             dones_list = self.buffer['dones']
             # Reset buffer
             self.buffer = {key: [] for key in self.buffer}
+
+        lock_duration = time.perf_counter() - lock_start
+        if lock_duration > 0.2:
+            print(f"[yellow]update_policy held buffer lock for {lock_duration:.3f}s with {len(states_np)} states")
 
         # Convert buffer to tensors _outside_ the lock so other threads can continue
         states = torch.FloatTensor(states_np).to(self.device)

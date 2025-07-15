@@ -166,7 +166,7 @@ class DynamicModelConfig:
     def get_device(cls) -> torch.device:
         """Get the appropriate device (CUDA or CPU)"""
         if torch.cuda.is_available():
-            device = torch.device("cuda")
+            device = torch.device("cuda:0")
             console.print(f"[green]Using GPU: {torch.cuda.get_device_name(0)}")
         else:
             device = torch.device("cpu")

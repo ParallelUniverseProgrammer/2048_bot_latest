@@ -80,7 +80,7 @@ def select_action_with_fallback(
             if moved:
                 # Valid move found! Calculate log probability
                 action_dist = torch.distributions.Categorical(action_probs)
-                log_prob = action_dist.log_prob(torch.tensor(action, device=device))
+                log_prob = action_dist.log_prob(torch.tensor(action).to(device))
                 
                 return action, log_prob.item(), attention_weights
         
@@ -88,7 +88,7 @@ def select_action_with_fallback(
         # fall back to the first legal action
         fallback_action = legal_actions[0] if legal_actions else 0
         action_dist = torch.distributions.Categorical(action_probs)
-        log_prob = action_dist.log_prob(torch.tensor(fallback_action, device=device))
+        log_prob = action_dist.log_prob(torch.tensor(fallback_action).to(device))
         
         return fallback_action, log_prob.item(), attention_weights
 

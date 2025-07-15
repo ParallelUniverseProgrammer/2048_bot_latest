@@ -280,6 +280,15 @@ export const useWebSocket = () => {
             return
           }
           
+          // Handle message batches
+          if (data.type === 'message_batch') {
+            // Process each message in the batch
+            for (const message of data.messages) {
+              processMessage(message)
+            }
+            return
+          }
+          
           // Handle playback heartbeat
           if (data.type === 'playback_heartbeat') {
             playbackHealthRef.current.lastHeartbeat = Date.now()
@@ -296,6 +305,14 @@ export const useWebSocket = () => {
             return
           }
           
+          processMessage(data)
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error)
+        }
+      }
+      
+      const processMessage = (data: any) => {
+        try {
           // Monitor playback health in all messages
           if (data.playback_health) {
             playbackHealthRef.current.consecutiveFailures = data.playback_health.consecutive_failures || 0
@@ -308,7 +325,7 @@ export const useWebSocket = () => {
             if (data.loss_history && data.score_history) {
               updateTrainingData(data)
             }
-          } else if (data.type === 'checkpoint_playback') {
+          } else if (data.type === 'checkpoint_playback' || data.type === 'checkpoint_playback_light') {
             updateCheckpointPlaybackData(data)
           } else if (data.type === 'playback_status') {
             console.log('Playback status:', data.message)
@@ -405,7 +422,7 @@ export const useWebSocket = () => {
             console.log('Received message:', data)
           }
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error)
+          console.error('Error processing WebSocket message:', error)
         }
       }
 

@@ -52,7 +52,7 @@ def main():
     if not is_admin:
         print(f"{Colors.WARNING}⚠ This script may need to be run as Administrator{Colors.ENDC}")
         print("   Right-click on PowerShell/Command Prompt and select 'Run as Administrator'")
-        print("   Then run: python fix_windows_firewall.py\n")
+        print("   Then run: python scripts/fix_windows_firewall.py\n")
     
     # Add firewall rules for Python
     print(f"{Colors.BOLD}Adding Python firewall rules...{Colors.ENDC}")
@@ -94,7 +94,7 @@ def main():
     print("1. Start your 2048 bot: python launcher.py")
     print("2. Try accessing from your phone again")
     print("3. If it still doesn't work, run the network troubleshooter:")
-    print("   python network_troubleshooter.py")
+    print("   python scripts/network_troubleshooter.py")
     
     print(f"\n{Colors.OKCYAN}If you still have issues, the problem is likely in your Spectrum router settings.{Colors.ENDC}")
 
