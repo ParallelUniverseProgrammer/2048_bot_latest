@@ -784,10 +784,68 @@ class CheckpointPlayback:
         }
 
     def select_action(self, state: np.ndarray, legal_actions: List[int], game) -> Tuple[int, np.ndarray, Optional[np.ndarray]]:
-        """Select action using the loaded model"""
+        """Select action using the loaded model with comprehensive error handling"""
         if self.current_model is None:
-            raise ValueError("No model loaded")
+            self._log_error("No model loaded for action selection", "select_action")
+            # Return random action as fallback
+            import random
+            if not legal_actions:
+                return 0, np.array([0.25, 0.25, 0.25, 0.25]), None
+            
+            action = random.choice(legal_actions)
+            probs = np.array([0.0, 0.0, 0.0, 0.0])
+            uniform_prob = 1.0 / len(legal_actions)
+            for legal_action in legal_actions:
+                probs[legal_action] = uniform_prob
+            return action, probs, None
         
-        return select_action_with_fallback_for_playback(
-            self.current_model, state, legal_actions, game, self.device
-        ) 
+        try:
+            # Validate inputs
+            if state is None:
+                self._log_error("State is None in action selection", "select_action")
+                return self._fallback_action_selection(legal_actions)
+            
+            if not legal_actions:
+                self._log_error("No legal actions available", "select_action")
+                return 0, np.array([0.25, 0.25, 0.25, 0.25]), None
+            
+            # Call the enhanced action selection function
+            action, action_probs, attention_weights = select_action_with_fallback_for_playback(
+                self.current_model, state, legal_actions, game, self.device
+            )
+            
+            # Validate outputs
+            if action is None or action not in legal_actions:
+                self._log_error(f"Invalid action returned: {action}, legal actions: {legal_actions}", "select_action")
+                return self._fallback_action_selection(legal_actions)
+            
+            if action_probs is None or len(action_probs) != 4:
+                self._log_error(f"Invalid action probabilities returned: {action_probs}", "select_action")
+                action_probs = [0.25, 0.25, 0.25, 0.25]
+            
+            return action, np.array(action_probs), attention_weights
+            
+        except Exception as e:
+            self._log_error(f"Exception in action selection: {str(e)}", "select_action")
+            self._log_error(f"Action selection traceback: {traceback.format_exc()}", "select_action")
+            return self._fallback_action_selection(legal_actions)
+    
+    def _fallback_action_selection(self, legal_actions: List[int]) -> Tuple[int, np.ndarray, Optional[np.ndarray]]:
+        """Fallback action selection when model fails"""
+        import random
+        
+        if not legal_actions:
+            self._log_error("No legal actions in fallback", "_fallback_action_selection")
+            return 0, np.array([0.25, 0.25, 0.25, 0.25]), None
+        
+        # Select random action from legal actions
+        action = random.choice(legal_actions)
+        
+        # Create uniform probability distribution for legal actions
+        probs = np.array([0.0, 0.0, 0.0, 0.0])
+        uniform_prob = 1.0 / len(legal_actions)
+        for legal_action in legal_actions:
+            probs[legal_action] = uniform_prob
+        
+        self._log_error(f"Using fallback action selection: {action}", "_fallback_action_selection")
+        return action, probs, None 
