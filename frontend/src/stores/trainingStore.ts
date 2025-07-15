@@ -250,10 +250,18 @@ export const useTrainingStore = create<TrainingState>()(
           
           // Set timeout to clear loading state after 30 seconds
           const timeout = setTimeout(() => {
-            console.warn('Playback start timeout - clearing loading state')
-            get().setLoadingState('isPlaybackStarting', false)
-            get().setLoadingState('loadingMessage', null)
-            get().setLoadingState('playbackStartTimeout', null)
+            console.warn('Playback start timeout - clearing loading state and setting error')
+            const currentState = get()
+            set({
+              ...currentState,
+              connectionError: 'Playback loading timed out after 30 seconds. This may indicate a server issue or slow connection. Please try again, or check if the backend is running.',
+              loadingStates: {
+                ...currentState.loadingStates,
+                isPlaybackStarting: false,
+                loadingMessage: null,
+                playbackStartTimeout: null
+              }
+            })
           }, 30000)
           
           newStates.playbackStartTimeout = timeout

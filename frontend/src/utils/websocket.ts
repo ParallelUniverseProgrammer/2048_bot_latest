@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useTrainingStore } from '../stores/trainingStore'
 import config from './config'
 import { 
@@ -16,7 +16,6 @@ import {
 export const useWebSocket = () => {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<number | null>(null)
-  const reconnectAttempts = useRef(0)
   const pollingIntervalRef = useRef<number | null>(null)
   const maxReconnectAttempts = getMaxReconnectAttempts()
   const reconnectDelay = getConnectionRetryDelay()
@@ -49,6 +48,210 @@ export const useWebSocket = () => {
     updateCheckpointPlaybackData,
     isConnected 
   } = useTrainingStore()
+
+  const [reconnectAttempts, setReconnectAttempts] = useState(0)
+  const [connectionHealth, setConnectionHealth] = useState<'healthy' | 'degraded' | 'poor' | 'critical'>('healthy')
+  const [lastSuccessfulConnection, setLastSuccessfulConnection] = useState<number>(Date.now())
+  const [consecutiveFailures, setConsecutiveFailures] = useState(0)
+  const [isInRecoveryMode, setIsInRecoveryMode] = useState(false)
+
+  // Connection stability monitoring
+  const monitorConnectionHealth = useCallback(() => {
+    const timeSinceLastSuccess = Date.now() - lastSuccessfulConnection
+    const stats = connectionStatsRef.current
+    
+    // Determine connection health based on multiple factors
+    if (consecutiveFailures >= 5 || timeSinceLastSuccess > 60000) {
+      setConnectionHealth('critical')
+    } else if (consecutiveFailures >= 3 || timeSinceLastSuccess > 30000) {
+      setConnectionHealth('poor')
+    } else if (consecutiveFailures >= 1 || timeSinceLastSuccess > 15000) {
+      setConnectionHealth('degraded')
+    } else {
+      setConnectionHealth('healthy')
+    }
+  }, [lastSuccessfulConnection, consecutiveFailures])
+
+  // Enhanced reconnection with exponential backoff and circuit breaker
+  const reconnect = useCallback(async () => {
+    if (reconnectingRef.current || reconnectAttempts >= maxReconnectAttempts) {
+      return
+    }
+    
+    // Implement circuit breaker pattern
+    if (connectionHealth === 'critical' && !isInRecoveryMode) {
+      console.log('Connection health is critical, entering recovery mode')
+      setIsInRecoveryMode(true)
+      
+      // Wait longer before attempting recovery
+      setTimeout(() => {
+        setIsInRecoveryMode(false)
+        setConsecutiveFailures(0)
+        setReconnectAttempts(0)
+      }, 30000) // 30 second recovery period
+      
+      return
+    }
+    
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+    }
+    
+    const backoff = Math.min(getConnectionRetryDelay() * Math.pow(2, reconnectAttempts), 30000)
+    console.log(`Reconnecting in ${backoff}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`)
+    
+    reconnectTimeoutRef.current = setTimeout(async () => {
+      try {
+        setReconnectAttempts(prev => prev + 1)
+        await connect()
+      } catch (error) {
+        console.error('Reconnection failed:', error)
+        setConsecutiveFailures(prev => prev + 1)
+        
+                 if (reconnectAttempts < maxReconnectAttempts) {
+           setTimeout(() => reconnect(), 1000) // Try again with exponential backoff
+         } else {
+           console.log('Max reconnection attempts reached, switching to polling fallback')
+           setConnectionError('Connection lost after multiple attempts. Switching to polling...')
+           startPollingFallback()
+         }
+      }
+    }, backoff)
+     }, [reconnectAttempts, connectionHealth, isInRecoveryMode, maxReconnectAttempts])
+
+  // Enhanced polling fallback with better error handling
+  const startPollingFallback = useCallback(async () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+    }
+    
+    console.log('Starting enhanced polling fallback')
+    setConnectionError('Using polling fallback due to connection issues...')
+    
+    const networkQuality = networkQualityRef.current || await detectAndUpdateNetworkQuality()
+    let currentPollingInterval = getAdaptivePollingInterval(networkQuality)
+    let pollingConsecutiveFailures = 0
+    
+    const createPollingInterval = (interval: number) => {
+      return setInterval(async () => {
+        try {
+          // Enhanced request with better timeout handling
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+          
+          const response = await fetch(`${config.api.baseUrl}/training/status`, {
+            signal: controller.signal,
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache'
+            }
+          })
+          
+          clearTimeout(timeoutId)
+          
+          if (response.ok) {
+            pollingConsecutiveFailures = 0
+            setConsecutiveFailures(0)
+            setLastSuccessfulConnection(Date.now())
+            setConnected(true)
+            
+            // Process response data
+            const data = await response.json()
+            updateTrainingData(data)
+            
+            // Check if we can upgrade back to WebSocket
+            if (pollingConsecutiveFailures === 0 && connectionHealth !== 'critical') {
+              console.log('Polling stable, attempting WebSocket upgrade')
+              setTimeout(() => {
+                if (pollingConsecutiveFailures === 0) {
+                  console.log('Upgrading from polling to WebSocket')
+                  clearInterval(pollingIntervalRef.current!)
+                  pollingIntervalRef.current = null
+                  setReconnectAttempts(0)
+                  connect()
+                }
+              }, 10000) // Wait 10 seconds before upgrade
+            }
+          } else {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+          
+        } catch (error) {
+          pollingConsecutiveFailures++
+          setConsecutiveFailures(prev => prev + 1)
+          console.error('Polling failed:', error)
+          
+          // Adaptive polling interval based on failures
+          if (pollingConsecutiveFailures >= 3) {
+            currentPollingInterval = Math.min(currentPollingInterval * 1.5, 10000)
+            console.log(`Polling failures detected, increasing interval to ${currentPollingInterval}ms`)
+            
+            // Restart polling with new interval
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current)
+              pollingIntervalRef.current = createPollingInterval(currentPollingInterval)
+            }
+          }
+          
+          // If polling fails too many times, show critical error
+          if (pollingConsecutiveFailures >= 10) {
+            setConnected(false)
+            setConnectionError('Server appears to be down. Please refresh the page or check if the backend is running.')
+            setConnectionHealth('critical')
+          }
+        }
+      }, interval)
+    }
+    
+    pollingIntervalRef.current = createPollingInterval(currentPollingInterval)
+     }, [networkQualityRef, connectionHealth, updateTrainingData])
+
+  // Enhanced message processing with health tracking
+  const processMessage = useCallback((data: any) => {
+    setLastSuccessfulConnection(Date.now())
+    setConsecutiveFailures(0)
+    updateConnectionStats(JSON.stringify(data).length)
+    
+    // Handle pong responses for latency measurement
+    if (data.type === 'pong') {
+      const latency = Date.now() - data.timestamp
+      connectionStatsRef.current.latency = latency
+      return
+    }
+    
+    // Record successful message processing
+    playbackHealthRef.current.lastHeartbeat = Date.now()
+    playbackHealthRef.current.consecutiveFailures = 0
+    playbackHealthRef.current.isHealthy = true
+    
+         if (data.type === 'training_update') {
+       if (data.loss_history && data.score_history) {
+         updateTrainingData(data)
+       }
+     } else if (data.type === 'checkpoint_playback' || data.type === 'checkpoint_playback_light') {
+       updateCheckpointPlaybackData(data)
+     } else if (data.type === 'playback_status') {
+       console.log('Playback status:', data.message)
+       // Handle playback loading states
+       if (data.status === 'starting') {
+         const currentLoadingStates = useTrainingStore.getState().loadingStates
+         if (!currentLoadingStates.isPlaybackStarting) {
+           useTrainingStore.getState().setLoadingState('isPlaybackStarting', true)
+           useTrainingStore.getState().setLoadingState('loadingMessage', 'Loading checkpoint model...')
+         }
+       } else if (data.status === 'stopped') {
+         useTrainingStore.getState().setPlayingCheckpoint(false)
+         useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
+         useTrainingStore.getState().setLoadingState('loadingMessage', null)
+       }
+     } else if (data.type === 'game_completed') {
+       useTrainingStore.getState().setLoadingState('isNewGameStarting', true)
+       useTrainingStore.getState().setLoadingState('loadingMessage', 'Starting new game...')
+     } else if (data.type === 'new_game_started') {
+       useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
+       useTrainingStore.getState().setLoadingState('loadingMessage', null)
+     }
+  }, [updateTrainingData, updateCheckpointPlaybackData])
 
   // Network quality detection
   const detectAndUpdateNetworkQuality = async () => {
@@ -193,7 +396,7 @@ export const useWebSocket = () => {
     }
   }
 
-  const connect = async () => {
+  const connect = useCallback(async () => {
     // Prevent duplicate connections
     if (wsRef.current || reconnectingRef.current) {
       return
@@ -256,7 +459,9 @@ export const useWebSocket = () => {
         
         setConnected(true)
         setConnectionError(null)
-        reconnectAttempts.current = 0
+        setReconnectAttempts(0)
+        setLastSuccessfulConnection(Date.now())
+        setConsecutiveFailures(0)
         
         // Start periodic latency monitoring
         const latencyInterval = setInterval(() => {
@@ -330,124 +535,18 @@ export const useWebSocket = () => {
           console.error('Error parsing WebSocket message:', error)
         }
       }
-      
-      const processMessage = (data: any) => {
-        try {
-          // Monitor playback health in all messages
-          if (data.playback_health) {
-            playbackHealthRef.current.consecutiveFailures = data.playback_health.consecutive_failures || 0
-            playbackHealthRef.current.isHealthy = data.playback_health.is_healthy !== false
-            playbackHealthRef.current.lastHealthCheck = Date.now()
-          }
-          
-          if (data.type === 'training_update') {
-            // Only update graphs if we have valid history arrays to avoid accidental wipe
-            if (data.loss_history && data.score_history) {
-              updateTrainingData(data)
-            }
-          } else if (data.type === 'checkpoint_playback' || data.type === 'checkpoint_playback_light') {
-            updateCheckpointPlaybackData(data)
-          } else if (data.type === 'playback_status') {
-            console.log('Playback status:', data.message)
-            // Handle playback loading states
-            if (data.status === 'starting') {
-              // Only set loading state if it's not already set (to avoid overriding existing loading message)
-              const currentLoadingStates = useTrainingStore.getState().loadingStates
-              if (!currentLoadingStates.isPlaybackStarting) {
-                useTrainingStore.getState().setLoadingState('isPlaybackStarting', true)
-                useTrainingStore.getState().setLoadingState('loadingMessage', 'Loading checkpoint model...')
-              }
-            } else if (data.status === 'recovering') {
-              // Show recovery status
-              useTrainingStore.getState().setLoadingState('loadingMessage', 'Reconnecting to playback...')
-              console.warn('Playback system is recovering from connection issues')
-            } else if (data.status === 'stopped') {
-              useTrainingStore.getState().setPlayingCheckpoint(false)
               
-              // Clear all loading states when playback stops
-              useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
-              useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
-              useTrainingStore.getState().setLoadingState('loadingMessage', null)
-              
-              // If stopped due to errors, show error history
-              if (data.error_history && data.error_history.length > 0) {
-                console.error('Playback stopped with errors:', data.error_history)
-                const lastError = data.error_history[data.error_history.length - 1]
-                setConnectionError(`Playback failed: ${lastError.error}`)
-              }
-            }
-          } else if (data.type === 'playback_recovery') {
-            console.log('Playback recovery:', data.message)
-            // Update connection status to show recovery
-            setConnectionError(null) // Clear any previous errors
-            useTrainingStore.getState().setLoadingState('loadingMessage', 'Recovering playback connection...')
-          } else if (data.type === 'training_reset') {
-            console.log('Training reset:', data.message)
-            // Update training state
-            useTrainingStore.getState().setTrainingStatus(false, false)
-            useTrainingStore.getState().setEpisode(0)
-            // Clear loading state
-            useTrainingStore.getState().setLoadingState('isTrainingResetting', false)
-            useTrainingStore.getState().setLoadingState('loadingMessage', null)
-          } else if (data.type === 'training_status_update') {
-            // Handle training status updates (e.g., from checkpoint loading)
-            const { setTrainingStatus, setEpisode } = useTrainingStore.getState()
-            setTrainingStatus(data.is_training, data.is_paused)
-            if (data.current_episode !== undefined) {
-              setEpisode(data.current_episode)
-            }
-            console.log('Training status updated:', data.message)
-          } else if (data.type === 'playback_error') {
-            console.error('Playback error:', data.error)
-            // Clear loading states on error
-            useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
-            useTrainingStore.getState().setLoadingState('loadingMessage', null)
-            // Show error in connection status
-            setConnectionError(`Playback error: ${data.error}`)
-          } else if (data.type === 'game_completed') {
-            console.log(`Game completed: Score ${data.final_score}, Steps ${data.total_steps}, Max tile ${data.max_tile}`)
-            // Set loading state for new game starting
-            useTrainingStore.getState().setLoadingState('isNewGameStarting', true)
-            useTrainingStore.getState().setLoadingState('loadingMessage', 'Starting new game...')
-          } else if (data.type === 'new_game_started') {
-            // Clear new game loading state
-            useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
-            useTrainingStore.getState().setLoadingState('loadingMessage', null)
-          } else if (data.type === 'training_started') {
-            console.log('Training started:', data.message)
-            // The training start loading state will be cleared when first training data arrives
-          } else if (data.type === 'new_episode_started') {
-            console.log('New episode started:', data.message)
-            // Set loading state for new episode briefly during training
-            if (useTrainingStore.getState().isTraining) {
-              useTrainingStore.getState().setLoadingState('isNewGameStarting', true)
-              useTrainingStore.getState().setLoadingState('loadingMessage', `Starting episode ${data.episode}...`)
-              // Clear it after a short delay since training data will arrive soon
-              setTimeout(() => {
-                useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
-                useTrainingStore.getState().setLoadingState('loadingMessage', null)
-              }, 1000)
-            }
-          } else if (data.type === 'connection_established') {
-            console.log('Connection established:', data.message)
-          } else if (data.type === 'training_complete') {
-            console.log('Training completed:', data.message)
-            setConnected(true) // Keep connection alive
-
-          } else if (data.type === 'heartbeat') {
-            // Heartbeat received, connection is alive
-            if (data.mobile_optimized) {
-              console.log('Mobile-optimized heartbeat received')
-            }
-          } else {
-            console.log('Received message:', data)
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            processMessage(data)
+          } catch (error) {
+            console.error('Error processing WebSocket message:', error)
+            setConsecutiveFailures(prev => prev + 1)
           }
-        } catch (error) {
-          console.error('Error processing WebSocket message:', error)
         }
-      }
-
-      ws.onclose = (event) => {
+        
+        ws.onclose = (event) => {
         console.log('WebSocket disconnected:', event.reason)
         wsRef.current = null
         setConnected(false)
@@ -469,18 +568,18 @@ export const useWebSocket = () => {
         }
         
         // Avoid multiple concurrent reconnect timers
-        if (reconnectTimeoutRef.current || reconnectAttempts.current >= retryStrategy.maxAttempts) {
+        if (reconnectTimeoutRef.current || reconnectAttempts >= maxReconnectAttempts) {
           return
         }
 
-        if (reconnectAttempts.current < retryStrategy.maxAttempts) {
-          reconnectAttempts.current++
-          setConnectionError(`Connection lost. Reconnecting... (${reconnectAttempts.current}/${retryStrategy.maxAttempts})`)
+        if (reconnectAttempts < maxReconnectAttempts) {
+          setReconnectAttempts(prev => prev + 1)
+          setConnectionError(`Connection lost. Reconnecting... (${reconnectAttempts + 1}/${maxReconnectAttempts})`)
           
           // Adaptive backoff based on network quality
           const backoff = Math.min(
-            retryStrategy.baseDelay * Math.pow(2, reconnectAttempts.current - 1), 
-            retryStrategy.maxDelay
+            reconnectDelay * Math.pow(2, reconnectAttempts), 
+            30000
           )
           
           reconnectTimeoutRef.current = setTimeout(() => {
@@ -523,7 +622,7 @@ export const useWebSocket = () => {
       console.error('Failed to create WebSocket connection:', error)
       setConnectionError('Failed to connect to server.')
     }
-  }
+  }, [maxReconnectAttempts, reconnectDelay, startPollingFallback])
 
   const disconnect = () => {
     if (reconnectTimeoutRef.current) {
@@ -543,166 +642,11 @@ export const useWebSocket = () => {
     setConnected(false)
   }
 
-  const startPollingFallback = async () => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current)
-    }
-    
-    console.log('Starting polling fallback for mobile Safari')
-    setConnectionError('Using polling fallback for mobile Safari...')
-    
-    // Detect network quality to determine initial polling interval
-    const networkQuality = networkQualityRef.current || await detectAndUpdateNetworkQuality()
-    let currentPollingInterval = getAdaptivePollingInterval(networkQuality)
-    
-    console.log(`Using adaptive polling interval: ${currentPollingInterval}ms (network: ${networkQuality.level})`)
-    
-    const createPollingInterval = (interval: number) => {
-      return setInterval(async () => {
-        try {
-          // Periodically re-check network quality and adjust polling interval
-          const now = Date.now()
-          if (now - lastNetworkCheckRef.current > 15000) { // Check every 15 seconds
-            const updatedQuality = await detectAndUpdateNetworkQuality()
-            const newInterval = getAdaptivePollingInterval(updatedQuality)
-            
-            if (newInterval !== currentPollingInterval) {
-              console.log(`Network quality changed from ${networkQuality.level} to ${updatedQuality.level}`)
-              console.log(`Updating polling interval from ${currentPollingInterval}ms to ${newInterval}ms`)
-              
-              currentPollingInterval = newInterval
-              
-              // Restart polling with new interval
-              if (pollingIntervalRef.current) {
-                clearInterval(pollingIntervalRef.current)
-                pollingIntervalRef.current = createPollingInterval(newInterval)
-              }
-              return
-            }
-          }
-          
-          // Always poll training status
-          const trainingResp = await fetch(`${config.api.baseUrl}/training/status`)
-          if (trainingResp.ok) {
-            const data = await trainingResp.json()
-            if (!isConnected) {
-              setConnected(true)
-              setConnectionError(null)
-            }
-            if (data.is_training) {
-              updateTrainingData({
-                type: 'training_update',
-                ...data
-              })
-            }
-          }
-          
-          // Enhanced checkpoint playback polling - get actual playback data
-          if (useTrainingStore.getState().isPlayingCheckpoint) {
-            const playbackResp = await fetch(`${config.api.baseUrl}/checkpoints/playback/current`)
-            if (playbackResp.ok) {
-              const response = await playbackResp.json()
-              
-              if (response.has_data && response.playback_data) {
-                // Update with actual playback data (game moves/visuals)
-                updateCheckpointPlaybackData(response.playback_data)
-                
-                // Update health status if available
-                if (response.playback_data.health_status) {
-                  playbackHealthRef.current.isHealthy = response.playback_data.health_status.is_healthy !== false
-                  playbackHealthRef.current.consecutiveFailures = response.playback_data.health_status.consecutive_failures || 0
-                  playbackHealthRef.current.lastHealthCheck = Date.now()
-                }
-              } else {
-                // No data available - check if we should show loading states
-                const currentLoadingStates = useTrainingStore.getState().loadingStates
-                if (!currentLoadingStates.isPlaybackStarting && !currentLoadingStates.isNewGameStarting) {
-                  // Check if playback should be active but we're not getting data
-                  const status = response.status
-                  if (status && status.is_playing && !status.is_paused) {
-                    // Server says it's playing but we're not getting data - show loading
-                    useTrainingStore.getState().setLoadingState('loadingMessage', 'Waiting for game data...')
-                  }
-                }
-              }
-              
-              // Also check status for state changes
-              const status = response.status
-              if (status && !status.is_playing) {
-                // Playback ended or server stopped – update store
-                useTrainingStore.getState().setPlayingCheckpoint(false)
-                
-                // Clear all loading states
-                useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
-                useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
-                useTrainingStore.getState().setLoadingState('loadingMessage', null)
-                
-                // If there were errors, show them
-                if (status.error_count > 0) {
-                  console.warn(`Playback stopped with ${status.error_count} errors`)
-                  setConnectionError(`Playback stopped due to errors`)
-                }
-              }
-              
-              // Check playback health
-              const healthCheck = checkPlaybackHealth()
-              if (!healthCheck.isHealthy) {
-                console.warn(`Playback health check failed: ${healthCheck.reason}`)
-                if (healthCheck.reason === 'no_heartbeat') {
-                  setConnectionError('Playback connection lost - restarting may be needed')
-                  
-                  // Try to restart playback if we haven't received data in a while
-                  const timeSinceLastData = Date.now() - playbackHealthRef.current.lastHeartbeat
-                  if (timeSinceLastData > 45000) { // 45 seconds
-                    console.log('Attempting to restart playback due to no heartbeat')
-                    await attemptPlaybackRestart()
-                  }
-                } else if (healthCheck.reason === 'system_unhealthy') {
-                  setConnectionError('Playback system unhealthy - performance may be degraded')
-                } else if (healthCheck.reason === 'too_many_failures') {
-                  setConnectionError('Playback experiencing too many failures - restart recommended')
-                }
-              }
-            } else {
-              console.error('Failed to fetch playback data:', playbackResp.status)
-              // If playback endpoint is failing, this might indicate a problem
-              if (playbackResp.status >= 500) {
-                setConnectionError('Playback server error - may need restart')
-              } else if (playbackResp.status === 404) {
-                // Playback might have stopped on server
-                console.log('Playback not found on server, stopping local playback')
-                useTrainingStore.getState().setPlayingCheckpoint(false)
-                useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
-                useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
-                useTrainingStore.getState().setLoadingState('loadingMessage', null)
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Polling fallback error:', error)
-          
-          // On error, increase polling interval to reduce server load
-          if (currentPollingInterval < 10000) { // Max 10 seconds
-            const newInterval = Math.min(currentPollingInterval * 1.5, 10000)
-            console.log(`Polling error - increasing interval to ${newInterval}ms`)
-            
-            currentPollingInterval = newInterval
-            if (pollingIntervalRef.current) {
-              clearInterval(pollingIntervalRef.current)
-              pollingIntervalRef.current = createPollingInterval(newInterval)
-            }
-          }
-          
-          if (isConnected) {
-            setConnected(false)
-            setConnectionError('Polling fallback failed - server may be down')
-          }
-        }
-      }, interval)
-    }
-    
-    pollingIntervalRef.current = createPollingInterval(currentPollingInterval)
-  }
+  // Enhanced connection monitoring
+  useEffect(() => {
+    const healthMonitorInterval = setInterval(monitorConnectionHealth, 5000) // Check every 5 seconds
+    return () => clearInterval(healthMonitorInterval)
+  }, [monitorConnectionHealth])
 
   useEffect(() => {
     connect()

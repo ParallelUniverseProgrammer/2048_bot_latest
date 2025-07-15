@@ -68,6 +68,15 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   const [editingNickname, setEditingNickname] = useState<string | null>(null)
   const [newNickname, setNewNickname] = useState('')
 
+  // Cleanup loading states on component unmount
+  useEffect(() => {
+    return () => {
+      // Clear loading states to prevent stuck states after navigation
+      useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
+      useTrainingStore.getState().setLoadingState('loadingMessage', null)
+    }
+  }, [])
+
   // Load checkpoints and stats
   const loadCheckpoints = async (silent: boolean = false) => {
     try {
@@ -290,7 +299,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   // Start playback function (simplified - just starts playback and navigates)
   const startPlayback = async (checkpointId: string) => {
     try {
-      // Set loading state for playback start
+      // Set loading state for playback start (store will handle timeout automatically)
       useTrainingStore.getState().setLoadingState('isPlaybackStarting', true)
       useTrainingStore.getState().setLoadingState('loadingMessage', 'Loading checkpoint and starting playback...')
       
@@ -307,19 +316,37 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       })
       
       if (!res.ok) {
-        // Clear loading state on error
+        // Clear loading state on API error
         useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
         useTrainingStore.getState().setLoadingState('loadingMessage', null)
-        throw new Error('Failed to start playback')
+        const errorMessage = res.status === 404 
+          ? 'Checkpoint not found. It may have been deleted or the backend is not running.'
+          : res.status === 500
+          ? 'Server error occurred. Please check if the backend is running and try again.'
+          : res.status === 503
+          ? 'Service temporarily unavailable. Please wait a moment and try again.'
+          : `Failed to start playback: ${res.status} ${res.statusText}`
+        throw new Error(errorMessage)
       }
       
-      // Loading state will be cleared when first playback data arrives
+      // Loading state will be cleared when first playback data arrives or timeout expires
+      console.log('Playback API call successful. Waiting for WebSocket data...')
       
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start playback')
-      // Clear loading state on error
+      // Clear loading state on any error
       useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
       useTrainingStore.getState().setLoadingState('loadingMessage', null)
+      
+      const errorMessage = err instanceof Error ? err.message : 'Failed to start playback'
+      setError(errorMessage)
+      console.error('Playback start error:', err)
+      
+      // Additional troubleshooting info in console
+      console.log('Troubleshooting tips:')
+      console.log('1. Check if the backend is running: python backend/main.py')
+      console.log('2. Verify the checkpoint still exists')
+      console.log('3. Check network connectivity')
+      console.log('4. Try refreshing the page')
     }
   }
 

@@ -153,7 +153,7 @@ class MockBackendIntegrationTest:
         # Test with current backend (real or mock)
         with self.manager.backend_context() as backend_available:
             if backend_available:
-                backend_tester = BackendTester(test_logger=self.logger)
+                backend_tester = BackendTester(logger=self.logger)
                 
                 # Test basic endpoints
                 endpoints_to_test = [
