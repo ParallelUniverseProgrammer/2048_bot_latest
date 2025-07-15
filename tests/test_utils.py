@@ -677,3 +677,60 @@ def check_backend_or_exit(exit_code: int = 1, wait_time: int = 30):
             exit(exit_code)
     
     return backend_tester 
+
+# Add mock backend import
+try:
+    from tests.mock_backend import MockBackend
+    MOCK_BACKEND_AVAILABLE = True
+except ImportError:
+    MOCK_BACKEND_AVAILABLE = False 
+
+def start_mock_backend_if_needed(port: int = 8000, wait_time: int = 30) -> bool:
+    """Start mock backend if real backend is not available"""
+    if not MOCK_BACKEND_AVAILABLE:
+        return False
+    
+    backend_tester = get_backend_tester()
+    
+    if backend_tester.is_backend_available():
+        backend_tester.logger.info("Real backend is available, not starting mock backend")
+        return True
+    
+    backend_tester.logger.info("Real backend not available, starting mock backend...")
+    
+    try:
+        mock_backend = MockBackend("localhost", port)
+        mock_backend.start()
+        
+        # Wait for mock backend to be ready
+        import time
+        time.sleep(2)
+        
+        # Check if mock backend is working
+        if mock_backend.is_alive():
+            backend_tester.logger.ok(f"Mock backend started on port {port}")
+            return True
+        else:
+            backend_tester.logger.error("Mock backend failed to start")
+            return False
+            
+    except Exception as e:
+        backend_tester.logger.error(f"Failed to start mock backend: {e}")
+        return False
+
+def check_backend_or_start_mock(port: int = 8000, wait_time: int = 30) -> bool:
+    """Check if backend is available or start mock backend"""
+    backend_tester = get_backend_tester()
+    
+    if backend_tester.is_backend_available():
+        backend_tester.logger.ok("Real backend is available")
+        return True
+    
+    backend_tester.logger.warning("Real backend not available, attempting to start mock backend...")
+    
+    if start_mock_backend_if_needed(port, wait_time):
+        backend_tester.logger.ok("Mock backend started successfully")
+        return True
+    else:
+        backend_tester.logger.error("Neither real nor mock backend is available")
+        return False 
