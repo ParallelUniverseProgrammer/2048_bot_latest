@@ -15,6 +15,7 @@ from typing import Optional, Dict, Any, List
 import os
 import json
 from datetime import datetime
+import threading
 
 import numpy as np
 
@@ -82,6 +83,9 @@ class TrainingManager:
         self._batch_size = 4  # Send metrics in batches of 4
         self._last_broadcast_time = 0.0
         self._broadcast_interval = 0.1  # Broadcast every 100ms instead of every episode
+        
+        # Thread safety for load balancing calculations
+        self._lb_lock = threading.Lock()
         
         self.timing_logger.end_operation("manager_init", "setup")
 
@@ -302,35 +306,37 @@ class TrainingManager:
                         max_tile = self._estimate_max_tile_from_score(score)
                         self._max_tiles_achieved.append(max_tile)
                         
-                        # Track load balancing metrics from trainer
-                        lb_reward = self.trainer.calculate_load_balancing_reward()
-                        self._load_balancing_metrics.append(lb_reward)
+                        # Track load balancing metrics from trainer (thread-safe)
+                        with self._lb_lock:
+                            lb_reward = self.trainer.calculate_load_balancing_reward()
+                            self._load_balancing_metrics.append(lb_reward)
                         
-                        # NEW: Enhanced load balancing tracking
+                        # NEW: Enhanced load balancing tracking (thread-safe)
                         # Get expert usage from model
-                        expert_usage = self.trainer.model.get_expert_usage()
-                        if expert_usage is not None:
-                            usage_list = expert_usage.tolist() if hasattr(expert_usage, 'tolist') else list(expert_usage)
-                            self._expert_usage_history.append([float(u) for u in usage_list])
-                            
-                            # Check for expert starvation
-                            n_experts = len(usage_list)
-                            ideal_usage = 1.0 / n_experts
-                            starved_experts = sum(1 for usage in usage_list if usage < ideal_usage * 0.25)
-                            if starved_experts > 0:
-                                self._expert_starvation_count += 1
-                            
-                            # Calculate sparsity score (how many experts are actively used)
-                            active_experts = sum(1 for usage in usage_list if usage > ideal_usage * 0.1)
-                            sparsity_score = active_experts / n_experts
-                            self._sparsity_scores.append(sparsity_score)
-                            
-                            # Calculate load balance quality
-                            variance = np.var(usage_list)
-                            max_variance = (1.0 - ideal_usage) ** 2
-                            normalized_variance = variance / max_variance if max_variance > 0 else 0.0
-                            balance_quality = 1.0 - normalized_variance
-                            self._load_balance_quality.append(float(balance_quality))
+                        with self._lb_lock:
+                            expert_usage = self.trainer.model.get_expert_usage()
+                            if expert_usage is not None:
+                                usage_list = expert_usage.tolist() if hasattr(expert_usage, 'tolist') else list(expert_usage)
+                                self._expert_usage_history.append([float(u) for u in usage_list])
+                                
+                                # Check for expert starvation
+                                n_experts = len(usage_list)
+                                ideal_usage = 1.0 / n_experts
+                                starved_experts = sum(1 for usage in usage_list if usage < ideal_usage * 0.25)
+                                if starved_experts > 0:
+                                    self._expert_starvation_count += 1
+                                
+                                # Calculate sparsity score (how many experts are actively used)
+                                active_experts = sum(1 for usage in usage_list if usage > ideal_usage * 0.1)
+                                sparsity_score = active_experts / n_experts
+                                self._sparsity_scores.append(sparsity_score)
+                                
+                                # Calculate load balance quality
+                                variance = np.var(usage_list)
+                                max_variance = (1.0 - ideal_usage) ** 2
+                                normalized_variance = variance / max_variance if max_variance > 0 else 0.0
+                                balance_quality = 1.0 - normalized_variance
+                                self._load_balance_quality.append(float(balance_quality))
                     
                     self._episode_start_times.append(episode_start_time)
                     

@@ -223,12 +223,15 @@ class PPOTrainer:
         # Convert to numpy for calculations
         if hasattr(expert_usage, 'cpu'):
             usage_np = expert_usage.cpu().numpy()
+        elif hasattr(expert_usage, 'numpy'):
+            usage_np = expert_usage.numpy()
         else:
-            usage_np = expert_usage
+            usage_np = np.array(expert_usage)
         n_experts = len(usage_np)
         
-        # Store usage in history for diversity tracking
-        self.expert_usage_history.append(np.array(usage_np))
+        # Store usage in history for diversity tracking (thread-safe)
+        with self._buffer_lock:  # Reuse existing lock for thread safety
+            self.expert_usage_history.append(np.array(usage_np))
         
         # Calculate ideal uniform distribution
         ideal_usage = 1.0 / n_experts
@@ -274,7 +277,7 @@ class PPOTrainer:
                     diversity_penalty += (ideal_usage * 0.5 - avg_usage_val) / ideal_usage
         
         # 5. NEW: Sparsity promotion (encourage using more experts)
-        active_experts = float(np.sum((usage_np > ideal_usage * 0.1).astype(float)))  # Experts with >10% of ideal usage
+        active_experts = float(np.sum((usage_np > ideal_usage * 0.1).astype(np.float64)))  # Experts with >10% of ideal usage
         sparsity_bonus = (active_experts / n_experts) * 0.5  # Bonus for using more experts
         
         # 6. NEW: Balance quality metric
