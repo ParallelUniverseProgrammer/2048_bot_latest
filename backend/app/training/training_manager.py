@@ -199,6 +199,44 @@ class TrainingManager:
         self.timing_logger.end_operation("update_config", "config", f"model_size={model_size}, params={self.current_config.estimated_params:.1f}M")
         
         print(f"Updated training config: {model_size} model with {self.current_config.estimated_params:.1f}M parameters")
+
+    def load_checkpoint_trainer(self, config, checkpoint_path: str):
+        """Load a checkpoint and create trainer with the correct configuration"""
+        self.timing_logger.start_operation("load_checkpoint_trainer", "checkpoint", f"checkpoint_path={checkpoint_path}")
+        
+        # Set the config from checkpoint
+        self.current_config = config
+        
+        # Create new trainer with checkpoint config
+        self.timing_logger.start_operation("trainer_checkpoint_init", "checkpoint")
+        self.trainer = PPOTrainer(
+            config=config,
+            learning_rate=0.0003  # Default learning rate, can be adjusted via UI later
+        )
+        
+        # CRITICAL FIX: Update shared trainer references to use the new trainer
+        self.timing_logger.start_operation("shared_trainer_checkpoint_update", "checkpoint")
+        self.env_trainers = [self.trainer] * len(self.envs)
+        self.timing_logger.end_operation("shared_trainer_checkpoint_update", "checkpoint", f"updated={len(self.env_trainers)}_references")
+        
+        # Load checkpoint weights
+        self.timing_logger.start_operation("load_checkpoint_weights", "checkpoint")
+        self.trainer.load_checkpoint(checkpoint_path)
+        self.timing_logger.end_operation("load_checkpoint_weights", "checkpoint", f"episode_count={self.trainer.episode_count}")
+        
+        # Sync manager state with trainer state
+        self.current_episode = self.trainer.episode_count
+        self._game_lengths = []
+        self._episode_start_times = []
+        self._start_time = time.time()
+        self.is_paused = False
+        
+        self.timing_logger.end_operation("trainer_checkpoint_init", "checkpoint")
+        self.timing_logger.end_operation("load_checkpoint_trainer", "checkpoint", f"config={config}, episode={self.current_episode}")
+        
+        print(f"Loaded checkpoint trainer with config: {config}")
+        print(f"Resumed from episode: {self.current_episode}")
+        print(f"Updated {len(self.env_trainers)} environment trainers to use new trainer")
     
     def start(self):
         self.timing_logger.start_operation("training_start", "control")

@@ -46,6 +46,7 @@ That's it! The launcher handles everything else automatically.
   - [Starting a Training Session](#starting-a-training-session)
   - [Navigating the Interface](#navigating-the-interface)
   - [Checkpoint Playback](#checkpoint-playback)
+- [🧪 Test Suite & Developer Experience](#-test-suite--developer-experience)
 - [🔌 API Documentation](#-api-documentation)
 - [🏛️ System Architecture](#️-system-architecture)
 - [🤖 Neural Network Deep Dive](#-neural-network-deep-dive)
@@ -54,122 +55,88 @@ That's it! The launcher handles everything else automatically.
 - [🤝 Contributing](#-contributing)
 - [📜 License](#-license)
 
-## ⚠️ Current Issues & Known Bugs
+## 🧪 Test Suite & Developer Experience
 
-- **Thread Safety Fixed:** The main crash issue (race conditions in load balancing calculations during parallel training) has been identified and fixed. The system should now be more stable.
-- **Potential Remaining Issues:** While the main crash has been addressed, there may still be performance issues or edge cases. Monitor the system during training.
-- **Testing Recommended:** The fixes are recent and should be tested thoroughly before production use.
+The `tests/` directory is now fully reorganized for clarity, speed, and maintainability. Tests are grouped by category, with clear naming conventions and subfolders for each type of test. Most integration tests will automatically start a mock backend if the real backend is not running, making it easy to run tests in isolation.
 
-These issues are under active investigation. See commit history and issue tracker for updates.
+### Directory Structure
 
-## ✨ Key Features
+```
+tests/
+├── core/          # Core/unit tests (no backend required)
+├── integration/   # Backend API/integration tests (mock backend auto-started if needed)
+├── performance/   # Performance and optimization tests
+├── mobile/        # Mobile/device compatibility tests
+├── playback/      # Game playback and simulation tests
+├── training/      # Training-related tests
+├── frontend/      # Frontend integration/UI tests
+├── utilities/     # Test utilities and mock services
+├── runners/       # Test runners and orchestration scripts
+├── checkpoints/   # Test checkpoint data
+├── README.md
+└── ..._test_results.json
+```
 
-- **🧠 Advanced MoE Transformer**: A sophisticated Mixture-of-Experts model that dynamically routes input, balances expert load, and adapts its size based on available VRAM for optimal performance.
-- **📊 Comprehensive Visualizations**: Go beyond simple graphs. Analyze attention heatmaps, inspect expert routing in real-time, and monitor a rich set of performance analytics on a sleek, mobile-optimized dashboard.
-- **🚀 High-Performance Training**: The system leverages parallel environments to accelerate data collection and is built for serious training.
-- **📱 Seamless Mobile Experience**: A full-featured Progressive Web App (PWA) provides a native app-like experience on your phone, with an automated launcher that generates a QR code for instant access.
-- **⚙️ Advanced Checkpoint Management**: A robust system for saving, loading, and managing model checkpoints. Includes performance metadata, user-editable tags, and a full playback system to review historical games.
-- **🔄 Enhanced Loading Feedback**: Comprehensive progress tracking with step-by-step updates, estimated completion times, and visual progress indicators for all operations.
-- **🔧 Effortless Developer Experience**: An automated launcher handles all dependency installation and network configuration. Combined with detailed, colored logging and built-in troubleshooting, the development workflow is streamlined and efficient.
+### Running Tests
 
-## 🛠️ Technology Stack
+- **Core/unit tests:**
+  ```bash
+  python tests/core/test_checkpoint_loading.py
+  ```
+- **Integration/API tests:**
+  ```bash
+  python tests/integration/test_complete_games.py
+  # Most will auto-start a mock backend if needed
+  ```
+- **Performance tests:**
+  ```bash
+  python tests/performance/test_performance.py
+  ```
+- **Mobile/device tests:**
+  ```bash
+  python tests/mobile/test_connection_issues.py
+  ```
+- **Playback tests:**
+  ```bash
+  python tests/playback/test_freeze_detection.py
+  ```
+- **Training tests:**
+  ```bash
+  python tests/training/test_status_sync.py
+  ```
+- **Frontend tests:**
+  ```bash
+  python tests/frontend/test_automation.py
+  ```
+- **All tests (comprehensive):**
+  ```bash
+  python tests/runners/master_test_runner.py --level comprehensive
+  ```
 
-The project is built on a modern, high-performance stack, chosen for scalability and developer efficiency.
+### Backend Dependency Handling
+- **Mock backend auto-start:** Most integration tests use a utility to start a mock backend if the real one is not running. No manual backend launch is needed for these tests.
+- **Real backend required:** Some advanced or real-system tests may require the backend running manually. This will be clearly documented in the test or runner script.
 
-| Component         | Technology                                                                                                  |
-| ----------------- | ----------------------------------------------------------------------------------------------------------- |
-| **🤖 Backend**      | Python 3.9+, FastAPI, PyTorch 2.0+, Uvicorn, Websockets                                                    |
-| **🖥️ Frontend**     | React 18+, TypeScript, Vite, Tailwind CSS, Framer Motion, Chart.js, Zustand                                |
-| **📱 Mobile**       | Progressive Web App (PWA) with `vite-plugin-pwa`                                                           |
-| **📦 Tooling**      | Poetry (Python), NPM (Node.js), Black, ESLint, Prettier                                                    |
-| **⚙️ Automation** | Custom Python Launcher (`launcher.py`)                                                                      |
+### Best Practices for Contributing Tests
+- Place new tests in the correct subfolder by category
+- Use the shared utilities in `tests/utilities/test_utils.py` for logging, backend helpers, etc.
+- Prefer descriptive, consistent file names (e.g., `test_feature_behavior.py`)
+- Document backend dependencies in the test docstring
+- Add edge cases and error handling scenarios
+- Update this README and `tests/README.md` if you add new categories or major tests
 
-## ⚙️ Setup & Installation
+### Example: Adding a New Test
+1. Place your script in the appropriate folder (e.g., `tests/playback/test_new_playback_feature.py`)
+2. Use imports like:
+   ```python
+   from tests.utilities.test_utils import TestLogger, BackendTester
+   ```
+3. Run your test directly:
+   ```bash
+   python tests/playback/test_new_playback_feature.py
+   ```
 
-Follow the path that best suits your needs. For a fast, automated setup, use the launcher. For granular control, follow the manual setup.
-
-### Prerequisites
-
-Ensure the following tools are installed and available in your system's PATH:
-
-#### Required Software
-- **Git** - [Download here](https://git-scm.com/downloads)
-- **Python 3.9+** - [Download here](https://www.python.org/downloads/)
-- **Poetry** - [Installation guide](https://python-poetry.org/docs/#installation)
-- **Node.js 18+** - [Download here](https://nodejs.org/)
-- **NPM** (comes with Node.js)
-
-#### Hardware Requirements
-- **RAM**: Minimum 8GB, Recommended 16GB+
-- **Storage**: 2GB free space
-- **GPU**: Optional - CUDA-compatible GPU with 4GB+ VRAM recommended
-- **Network**: Stable internet connection for initial dependency download
-
-#### Platform-Specific Notes
-- **Windows**: Ensure PowerShell execution policy allows script execution
-- **macOS**: May need to install Xcode Command Line Tools
-- **Linux**: Ensure `build-essential` package is installed
-
-### 🚀 Automated Launch (Recommended)
-
-The included `launcher.py` script is the most efficient way to get started. It automates dependency installation, network configuration, and process management.
-
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/krdge/2048_bot.git
-    cd 2048_bot
-    ```
-
-2.  **Run the launcher:**
-    ```bash
-    python launcher.py
-    ```
-
-The launcher will perform the following actions:
-- ✅ Verify all necessary dependencies are installed
-- ✅ Install any missing Python or Node.js packages
-- ✅ Discover the best local IP for LAN access
-- ✅ Start the backend server on `http://localhost:8000`
-- ✅ Start the frontend development server on `http://localhost:3000`
-- ✅ Generate a `mobile_access_qr.png` and display a QR code in the terminal for instant mobile access
-
-### 🔧 Manual Setup (Power Users)
-
-For developers who require granular control over the startup process, follow these steps.
-
-1.  **Clone the repository and navigate into it:**
-    ```bash
-    git clone https://github.com/krdge/2048_bot.git
-    cd 2048_bot
-    ```
-
-2.  **Launch the Backend Server:**
-    Open a terminal session and run:
-    ```bash
-    # Navigate to the backend directory
-    cd backend
-
-    # Install dependencies using Poetry
-    poetry install
-
-    # Start the FastAPI server
-    poetry run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-    ```
-    The `--host 0.0.0.0` flag binds the server to all available network interfaces, making it accessible on your LAN.
-
-3.  **Launch the Frontend Application:**
-    Open a *second* terminal session and run:
-    ```bash
-    # Navigate to the frontend directory
-    cd frontend
-
-    # Install dependencies using NPM
-    npm install
-
-    # Start the Vite development server
-    npm run dev -- --host
-    ```
-    The `--host` flag exposes the frontend on your local network, allowing mobile device access. Vite will print the accessible URL.
+For more details, see `tests/README.md` and `tests/organization_plan.md`.
 
 ## 🕹️ Usage Guide
 

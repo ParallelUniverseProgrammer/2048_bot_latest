@@ -6,7 +6,7 @@ This directory contains a comprehensive test suite for the 2048 AI checkpoint sy
 
 ### Core Components
 
-#### `test_utils.py`
+#### `utilities/test_utils.py`
 The foundation of the test suite, providing:
 - **TestLogger**: Standardized logging with colors, formatting, and structured output
 - **BackendTester**: Common backend API testing functionality
@@ -33,14 +33,14 @@ All test output uses standardized prefixes for easy parsing and visual scanning:
 
 ### 1. Core Functionality Tests
 
-#### `test_checkpoint_loading_fix.py`
+#### `core/test_checkpoint_loading.py`
 Tests the core checkpoint loading functionality:
 - Checkpoint loading speed and reliability
 - Stats endpoint functionality
 - Training independence (checkpoints load during training)
 - Basic frontend integration points
 
-#### `test_checkpoint_complete_games.py`
+#### `integration/test_complete_games.py`
 Comprehensive game playback testing:
 - Complete game execution from checkpoints
 - Game data validation and structure
@@ -48,7 +48,7 @@ Comprehensive game playback testing:
 - Live playback initialization
 - Playback controls (pause/resume/stop)
 
-#### `run_checkpoint_tests.py`
+#### `runners/master_test_runner.py`
 Main test runner with multiple test levels:
 - **Basic**: Quick connectivity and API tests
 - **Core**: Checkpoint loading and game playback
@@ -57,7 +57,7 @@ Main test runner with multiple test levels:
 
 ### 2. Frontend Integration Tests
 
-#### `test_frontend_automation.py`
+#### `frontend/test_automation.py`
 Enhanced frontend testing with:
 - Automated API endpoint verification
 - WebSocket connectivity testing
@@ -68,7 +68,7 @@ Enhanced frontend testing with:
 
 ### 3. Edge Case and Robustness Tests
 
-#### `test_edge_cases.py`
+#### `integration/test_edge_cases.py`
 Comprehensive edge case testing:
 - Invalid checkpoint IDs (including security tests)
 - Malformed HTTP requests and payloads
@@ -80,57 +80,82 @@ Comprehensive edge case testing:
 ### 4. Specialized Tests
 
 #### Performance Tests
-- `test_performance_improvements.py` - Performance optimization validation
-- `test_gpu_usage.py` - GPU utilization testing
+- `performance/test_performance.py` - Performance optimization validation
+- `performance/test_gpu_usage.py` - GPU utilization testing
 
 #### Freeze and Stability Tests
-- `test_real_playback_freeze.py` - Real-world freeze detection
-- `test_freeze_diagnostics.py` - Freeze diagnostic tools
-- `test_freeze_reproduction.py` - Freeze reproduction scenarios
+- `playback/test_freeze_detection.py` - Real-world freeze detection
+- `playback/test_freeze_diagnostics.py` - Freeze diagnostic tools
+- `playback/test_freeze_reproduction.py` - Freeze reproduction scenarios
 
 #### Device Compatibility Tests
-- `test_device_compatibility.py` - Multi-device testing
-- `test_device_fix.py` - Device-specific fixes
-- `test_comprehensive_device_fix.py` - Comprehensive device testing
+- `mobile/test_device_compatibility.py` - Multi-device testing
+- `mobile/test_device_fix.py` - Device-specific fixes
+- `mobile/test_comprehensive_device.py` - Comprehensive device testing
 
 #### Live System Tests
-- `test_live_playback.py` - Live playback functionality
-- `test_game_simulation.py` - Game simulation testing
-- `test_playback_sim.py` - Playback simulation
+- `integration/test_live_playback.py` - Live playback functionality
+- `integration/test_game_simulation.py` - Game simulation testing
+- `playback/test_simulation.py` - Playback simulation
 
 ## Usage Guide
 
 ### Running Tests
 
-#### Quick Start
-```bash
-# Run core tests (recommended for regular testing)
-python run_checkpoint_tests.py --level core
+#### 🚀 **Recommended: Use the Master Test Runner**
 
-# Run all tests
-python run_checkpoint_tests.py --level comprehensive
+The preferred way to run tests is through the master test runner, which provides different intensity levels:
+
+```bash
+# Quick connectivity test (~1 minute)
+python tests/runners/master_test_runner.py --level basic
+
+# Core functionality test - RECOMMENDED for regular testing (~5 minutes)
+python tests/runners/master_test_runner.py --level core
+
+# Full functionality test (~10 minutes)
+python tests/runners/master_test_runner.py --level full
+
+# Comprehensive test - all tests (~15 minutes)
+python tests/runners/master_test_runner.py --level comprehensive
+
+# List all available test levels and their contents
+python tests/runners/master_test_runner.py --list
 ```
 
-#### Individual Test Scripts
+**Why use the master test runner?**
+- ✅ **Consistent experience**: Same interface for all test levels
+- ✅ **Smart test selection**: Each level includes appropriate tests from different categories
+- ✅ **Proper reporting**: Detailed results with timing and error information
+- ✅ **CI/CD ready**: Proper exit codes for automation
+- ✅ **Timeout protection**: Prevents tests from hanging indefinitely
+
+#### Individual Test Scripts (Advanced Usage)
+
+For debugging specific issues or running individual tests:
+
 ```bash
 # Test checkpoint loading
-python test_checkpoint_loading_fix.py
+python tests/core/test_checkpoint_loading.py
 
 # Test complete game playback
-python test_checkpoint_complete_games.py
+python tests/integration/test_complete_games.py
 
 # Test frontend integration
-python test_frontend_automation.py
+python tests/frontend/test_automation.py
 
 # Test edge cases
-python test_edge_cases.py
+python tests/integration/test_edge_cases.py
 ```
 
-#### Test Levels
-- **basic**: Backend connectivity and API endpoints (~1 minute)
-- **core**: Checkpoint loading and game playback (~5 minutes)
-- **full**: Core tests plus live playback (~10 minutes)
-- **comprehensive**: All tests including edge cases (~15 minutes)
+#### Test Level Details
+
+| Level | Duration | Description | Use Case |
+|-------|----------|-------------|----------|
+| **basic** | ~1 minute | Backend connectivity and API endpoints | Quick health check, CI/CD smoke tests |
+| **core** | ~5 minutes | Checkpoint loading and game playback | **Regular development testing** |
+| **full** | ~10 minutes | All core functionality plus live playback | Pre-commit testing, feature validation |
+| **comprehensive** | ~15 minutes | All tests including edge cases | Release testing, full regression suite |
 
 ### Prerequisites
 
@@ -177,7 +202,7 @@ Performance                  | PASS
 
 ### Adding New Tests
 
-1. **Use Shared Utilities**: Import from `test_utils.py` for consistent logging and common functionality
+1. **Use Shared Utilities**: Import from `tests.utilities.test_utils` for consistent logging and common functionality
 2. **Follow Naming Conventions**: Use descriptive test names with standardized prefixes
 3. **Include Documentation**: Add comprehensive docstrings and comments
 4. **Handle Errors Gracefully**: Provide clear error messages and recovery instructions
@@ -194,7 +219,7 @@ Test Description
 Brief description of what this test covers and why it's important.
 """
 
-from test_utils import TestLogger, BackendTester
+from tests.utilities.test_utils import TestLogger, BackendTester
 
 class YourTester:
     """Test class description"""
@@ -273,20 +298,22 @@ ERROR: No checkpoints available for testing
 
 ### Getting Help
 
-1. **Check Logs**: Review test output for specific error messages
-2. **Run Individual Tests**: Isolate issues by running specific test scripts
-3. **Verify Prerequisites**: Ensure backend is running and checkpoints exist
-4. **Check Documentation**: Review this README and inline documentation
+1. **Start with the master test runner**: Use `python tests/runners/master_test_runner.py --level core` for regular testing
+2. **Check Logs**: Review test output for specific error messages
+3. **Run Individual Tests**: Isolate issues by running specific test scripts
+4. **Verify Prerequisites**: Ensure backend is running and checkpoints exist
+5. **Check Documentation**: Review this README and inline documentation
 
 ## Contributing
 
 When contributing to the test suite:
 
-1. Follow the established patterns and conventions
-2. Add comprehensive tests for new functionality
-3. Update documentation as needed
-4. Ensure all tests pass before submitting
-5. Include edge cases and error scenarios
+1. **Use the master test runner**: Test your changes with `python tests/runners/master_test_runner.py --level core`
+2. Follow the established patterns and conventions
+3. Add comprehensive tests for new functionality
+4. Update documentation as needed
+5. Ensure all tests pass before submitting
+6. Include edge cases and error scenarios
 
 ## Test Results Interpretation
 

@@ -458,46 +458,18 @@ async def _load_checkpoint_background(checkpoint_id: str, checkpoint_path: Path)
             })
             return
 
-        # Recreate trainer with the correct config (heavy operation - run in thread)
-        def create_trainer():
-            training_manager.current_config = config
-            training_manager.trainer = PPOTrainer(
-                config=config,
-                learning_rate=0.0003  # Default learning rate, can be adjusted via UI later
-            )
+        # Load checkpoint and create trainer with correct configuration (heavy operation - run in thread)
+        def load_checkpoint_trainer():
+            training_manager.load_checkpoint_trainer(config, str(checkpoint_path))
         
-        await asyncio.to_thread(create_trainer)
-
-        await websocket_manager.broadcast({
-            'type': 'checkpoint_loading_status',
-            'checkpoint_id': checkpoint_id,
-            'status': 'trainer_created',
-            'message': 'Model initialized, loading checkpoint weights...'
-        })
-
-        # Load model/optimiser state (heavy operation - run in thread)
-        def load_checkpoint():
-            if training_manager.trainer is None:
-                raise RuntimeError("Trainer was not created properly")
-            training_manager.trainer.load_checkpoint(str(checkpoint_path))
-        
-        await asyncio.to_thread(load_checkpoint)
+        await asyncio.to_thread(load_checkpoint_trainer)
 
         await websocket_manager.broadcast({
             'type': 'checkpoint_loading_status',
             'checkpoint_id': checkpoint_id,
             'status': 'weights_loaded',
-            'message': 'Checkpoint weights loaded, preparing training environment...'
+            'message': 'Checkpoint loaded successfully, preparing training environment...'
         })
-
-        # Sync manager state
-        if training_manager.trainer is None:
-            raise RuntimeError("Trainer was not created properly")
-        training_manager.current_episode = training_manager.trainer.episode_count
-        training_manager._game_lengths = []
-        training_manager._episode_start_times = []
-        training_manager._start_time = _time.time()
-        training_manager.is_paused = False
 
         await websocket_manager.broadcast({
             'type': 'checkpoint_loading_status',
