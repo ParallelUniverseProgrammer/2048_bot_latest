@@ -44,6 +44,9 @@ export interface TrainingData {
   avg_sparsity_score: number
   avg_balance_quality: number
   expert_usage_trend: number
+  // Animated progress feedback
+  is_training_active?: boolean
+  next_episode_estimate?: number
 }
 
 export interface CheckpointPlaybackData {

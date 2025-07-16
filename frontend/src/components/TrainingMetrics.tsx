@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Clock, Target, TrendingUp, Timer, Zap, Scale } from 'lucide-react'
+import { Clock, Target, TrendingUp, Timer, Zap, Scale, Activity } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 
 const TrainingMetrics: React.FC = () => {
   const { trainingData, isTraining } = useTrainingStore()
   const [currentElapsedTime, setCurrentElapsedTime] = useState(0)
+  const [progressAnimation, setProgressAnimation] = useState(0)
 
   // Update elapsed time in real-time
   useEffect(() => {
@@ -25,6 +26,24 @@ const TrainingMetrics: React.FC = () => {
 
     return () => clearInterval(interval)
   }, [isTraining, trainingData?.wall_clock_elapsed])
+
+  // Animated progress indicator for training activity
+  useEffect(() => {
+    if (!isTraining || !trainingData?.is_training_active) {
+      setProgressAnimation(0)
+      return
+    }
+
+    // Animate progress bar to show training is active
+    const interval = setInterval(() => {
+      setProgressAnimation(prev => {
+        if (prev >= 100) return 0
+        return prev + 2
+      })
+    }, 100)
+
+    return () => clearInterval(interval)
+  }, [isTraining, trainingData?.is_training_active])
 
   // Helper function to format time duration
   const formatTime = (seconds: number): string => {
@@ -48,6 +67,14 @@ const TrainingMetrics: React.FC = () => {
     } else {
       return `${(speed * 60).toFixed(1)} eps/sec`
     }
+  }
+
+  // Calculate estimated time to next episode
+  const getNextEpisodeEstimate = (): string => {
+    if (!trainingData?.next_episode_estimate || trainingData.next_episode_estimate <= 0) {
+      return 'Calculating...'
+    }
+    return formatTime(trainingData.next_episode_estimate)
   }
 
   const metrics = [
@@ -98,33 +125,56 @@ const TrainingMetrics: React.FC = () => {
   ]
 
   return (
-    <div className="flex flex-wrap items-center gap-3 text-sm">
-      {metrics.map((metric, index) => {
-        const IconComponent = metric.icon
-        return (
+    <div className="space-y-4">
+      {/* Animated Training Progress Indicator */}
+      {isTraining && trainingData?.is_training_active && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card-glass p-4 rounded-2xl border border-green-500/30 bg-green-500/10"
+        >
+          <div className="flex items-center space-x-3 mb-3">
+            <Activity className="w-5 h-5 text-green-400 animate-pulse" />
+            <div className="flex-1">
+              <div className="text-sm font-medium text-green-300">Training Active</div>
+              <div className="text-xs text-green-400/80">
+                Next episode in ~{getNextEpisodeEstimate()}
+              </div>
+            </div>
+          </div>
+          
+          {/* Animated Progress Bar */}
+          <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+            <motion.div
+              className="bg-gradient-to-r from-green-400 to-green-300 h-2 rounded-full"
+              animate={{ x: `${progressAnimation - 100}%` }}
+              transition={{ duration: 0.5, ease: "linear" }}
+              style={{ width: '100%' }}
+            />
+          </div>
+        </motion.div>
+      )}
+
+      {/* Metrics Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {metrics.map((metric, index) => (
           <motion.div
             key={metric.label}
-            className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-gray-800/50 border border-gray-700/50"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3, delay: index * 0.1 }}
-            whileHover={{ scale: 1.05 }}
+            transition={{ delay: index * 0.1 }}
+            className={`card-glass p-3 rounded-xl border ${metric.bgColor}`}
           >
-            <div className={`p-1 rounded ${metric.bgColor}`}>
-              <IconComponent className={`w-3 h-3 ${metric.color}`} />
+            <div className="flex items-center space-x-2 mb-2">
+              <metric.icon className={`w-4 h-4 ${metric.color}`} />
+              <span className="text-xs font-medium text-gray-300">{metric.label}</span>
             </div>
-            <div className="flex flex-col">
-              <span className="text-xs text-gray-400">{metric.label}</span>
-              <span className={`font-medium ${metric.color}`}>
-                {metric.value}
-              </span>
+            <div className={`text-lg font-bold ${metric.color}`}>
+              {metric.value}
             </div>
-            {isTraining && index === 0 && (
-              <div className="w-1 h-1 bg-green-400 rounded-full animate-pulse" />
-            )}
           </motion.div>
-        )
-      })}
+        ))}
+      </div>
     </div>
   )
 }

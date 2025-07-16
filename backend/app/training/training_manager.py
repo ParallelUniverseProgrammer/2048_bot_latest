@@ -374,6 +374,15 @@ class TrainingManager:
                     # Record episode start time
                     episode_start_time = time.time()
                     
+                    # Track episode start times for progress estimation
+                    if not hasattr(self, '_episode_start_times'):
+                        self._episode_start_times = []
+                    self._episode_start_times.append(episode_start_time)
+                    
+                    # Keep only last 20 episode times to avoid memory bloat
+                    if len(self._episode_start_times) > 20:
+                        self._episode_start_times = self._episode_start_times[-20:]
+                    
                     # Train one episode **per environment** using PPO in parallel threads.
                     if self.current_episode < 5:  # Debug logging for first few iterations
                         print(f"Training {len(self.envs)} environments sequentially...")
@@ -484,34 +493,33 @@ class TrainingManager:
                     
                     self.timing_logger.end_operation("metrics_processing", "training", f"processed={len(episode_results)}_results")
                     
-                    # Optimization: Batch metrics broadcasting instead of broadcasting every episode
-                    current_time = time.time()
-                    if current_time - self._last_broadcast_time >= self._broadcast_interval:
+                    # FIX: Broadcast metrics after every episode (reduced from 2 episodes)
+                    # This provides immediate feedback to users
+                    if episode_results:
                         self.timing_logger.start_operation("metrics_broadcast", "websocket")
                         
                         # Build metrics for the last environment only (representative sample)
-                        if episode_results:
-                            metrics = self._build_metrics(episode_results[-1], self.envs[-1])
-                            
-                            # CRITICAL FIX: Add timeout and error handling for WebSocket broadcast
-                            try:
-                                await asyncio.wait_for(
-                                    self.ws_manager.broadcast(metrics, priority="normal"),
-                                    timeout=1.0  # 1 second timeout to prevent blocking
-                                )
-                            except asyncio.TimeoutError:
-                                print("Warning: WebSocket broadcast timed out, skipping metrics update")
-                            except Exception as e:
-                                print(f"Warning: WebSocket broadcast failed: {e}")
+                        metrics = self._build_metrics(episode_results[-1], self.envs[-1])
                         
-                        self.timing_logger.end_operation("metrics_broadcast", "websocket", "batched_broadcast")
-                        self._last_broadcast_time = current_time
+                        # Add animated progress indicator
+                        metrics['is_training_active'] = True
+                        metrics['next_episode_estimate'] = self._estimate_next_episode_time()
+                        
+                        # CRITICAL FIX: Add timeout and error handling for WebSocket broadcast
+                        try:
+                            await asyncio.wait_for(
+                                self.ws_manager.broadcast(metrics, priority="normal"),
+                                timeout=1.0  # 1 second timeout to prevent blocking
+                            )
+                        except asyncio.TimeoutError:
+                            print("Warning: WebSocket broadcast timed out, skipping metrics update")
+                        except Exception as e:
+                            print(f"Warning: WebSocket broadcast failed: {e}")
+                        
+                        self.timing_logger.end_operation("metrics_broadcast", "websocket", "immediate_feedback")
 
                     # Extract metrics we need later for checkpoint bookkeeping
-                    training_speed = 0.0
-                    if self._start_time and self.current_episode > 0:
-                        elapsed_time = time.time() - self._start_time
-                        training_speed = (self.current_episode / elapsed_time) * 60
+                    training_speed = self._calculate_training_speed_with_checkpoint_offset()
                     
                     avg_game_length = sum(self._game_lengths) / len(self._game_lengths) if self._game_lengths else 0
                     
@@ -691,10 +699,7 @@ class TrainingManager:
         actions_probs = self.env_trainers[0].get_latest_action_probs()
         
         # Calculate training speed (episodes per minute)
-        training_speed = 0.0
-        if self._start_time and self.current_episode > 0:
-            elapsed_time = time.time() - self._start_time
-            training_speed = (self.current_episode / elapsed_time) * 60  # episodes per minute
+        training_speed = self._calculate_training_speed_with_checkpoint_offset()
         
         # Calculate game length metrics
         avg_game_length = 0
@@ -909,6 +914,43 @@ class TrainingManager:
             'load_balancing_efficiency': load_balancing_efficiency
         }
     
+    def _estimate_next_episode_time(self) -> float:
+        """Estimate time until next episode completion based on recent performance"""
+        if not self._episode_start_times or len(self._episode_start_times) < 2:
+            return 0.0
+        
+        # Calculate average time per episode from recent episodes
+        recent_times = self._episode_start_times[-10:]  # Last 10 episodes
+        if len(recent_times) < 2:
+            return 0.0
+        
+        # Calculate average time between episodes
+        total_time = recent_times[-1] - recent_times[0]
+        avg_time_per_episode = total_time / (len(recent_times) - 1)
+        
+        return avg_time_per_episode
+
+    def _calculate_training_speed_with_checkpoint_offset(self) -> float:
+        """Calculate training speed accounting for loaded checkpoint episodes"""
+        if not self._start_time or self.current_episode <= 0:
+            return 0.0
+        
+        # Get the episode count from the trainer (includes loaded checkpoint episodes)
+        trainer_episode_count = self.env_trainers[0].episode_count if self.env_trainers else 0
+        
+        # Calculate elapsed time since training started
+        elapsed_time = time.time() - self._start_time
+        
+        # Use trainer episode count for accurate speed calculation
+        # This includes episodes from loaded checkpoints
+        total_episodes_completed = trainer_episode_count
+        
+        if elapsed_time > 0:
+            training_speed = (total_episodes_completed / elapsed_time) * 60  # episodes per minute
+            return training_speed
+        
+        return 0.0
+
     def write_timing_summary(self, filename: str = "logs/training_manager_timing_summary.json"):
         """Write timing summary to JSON file"""
         self.timing_logger.write_summary(filename) 
