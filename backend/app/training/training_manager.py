@@ -177,11 +177,16 @@ class TrainingManager:
                     episode_start_time = time.time()
                     
                     # Train one episode **per environment** using PPO in parallel threads.
+                    if self.current_episode < 5:  # Debug logging for first few iterations
+                        print(f"🔄 Training {len(self.envs)} environments in parallel...")
+                    
                     gather_coro = asyncio.gather(*[
                         asyncio.to_thread(self.trainer.train_episode, env) for env in self.envs
                     ])
                     try:
                         episode_results: List[Dict[str, Any]] = await asyncio.wait_for(gather_coro, timeout=60.0)
+                        if self.current_episode < 5:  # Debug logging
+                            print(f"✅ Training completed, got {len(episode_results)} results")
                     except asyncio.TimeoutError:
                         print(f"[red]Training episode timeout after 60s (episode {self.current_episode}) – cancelling tasks")
                         gather_coro.cancel()
@@ -201,8 +206,10 @@ class TrainingManager:
                     for result in episode_results:
                         game_length = result.get('length', 0)
                         score = result.get('score', 0)
-                        loss = (result.get('losses', {}).get('policy_loss', 0) + 
-                               result.get('losses', {}).get('value_loss', 0)) if result.get('losses') else 0
+                        losses = result.get('losses', {})
+                        policy_loss = losses.get('policy_loss', 0) if losses else 0
+                        value_loss = losses.get('value_loss', 0) if losses else 0
+                        loss = (policy_loss or 0) + (value_loss or 0)
                         
                         self._game_lengths.append(game_length)
                         self._recent_scores.append(score)
@@ -244,8 +251,27 @@ class TrainingManager:
                             f"LR={metrics['learning_rate']:.6f}"
                         )
 
-                    # Update current episode using the highest episode number returned
-                    self.current_episode = episode_results[-1]['episode'] if episode_results else self.current_episode
+                    # Update current episode - increment by number of environments trained
+                    if episode_results:
+                        # Each iteration trains one episode per environment, so increment by number of environments
+                        self.current_episode += len(self.envs)
+                        print(f"📈 Training progress: {self.current_episode}/{self.total_episodes} episodes completed")
+                        
+                        # Send training status update to frontend
+                        try:
+                            await self.ws_manager.broadcast({
+                                'type': 'training_status_update',
+                                'is_training': True,
+                                'is_paused': False,
+                                'current_episode': self.current_episode,
+                                'total_episodes': self.total_episodes
+                            })
+                        except Exception as e:
+                            print(f"Error broadcasting training status: {e}")
+                    else:
+                        # If no results, increment by 1 to prevent infinite loop
+                        self.current_episode += 1
+                        print(f"⚠️ No episode results, incrementing episode count to {self.current_episode}")
                     
                     # Save checkpoint periodically
                     if self.current_episode % self._checkpoint_interval == 0:

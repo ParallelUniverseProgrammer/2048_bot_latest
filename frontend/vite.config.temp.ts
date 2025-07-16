@@ -13,9 +13,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'favicon-16x16.png'],
       manifest: {
-            name: '2048 Bot Training',
-    short_name: '2048 AI',
-    description: 'Real-time visualization for 2048 bot training',
+                    name: '2048 Bot Training',
+            short_name: '2048 AI',
+            description: 'Real-time visualization for 2048 bot training',
         theme_color: '#3b82f6',
         background_color: '#0f172a',
         display: 'standalone',

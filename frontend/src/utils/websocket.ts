@@ -216,7 +216,9 @@ export const useWebSocket = () => {
      }, [networkQualityRef, connectionHealth, updateTrainingData])
 
   // Enhanced message processing with health tracking
-  const processMessage = useCallback((data: any) => {
+  const processMessage = useCallback((event: MessageEvent) => {
+    const data = JSON.parse(event.data)
+    console.log('[WebSocket] Received message:', data)
     setLastSuccessfulConnection(Date.now())
     setConsecutiveFailures(0)
     updateConnectionStats(JSON.stringify(data).length)
@@ -502,7 +504,7 @@ export const useWebSocket = () => {
             return
           }
           
-          processMessage(data)
+          processMessage(event)
         } catch (error) {
           console.error('Error parsing WebSocket message:', error)
         }
@@ -510,8 +512,7 @@ export const useWebSocket = () => {
               
         ws.onmessage = (event) => {
           try {
-            const data = JSON.parse(event.data)
-            processMessage(data)
+            processMessage(event)
           } catch (error) {
             console.error('Error processing WebSocket message:', error)
             setConsecutiveFailures(prev => prev + 1)

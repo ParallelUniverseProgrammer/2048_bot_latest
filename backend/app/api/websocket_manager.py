@@ -115,7 +115,7 @@ class ConnectionInfo:
         self.retry_count = 0
         self.health = ConnectionHealth()
         self.message_batch = MessageBatch()
-        self.last_batch_send = time.time()
+        self.last_batch_send = int(time.time())
         
     def _detect_mobile(self, user_agent: str) -> bool:
         """Detect if the connection is from a mobile device"""
@@ -150,7 +150,7 @@ class ConnectionInfo:
     
     def should_use_connection_pooling(self) -> bool:
         """Determine if connection pooling should be used"""
-        return self.is_mobile  # Enable pooling for mobile devices
+        return bool(self.is_mobile)  # Always return a bool
 
 class WebSocketManager:
     def __init__(self):
@@ -173,7 +173,7 @@ class WebSocketManager:
         
         # Rate limiting
         self.broadcast_rate_limiter = {
-            'last_broadcast': 0,
+            'last_broadcast': int(0),
             'min_interval': 0.05,  # 50ms minimum between broadcasts
             'message_queue': deque(maxlen=100),
             'queue_process_task': None
@@ -189,8 +189,13 @@ class WebSocketManager:
             'circuit_breaker_activations': 0
         }
         
-        # Start batch processing task
-        self._start_batch_processor()
+        # Initialize batch processor task as None - will be started later
+        self.batch_processor_task = None
+    
+    def start_batch_processor(self):
+        """Start the batch processor task - call this after the event loop is running"""
+        if self.batch_processor_task is None:
+            self._start_batch_processor()
     
     def _start_batch_processor(self):
         """Start background task to process message batches"""
@@ -342,7 +347,7 @@ class WebSocketManager:
         
         # Reset batch
         conn.message_batch = MessageBatch()
-        conn.last_batch_send = time.time()
+        conn.last_batch_send = int(time.time())
 
     def _purge_stale_connections(self):
         """Remove connections that have not sent a heartbeat in too long."""
@@ -366,7 +371,7 @@ class WebSocketManager:
                 self.broadcast_rate_limiter['queue_process_task'] = asyncio.create_task(self._process_queued_messages())
             return
 
-        self.broadcast_rate_limiter['last_broadcast'] = current_time
+        self.broadcast_rate_limiter['last_broadcast'] = int(current_time)
         self.performance_stats['total_broadcasts'] += 1
 
         # Purge dead connections before we start
@@ -531,5 +536,5 @@ class WebSocketManager:
     
     def __del__(self):
         """Cleanup when manager is destroyed"""
-        if hasattr(self, 'batch_processor_task'):
+        if hasattr(self, 'batch_processor_task') and self.batch_processor_task is not None:
             self.batch_processor_task.cancel() 

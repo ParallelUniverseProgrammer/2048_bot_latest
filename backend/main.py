@@ -39,6 +39,10 @@ websocket_manager = WebSocketManager()
 training_manager = TrainingManager(websocket_manager)
 checkpoint_playback = CheckpointPlayback(training_manager.checkpoint_manager)
 
+@app.on_event("startup")
+async def startup_event():
+    websocket_manager.start_batch_processor()
+
 # ---------------------------------------------------------------------------
 # Bootstrap: ensure at least one checkpoint exists for test environments
 # ---------------------------------------------------------------------------
