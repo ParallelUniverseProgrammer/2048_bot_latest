@@ -18,6 +18,7 @@ from datetime import datetime
 import threading
 
 import numpy as np
+import torch
 
 from app.api.websocket_manager import WebSocketManager
 from app.environment.gym_2048_env import Gym2048Env
@@ -28,7 +29,7 @@ from app.models.checkpoint_metadata import CheckpointManager
 class TrainingManager:
     """Manage training lifecycle and push streaming metrics."""
 
-    def __init__(self, websocket_manager: WebSocketManager, n_envs: int = 4):  # Reduced from 8 to 4 for better performance
+    def __init__(self, websocket_manager: WebSocketManager, n_envs: int = 2):  # Reduced from 4 to 2 for better memory management
         self.ws_manager = websocket_manager
         
         # Initialize timing logger
@@ -47,13 +48,11 @@ class TrainingManager:
         self.trainer = PPOTrainer()
         self.timing_logger.end_operation("trainer_init", "setup")
         
-        # NEW: Create separate trainers for each environment to avoid thread safety issues
-        self.timing_logger.start_operation("env_trainers_init", "setup")
-        self.env_trainers: List[PPOTrainer] = []
-        for i in range(n_envs):
-            env_trainer = PPOTrainer()
-            self.env_trainers.append(env_trainer)
-        self.timing_logger.end_operation("env_trainers_init", "setup", f"created={len(self.env_trainers)}_trainers")
+        # MEMORY OPTIMIZATION: Use single shared trainer instead of multiple trainers
+        # This significantly reduces GPU memory usage
+        self.timing_logger.start_operation("shared_trainer_setup", "setup")
+        self.env_trainers = [self.trainer] * n_envs  # All environments share the same trainer
+        self.timing_logger.end_operation("shared_trainer_setup", "setup", f"shared_trainer_for={n_envs}_environments")
         
         self.current_config = None
         
@@ -97,6 +96,64 @@ class TrainingManager:
         
         self.timing_logger.end_operation("manager_init", "setup")
 
+    def __del__(self):
+        """Cleanup when training manager is destroyed"""
+        try:
+            self.cleanup()
+        except:
+            pass  # Ignore errors during cleanup
+    
+    def cleanup(self):
+        """Clean up resources and free GPU memory"""
+        print("🧹 Cleaning up training manager resources...")
+        
+        # Stop training if running
+        if self.is_training:
+            self.stop_sync()
+        
+        # Clean up trainers
+        if hasattr(self, 'trainer') and self.trainer:
+            self._cleanup_trainer(self.trainer)
+            self.trainer = None
+        
+        # Clean up environment trainers
+        if hasattr(self, 'env_trainers'):
+            for trainer in self.env_trainers:
+                if trainer:
+                    self._cleanup_trainer(trainer)
+            self.env_trainers.clear()
+        
+        # Clear CUDA cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print(f"GPU memory after cleanup: {torch.cuda.memory_allocated() / (1024**3):.2f} GB")
+    
+    def _cleanup_trainer(self, trainer):
+        """Clean up a single trainer instance"""
+        try:
+            if hasattr(trainer, 'model') and trainer.model:
+                # Move model to CPU and delete
+                trainer.model.cpu()
+                del trainer.model
+                trainer.model = None
+            
+            if hasattr(trainer, 'optimizer') and trainer.optimizer:
+                del trainer.optimizer
+                trainer.optimizer = None
+            
+            # Clear buffers
+            if hasattr(trainer, 'buffer'):
+                trainer.buffer.clear()
+            
+            # Clear histories
+            if hasattr(trainer, 'loss_history'):
+                trainer.loss_history.clear()
+            if hasattr(trainer, 'score_history'):
+                trainer.score_history.clear()
+            
+        except Exception as e:
+            print(f"Warning: Error cleaning up trainer: {e}")
+
     def _create_timing_logger(self):
         """Create timing logger for training manager"""
         from app.training.ppo_trainer import TimingLogger
@@ -130,14 +187,10 @@ class TrainingManager:
             learning_rate=config_dict.get('learning_rate', 0.0003)
         )
         
-        # NEW: Also reinitialize all environment trainers
-        self.timing_logger.start_operation("env_trainers_reinit", "config")
-        for i, env_trainer in enumerate(self.env_trainers):
-            self.env_trainers[i] = PPOTrainer(
-                config=self.current_config,
-                learning_rate=config_dict.get('learning_rate', 0.0003)
-            )
-        self.timing_logger.end_operation("env_trainers_reinit", "config", f"reinitialized={len(self.env_trainers)}_trainers")
+        # MEMORY OPTIMIZATION: Update shared trainer references
+        self.timing_logger.start_operation("shared_trainer_update", "config")
+        self.env_trainers = [self.trainer] * len(self.envs)  # Update all references to use new trainer
+        self.timing_logger.end_operation("shared_trainer_update", "config", f"updated={len(self.env_trainers)}_references")
         
         self.timing_logger.end_operation("trainer_reinit", "config")
         
@@ -184,6 +237,19 @@ class TrainingManager:
         """Reset training state and create a fresh model with current config"""
         self.timing_logger.start_operation("reset_model", "control")
         
+        # Clean up existing trainers first
+        if hasattr(self, 'trainer') and self.trainer:
+            self._cleanup_trainer(self.trainer)
+        
+        if hasattr(self, 'env_trainers'):
+            for trainer in self.env_trainers:
+                if trainer:
+                    self._cleanup_trainer(trainer)
+        
+        # Clear CUDA cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
         # Reset training state
         self.current_episode = 0
         self.is_paused = False
@@ -204,20 +270,18 @@ class TrainingManager:
             learning_rate=0.0003  # Default learning rate
         )
         
-        # NEW: Also reinitialize all environment trainers
-        self.timing_logger.start_operation("env_trainers_fresh_init", "control")
-        for i, env_trainer in enumerate(self.env_trainers):
-            self.env_trainers[i] = PPOTrainer(
-                config=self.current_config,
-                learning_rate=0.0003  # Default learning rate
-            )
-        self.timing_logger.end_operation("env_trainers_fresh_init", "control", f"reinitialized={len(self.env_trainers)}_trainers")
+        # MEMORY OPTIMIZATION: Update shared trainer references
+        self.timing_logger.start_operation("shared_trainer_reset", "control")
+        self.env_trainers = [self.trainer] * len(self.envs)  # Update all references to use new trainer
+        self.timing_logger.end_operation("shared_trainer_reset", "control", f"updated={len(self.env_trainers)}_references")
         
         self.timing_logger.end_operation("trainer_fresh_init", "control")
         
         self.timing_logger.end_operation("reset_model", "control", f"config={self.current_config}")
         
         print(f"Reset to fresh model with config: {self.current_config}")
+        if torch.cuda.is_available():
+            print(f"GPU memory after reset: {torch.cuda.memory_allocated() / (1024**3):.2f} GB")
 
     async def _send_training_start_message(self):
         """Send training start message via WebSocket"""
@@ -272,6 +336,11 @@ class TrainingManager:
                 print("Training task cancellation requested.")
             else:
                 print("Training task already completed.")
+        
+        # Clean up memory after stopping
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print(f"GPU memory after stop: {torch.cuda.memory_allocated() / (1024**3):.2f} GB")
         
         self.timing_logger.end_operation("training_stop_sync", "control")
 
