@@ -157,12 +157,26 @@ class TrainingManager:
         self.is_paused = False
         self._start_time = time.time()  # Track start time for speed calculation
         
-        # Send training start message
-        asyncio.create_task(self._send_training_start_message())
+        # Send training start message (handle both sync and async contexts)
+        try:
+            # Try to get the current event loop
+            loop = asyncio.get_running_loop()
+            # We're in an async context, create the task
+            asyncio.create_task(self._send_training_start_message())
+        except RuntimeError:
+            # No running event loop, we're in a sync context
+            # Just log the message instead of sending via WebSocket
+            print("Training session started (no WebSocket context)")
         
         # schedule on current event loop
-        loop = asyncio.get_event_loop()
-        self._task = loop.create_task(self._training_loop())
+        try:
+            loop = asyncio.get_event_loop()
+            self._task = loop.create_task(self._training_loop())
+        except RuntimeError:
+            # No event loop available, create a new one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            self._task = loop.create_task(self._training_loop())
         
         self.timing_logger.end_operation("training_start", "control")
     
@@ -245,6 +259,21 @@ class TrainingManager:
         self.timing_logger.end_operation("training_stop", "control")
         # Do not await self._task; return immediately
         # Optionally, schedule a background cleanup if needed
+
+    def stop_sync(self):
+        """Synchronous version of stop for non-async contexts"""
+        self.timing_logger.start_operation("training_stop_sync", "control")
+        
+        self.is_training = False
+        self.is_paused = False
+        if self._task:
+            if not self._task.done():
+                self._task.cancel()
+                print("Training task cancellation requested.")
+            else:
+                print("Training task already completed.")
+        
+        self.timing_logger.end_operation("training_stop_sync", "control")
 
     # ------------------------------------------------------------------ Loop
     async def _training_loop(self):
