@@ -56,8 +56,9 @@ That's it! The launcher handles everything else automatically.
 
 ## ⚠️ Current Issues & Known Bugs
 
-- **Critical Instability:** The application currently crashes and fails to respond on any endpoints soon after beginning training. This affects both backend and frontend responsiveness.
-- **Unstable State:** The system is unstable during and after training sessions. Use with caution and expect interruptions.
+- **Thread Safety Fixed:** The main crash issue (race conditions in load balancing calculations during parallel training) has been identified and fixed. The system should now be more stable.
+- **Potential Remaining Issues:** While the main crash has been addressed, there may still be performance issues or edge cases. Monitor the system during training.
+- **Testing Recommended:** The fixes are recent and should be tested thoroughly before production use.
 
 These issues are under active investigation. See commit history and issue tracker for updates.
 
