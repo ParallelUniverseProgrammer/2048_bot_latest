@@ -22,13 +22,16 @@ const App: React.FC = () => {
   const { displayMode } = useDeviceDetection()
   const isMobile = displayMode === 'mobile'
   
-  // Show iOS tooltip for iOS Safari users
+  // Show iOS tooltip for iOS Safari users (only when not already installed as PWA)
   useEffect(() => {
     const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && 
                        /Safari/.test(navigator.userAgent) && 
                        !/Chrome/.test(navigator.userAgent)
     
-    if (isIOSSafari && isMobile) {
+    // Check if app is already running in standalone mode (installed as PWA)
+    const isStandalone = (window.navigator as any).standalone === true
+    
+    if (isIOSSafari && isMobile && !isStandalone) {
       // Show tooltip after a short delay
       const timer = setTimeout(() => {
         setShowIOSTooltip(true)
@@ -294,7 +297,7 @@ const App: React.FC = () => {
         </AnimatePresence>
       </motion.main>
 
-      {/* iOS Tooltip - Only show for iOS Safari users */}
+      {/* iOS Tooltip - Only show for iOS Safari users when not already installed as PWA */}
       <AnimatePresence>
         {showIOSTooltip && (
           <motion.div

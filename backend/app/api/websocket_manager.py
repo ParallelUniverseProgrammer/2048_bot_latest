@@ -192,7 +192,7 @@ class WebSocketManager:
             'total_broadcasts': 0,
             'successful_broadcasts': 0,
             'failed_broadcasts': 0,
-            'avg_broadcast_time': 0,
+            'avg_broadcast_time': 0.0,  # Changed to float
             'slow_broadcasts': 0,
             'circuit_breaker_activations': 0
         }
@@ -319,7 +319,8 @@ class WebSocketManager:
         
         start_time = time.perf_counter()
         try:
-            timeout = conn.get_adaptive_timeout()
+            # CRITICAL FIX: Use shorter timeout during training to prevent blocking
+            timeout = min(conn.get_adaptive_timeout(), 0.5)  # Cap at 500ms during training
             await asyncio.wait_for(conn.websocket.send_text(message_str), timeout=timeout)
             
             duration = time.perf_counter() - start_time
@@ -329,12 +330,19 @@ class WebSocketManager:
                 conn.health.record_slow_send()
                 console.print(f"[yellow]Slow send: {duration:.3f}s – client {id(conn.websocket)}")
                 
+        except asyncio.TimeoutError:
+            duration = time.perf_counter() - start_time
+            conn.health.record_failure(duration)
+            console.print(f"[red]Send timeout after {duration:.3f}s – client {id(conn.websocket)}")
+            
+            # CRITICAL FIX: Don't disconnect on timeout, let circuit breaker handle it
+            # This prevents cascading failures during training
         except Exception as e:
             duration = time.perf_counter() - start_time
             conn.health.record_failure(duration)
             console.print(f"[red]Error sending to connection after {duration:.3f}s: {e}")
             
-            # If send fails or times-out we drop the connection so it can't block the whole broadcast
+            # Only disconnect on actual errors, not timeouts
             self.disconnect(conn.websocket)
     
     async def _send_batch(self, conn: ConnectionInfo):
@@ -436,7 +444,7 @@ class WebSocketManager:
         if self.performance_stats['avg_broadcast_time'] == 0:
             self.performance_stats['avg_broadcast_time'] = total_duration
         else:
-            self.performance_stats['avg_broadcast_time'] = (
+            self.performance_stats['avg_broadcast_time'] = float(
                 0.9 * self.performance_stats['avg_broadcast_time'] + 
                 0.1 * total_duration
             )

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { 
   Archive, 
@@ -70,6 +70,9 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   const [editingNickname, setEditingNickname] = useState<string | null>(null)
   const [newNickname, setNewNickname] = useState('')
   const [expandedCheckpoint, setExpandedCheckpoint] = useState<string | null>(null)
+  
+  // Ref for the editing input field to ensure proper focus on mobile
+  const editingInputRef = useRef<HTMLInputElement>(null)
 
   // Cleanup loading states on component unmount
   useEffect(() => {
@@ -79,6 +82,24 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       useTrainingStore.getState().setLoadingState('loadingMessage', null)
     }
   }, [])
+
+  // Focus management for mobile keyboard
+  useEffect(() => {
+    if (editingNickname && editingInputRef.current) {
+      // Use a small delay to ensure the input is rendered and visible
+      const timer = setTimeout(() => {
+        if (editingInputRef.current) {
+          editingInputRef.current.focus()
+          // Force keyboard to appear on mobile by selecting all text
+          editingInputRef.current.select()
+          // Additional mobile-specific focus trigger
+          editingInputRef.current.click()
+        }
+      }, 100)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [editingNickname])
 
   // Load checkpoints and stats
   const loadCheckpoints = async (silent: boolean = false) => {
@@ -461,11 +482,18 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                 {editingNickname === checkpoint.id ? (
                   <div className="flex items-center space-x-2">
                     <input
+                      ref={editingInputRef}
                       type="text"
                       value={newNickname}
                       onChange={(e) => setNewNickname(e.target.value)}
                       className="flex-1 bg-gray-700 text-white rounded-lg px-3 py-1.5 text-sm"
                       autoFocus
+                      // Mobile-specific attributes to ensure keyboard appears
+                      inputMode="text"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck="false"
                     />
                     <button
                       onClick={() => updateNickname(checkpoint.id, newNickname)}
@@ -488,6 +516,12 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                     <h3 className="font-semibold text-white truncate text-sm">{checkpoint.nickname}</h3>
                     <button
                       onClick={() => {
+                        setEditingNickname(checkpoint.id)
+                        setNewNickname(checkpoint.nickname)
+                      }}
+                      onTouchEnd={(e) => {
+                        // Prevent default to avoid double-triggering on mobile
+                        e.preventDefault()
                         setEditingNickname(checkpoint.id)
                         setNewNickname(checkpoint.nickname)
                       }}

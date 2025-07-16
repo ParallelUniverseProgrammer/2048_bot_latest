@@ -384,8 +384,14 @@ class TrainingManager:
                     episode_results = []
                     for i, env in enumerate(self.envs):
                         try:
-                            result = self.env_trainers[i].train_episode(env)
+                            # CRITICAL FIX: Call async train_episode method
+                            result = await self.env_trainers[i].train_episode(env)
                             episode_results.append(result)
+                            
+                            # CRITICAL FIX: Yield control to event loop after each environment
+                            # This prevents blocking WebSocket operations during training
+                            await asyncio.sleep(0.001)  # Minimal yield to allow WebSocket processing
+                            
                         except Exception as e:
                             print(f"Environment {i} training failed: {e}")
                             import traceback
@@ -486,7 +492,17 @@ class TrainingManager:
                         # Build metrics for the last environment only (representative sample)
                         if episode_results:
                             metrics = self._build_metrics(episode_results[-1], self.envs[-1])
-                            await self.ws_manager.broadcast(metrics, priority="normal")
+                            
+                            # CRITICAL FIX: Add timeout and error handling for WebSocket broadcast
+                            try:
+                                await asyncio.wait_for(
+                                    self.ws_manager.broadcast(metrics, priority="normal"),
+                                    timeout=1.0  # 1 second timeout to prevent blocking
+                                )
+                            except asyncio.TimeoutError:
+                                print("Warning: WebSocket broadcast timed out, skipping metrics update")
+                            except Exception as e:
+                                print(f"Warning: WebSocket broadcast failed: {e}")
                         
                         self.timing_logger.end_operation("metrics_broadcast", "websocket", "batched_broadcast")
                         self._last_broadcast_time = current_time
@@ -517,14 +533,21 @@ class TrainingManager:
                         if self.current_episode % 20 == 0:  # Reduced from every iteration to every 20 episodes
                             self.timing_logger.start_operation("status_update", "websocket")
                             try:
-                                await self.ws_manager.broadcast({
-                                    'type': 'training_status_update',
-                                    'is_training': True,
-                                    'is_paused': False,
-                                    'current_episode': self.current_episode,
-                                    'total_episodes': self.total_episodes
-                                })
+                                # CRITICAL FIX: Add timeout for status updates to prevent blocking
+                                await asyncio.wait_for(
+                                    self.ws_manager.broadcast({
+                                        'type': 'training_status_update',
+                                        'is_training': True,
+                                        'is_paused': False,
+                                        'current_episode': self.current_episode,
+                                        'total_episodes': self.total_episodes
+                                    }),
+                                    timeout=0.5  # 500ms timeout for status updates
+                                )
                                 self.timing_logger.end_operation("status_update", "websocket", "success")
+                            except asyncio.TimeoutError:
+                                self.timing_logger.end_operation("status_update", "websocket", "timeout")
+                                print("Warning: Training status update timed out")
                             except Exception as e:
                                 self.timing_logger.end_operation("status_update", "websocket", f"error={str(e)}")
                                 print(f"Error broadcasting training status: {e}")
@@ -600,13 +623,14 @@ class TrainingManager:
         # Create metadata for the checkpoint
         training_duration = time.time() - self._start_time if self._start_time else 0
         n_experts = getattr(self.current_config, 'n_experts', 6)
-        inferred_size = self.checkpoint_manager._infer_model_size_from_experts(n_experts)
+        d_model = getattr(self.current_config, 'd_model', 384)
+        inferred_size = self.checkpoint_manager._infer_model_size_from_experts(n_experts, d_model)
         model_config = {
             'model_size': getattr(self.current_config, 'model_size', inferred_size),
             'learning_rate': 0.0003,  # Current learning rate
             'n_experts': n_experts,
             'n_layers': getattr(self.current_config, 'n_layers', 6),
-            'd_model': getattr(self.current_config, 'd_model', 384),
+            'd_model': d_model,
             'n_heads': getattr(self.current_config, 'n_heads', 8),
         }
         

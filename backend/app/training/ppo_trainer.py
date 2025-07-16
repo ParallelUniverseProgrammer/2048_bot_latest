@@ -13,6 +13,7 @@ import time
 import threading
 import os
 import json
+import asyncio
 from datetime import datetime
 
 from app.models import GameTransformer, DynamicModelConfig
@@ -567,7 +568,7 @@ class PPOTrainer:
             'lb_loss': avg_lb_loss
         }
     
-    def train_episode(self, env: Gym2048Env) -> Dict[str, Any]:
+    async def train_episode(self, env: Gym2048Env) -> Dict[str, Any]:
         """Train for one episode"""
         
         self.timing_logger.start_operation("train_episode", "episode", f"episode={self.episode_count + 1}")
@@ -609,6 +610,10 @@ class PPOTrainer:
                     episode_reward += reward
                     episode_length += 1
                     self.total_steps += 1
+                    
+                    # CRITICAL FIX: Yield control to event loop every 10 steps to prevent blocking
+                    if episode_length % 10 == 0:
+                        await asyncio.sleep(0.001)  # Minimal yield to allow WebSocket processing
                 except Exception as step_error:
                     print(f"Error in episode step {episode_length}: {step_error}")
                     import traceback

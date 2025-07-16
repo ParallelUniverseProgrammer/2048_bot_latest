@@ -42,10 +42,22 @@ class CheckpointManager:
         self.metadata_cache = {}
         self._load_all_metadata()
     
-    def _infer_model_size_from_experts(self, n_experts: int) -> str:
-        """Infer model size based on number of experts"""
+    def _infer_model_size_from_experts(self, n_experts: int, d_model: Optional[int] = None) -> str:
+        """Infer model size based on number of experts and model dimensions"""
+        # If we have d_model, use it to distinguish between tiny and small
+        if d_model is not None:
+            if d_model <= 60:  # Tiny model has d_model=60
+                return 'tiny'
+            elif d_model <= 256:  # Small model has d_model=256
+                return 'small'
+            elif d_model <= 384:  # Medium model has d_model=384
+                return 'medium'
+            else:  # Large model has d_model=512
+                return 'large'
+        
+        # Fallback to expert-based inference (for legacy checkpoints)
         if n_experts <= 4:
-            return 'small'
+            return 'small'  # Default to small for legacy checkpoints with 4 experts
         elif n_experts <= 6:
             return 'medium'
         else:
@@ -131,7 +143,8 @@ class CheckpointManager:
             model_config = {}
             if config:
                 n_experts = getattr(config, 'n_experts', 6)
-                inferred_size = self._infer_model_size_from_experts(n_experts)
+                d_model = getattr(config, 'd_model', 384)
+                inferred_size = self._infer_model_size_from_experts(n_experts, d_model)
                 existing_size = getattr(config, 'model_size', 'unknown')
                 # Use inferred size if model_size is missing or 'unknown'
                 final_size = inferred_size if existing_size == 'unknown' else existing_size
@@ -140,7 +153,7 @@ class CheckpointManager:
                     'learning_rate': 0.0003,  # Default, not stored in old checkpoints
                     'n_experts': n_experts,
                     'n_layers': getattr(config, 'n_layers', 6),
-                    'd_model': getattr(config, 'd_model', 384),
+                    'd_model': d_model,
                     'n_heads': getattr(config, 'n_heads', 8),
                 }
             
@@ -294,7 +307,8 @@ class CheckpointManager:
         for checkpoint_id, metadata in self.metadata_cache.items():
             if metadata.model_config.get('model_size') == 'unknown':
                 n_experts = metadata.model_config.get('n_experts', 6)
-                inferred_size = self._infer_model_size_from_experts(n_experts)
+                d_model = metadata.model_config.get('d_model', 384)
+                inferred_size = self._infer_model_size_from_experts(n_experts, d_model)
                 metadata.model_config['model_size'] = inferred_size
                 self._save_metadata(metadata)
                 updated_count += 1

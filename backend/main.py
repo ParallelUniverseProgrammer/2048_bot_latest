@@ -432,6 +432,9 @@ async def _load_checkpoint_background(checkpoint_id: str, checkpoint_path: Path)
         # Load checkpoint data to get the config (heavy operation - run in thread)
         import torch, time as _time
         
+        # CRITICAL FIX: Yield control to event loop before heavy operations
+        await asyncio.sleep(0.001)
+        
         # Use asyncio.to_thread for heavy operations to prevent blocking the event loop
         checkpoint_data = await asyncio.to_thread(
             torch.load, checkpoint_path, map_location='cpu', weights_only=False
@@ -554,13 +557,14 @@ async def save_checkpoint_manual():
         # Create metadata
         training_duration = time.time() - training_manager._start_time if training_manager._start_time else 0
         n_experts = getattr(training_manager.current_config, 'n_experts', 6)
-        inferred_size = training_manager.checkpoint_manager._infer_model_size_from_experts(n_experts)
+        d_model = getattr(training_manager.current_config, 'd_model', 384)
+        inferred_size = training_manager.checkpoint_manager._infer_model_size_from_experts(n_experts, d_model)
         model_config = {
             'model_size': getattr(training_manager.current_config, 'model_size', inferred_size),
             'learning_rate': 0.0003,
             'n_experts': n_experts,
             'n_layers': getattr(training_manager.current_config, 'n_layers', 6),
-            'd_model': getattr(training_manager.current_config, 'd_model', 384),
+            'd_model': d_model,
             'n_heads': getattr(training_manager.current_config, 'n_heads', 8),
         }
         
@@ -856,7 +860,15 @@ async def websocket_endpoint(websocket: WebSocket):
     # Get user agent from headers for mobile detection
     user_agent = websocket.headers.get("user-agent", "")
     
-    await websocket_manager.connect(websocket, user_agent)
+    # CRITICAL FIX: Add timeout for connection establishment
+    try:
+        await asyncio.wait_for(websocket_manager.connect(websocket, user_agent), timeout=5.0)
+    except asyncio.TimeoutError:
+        print("WebSocket connection establishment timed out")
+        return
+    except Exception as e:
+        print(f"WebSocket connection failed: {e}")
+        return
     
     # Get connection info for adaptive behavior
     conn_info = websocket_manager.get_connection_info(websocket)
@@ -866,8 +878,9 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             # Keep connection alive and handle any incoming messages
             try:
-                # Use adaptive timeout based on device type
-                data = await asyncio.wait_for(websocket.receive_text(), timeout=adaptive_timeout)
+                # CRITICAL FIX: Use shorter timeout during training to prevent blocking
+                timeout = min(adaptive_timeout, 2.0)  # Cap at 2 seconds
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=timeout)
                 
                 # Parse the incoming message
                 try:

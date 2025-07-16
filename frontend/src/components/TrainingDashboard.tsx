@@ -444,7 +444,7 @@ const TrainingDashboard: React.FC = () => {
   ]
 
   return (
-    <div className="h-full grid grid-rows-[auto_auto_auto_1fr] gap-2">
+    <div className="h-full grid grid-rows-[auto_auto_auto_1fr] gap-2 pb-6">
       {/* Loading Indicator - More compact */}
       {loadingStates.isTrainingStarting && (
         <motion.div
@@ -627,25 +627,7 @@ const TrainingDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Chart Legend - Enhanced */}
-        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-red-400 rounded-sm"></div>
-            <span className="text-gray-400">Training Loss</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-green-400 rounded-sm"></div>
-            <span className="text-gray-400">Game Score</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-blue-400 rounded-sm"></div>
-            <span className="text-gray-400">Action Distribution</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-purple-400 rounded-sm"></div>
-            <span className="text-gray-400">Expert Usage</span>
-          </div>
-        </div>
+
       </motion.div>
 
 
@@ -657,9 +639,7 @@ const TrainingDashboard: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.2 }}
         style={{
-          paddingBottom: isMobile ? 'max(12px, env(safe-area-inset-bottom) + 12px)' : '12px',
-          maxHeight: '66vh', // Limit to 2/3 of viewport height
-          height: 'auto'
+          maxHeight: '66vh' // Limit to 2/3 of viewport height
         }}
       >
         <h3 className="text-sm font-semibold mb-3 flex items-center flex-shrink-0">

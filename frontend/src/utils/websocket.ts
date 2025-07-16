@@ -440,19 +440,17 @@ export const useWebSocket = () => {
       const ws = new WebSocket(websocketUrl)
       wsRef.current = ws
       
-      // Add connection timeout for mobile devices
+      // CRITICAL FIX: Add connection timeout for all devices during training
       let connectionTimeout: number | null = null
-      if (isMobile()) {
-        const timeoutDuration = isMobileSafari() ? 8000 : 5000 // Longer timeout for Mobile Safari
-        connectionTimeout = setTimeout(() => {
-          if (ws.readyState === WebSocket.CONNECTING) {
-            console.log(`WebSocket connection timeout on mobile (${timeoutDuration}ms), trying fallback`)
-            ws.close()
-            setConnectionError(`Connection timeout (${timeoutDuration}ms) - switching to polling...`)
-            startPollingFallback()
-          }
-        }, timeoutDuration)
-      }
+      const timeoutDuration = isMobileSafari() ? 10000 : isMobile() ? 8000 : 5000 // Longer timeouts for mobile
+      connectionTimeout = setTimeout(() => {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          console.log(`WebSocket connection timeout (${timeoutDuration}ms), trying fallback`)
+          ws.close()
+          setConnectionError(`Connection timeout (${timeoutDuration}ms) - switching to polling...`)
+          startPollingFallback()
+        }
+      }, timeoutDuration)
       
       // Reset connection stats
       connectionStatsRef.current = {
