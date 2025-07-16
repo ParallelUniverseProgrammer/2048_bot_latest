@@ -276,38 +276,31 @@ class TrainingManager:
                     
                     # Train one episode **per environment** using PPO in parallel threads.
                     if self.current_episode < 5:  # Debug logging for first few iterations
-                        print(f"🔄 Training {len(self.envs)} environments in parallel...")
+                        print(f"🔄 Training {len(self.envs)} environments sequentially...")
                     
-                    self.timing_logger.start_operation("parallel_training", "training", f"n_envs={len(self.envs)}")
+                    self.timing_logger.start_operation("sequential_training", "training", f"n_envs={len(self.envs)}")
                     
-                    # Optimization: Use ThreadPoolExecutor for better thread management
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.envs)) as executor:
-                        # Submit all environment training tasks with their specific trainers
-                        future_to_env = {
-                            executor.submit(self.env_trainers[i].train_episode, env): (env, i)
-                            for i, env in enumerate(self.envs)
-                        }
-                        
-                        # Collect results as they complete
-                        episode_results = []
-                        for future in concurrent.futures.as_completed(future_to_env, timeout=30.0):
-                            try:
-                                result = future.result(timeout=5.0)
-                                episode_results.append(result)
-                            except Exception as e:
-                                print(f"Environment training failed: {e}")
-                                                        # Add a default result to prevent crashes
-                        episode_results.append({
-                            'episode': self.current_episode + 1, # Use current_episode + 1 to avoid confusion
-                            'score': 0,
-                            'reward': 0.0,
-                            'length': 0,
-                            'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
-                            'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
-                        })
+                    # TEMPORARY: Use sequential training to isolate threading issues
+                    episode_results = []
+                    for i, env in enumerate(self.envs):
+                        try:
+                            result = self.env_trainers[i].train_episode(env)
+                            episode_results.append(result)
+                        except Exception as e:
+                            print(f"Environment {i} training failed: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            # Add a default result to prevent crashes
+                            episode_results.append({
+                                'episode': self.current_episode + 1,
+                                'score': 0,
+                                'reward': 0.0,
+                                'length': 0,
+                                'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
+                                'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
+                            })
                     
-                    self.timing_logger.end_operation("parallel_training", "training", f"results={len(episode_results)}")
+                    self.timing_logger.end_operation("sequential_training", "training", f"results={len(episode_results)}")
                     if self.current_episode < 5:  # Debug logging
                         print(f"✅ Training completed, got {len(episode_results)} results")
 
@@ -449,6 +442,8 @@ class TrainingManager:
                 except Exception as e:
                     self.timing_logger.log_event("episode_error", "training", 0, f"episode={self.current_episode}, error={str(e)}")
                     print(f"Error in training episode {self.current_episode}: {e}")
+                    import traceback
+                    traceback.print_exc()
                     await asyncio.sleep(1)  # Wait before retrying
                     
         except Exception as e:

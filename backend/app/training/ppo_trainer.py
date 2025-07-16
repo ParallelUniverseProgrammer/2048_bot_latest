@@ -580,31 +580,37 @@ class PPOTrainer:
             
             self.timing_logger.start_operation("episode_loop", "episode")
             while not done:
-                # Select action
-                legal_actions = env.game.legal_moves()
-                if not legal_actions:
+                try:
+                    # Select action
+                    legal_actions = env.game.legal_moves()
+                    if not legal_actions:
+                        break
+                    
+                    action, log_prob, value = self.select_action(obs, legal_actions, env.game)
+                    
+                    # Take step
+                    self.timing_logger.start_operation("env_step", "episode")
+                    next_obs, reward, done, _, _ = env.step(action)
+                    self.timing_logger.end_operation("env_step", "episode", f"action={action}, reward={reward}")
+                    
+                    # Calculate load balancing reward
+                    lb_reward = self.calculate_load_balancing_reward()
+                    
+                    # Combine game reward with load balancing reward
+                    total_reward = reward + lb_reward
+                    
+                    # Store transition with combined reward
+                    self.store_transition(obs, action, total_reward, value, log_prob, done)
+                    
+                    obs = next_obs
+                    episode_reward += reward
+                    episode_length += 1
+                    self.total_steps += 1
+                except Exception as step_error:
+                    print(f"Error in episode step {episode_length}: {step_error}")
+                    import traceback
+                    traceback.print_exc()
                     break
-                
-                action, log_prob, value = self.select_action(obs, legal_actions, env.game)
-                
-                # Take step
-                self.timing_logger.start_operation("env_step", "episode")
-                next_obs, reward, done, _, _ = env.step(action)
-                self.timing_logger.end_operation("env_step", "episode", f"action={action}, reward={reward}")
-                
-                # Calculate load balancing reward
-                lb_reward = self.calculate_load_balancing_reward()
-                
-                # Combine game reward with load balancing reward
-                total_reward = reward + lb_reward
-                
-                # Store transition with combined reward
-                self.store_transition(obs, action, total_reward, value, log_prob, done)
-                
-                obs = next_obs
-                episode_reward += reward
-                episode_length += 1
-                self.total_steps += 1
             self.timing_logger.end_operation("episode_loop", "episode", f"length={episode_length}")
             
         except Exception as e:
