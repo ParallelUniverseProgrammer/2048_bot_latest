@@ -67,6 +67,9 @@ class TimingLogger:
     
     def _log_event(self, event_type: str, operation: str, phase: str, duration_ms: float, details: str):
         """Internal method to write to log file"""
+        # TEMPORARILY DISABLED: Skip file I/O to isolate timing logger issues
+        return
+        
         timestamp = datetime.now().isoformat()
         log_line = f"{timestamp},{event_type}_{operation},{phase},{duration_ms:.2f},{details}\n"
         
