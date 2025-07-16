@@ -54,6 +54,13 @@ That's it! The launcher handles everything else automatically.
 - [🤝 Contributing](#-contributing)
 - [📜 License](#-license)
 
+## ⚠️ Current Issues & Known Bugs
+
+- **Critical Instability:** The application currently crashes and fails to respond on any endpoints soon after beginning training. This affects both backend and frontend responsiveness.
+- **Unstable State:** The system is unstable during and after training sessions. Use with caution and expect interruptions.
+
+These issues are under active investigation. See commit history and issue tracker for updates.
+
 ## ✨ Key Features
 
 - **🧠 Advanced MoE Transformer**: A sophisticated Mixture-of-Experts model that dynamically routes input, balances expert load, and adapts its size based on available VRAM for optimal performance.

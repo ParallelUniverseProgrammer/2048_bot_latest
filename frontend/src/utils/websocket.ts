@@ -96,7 +96,9 @@ export const useWebSocket = () => {
       clearTimeout(reconnectTimeoutRef.current)
     }
     
-    const backoff = Math.min(getConnectionRetryDelay() * Math.pow(2, reconnectAttempts), 30000)
+    // More aggressive backoff for mobile devices
+    const baseDelay = isMobile() ? getConnectionRetryDelay() * 1.5 : getConnectionRetryDelay()
+    const backoff = Math.min(baseDelay * Math.pow(2, reconnectAttempts), 30000)
     console.log(`Reconnecting in ${backoff}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`)
     
     reconnectTimeoutRef.current = setTimeout(async () => {
@@ -107,16 +109,21 @@ export const useWebSocket = () => {
         console.error('Reconnection failed:', error)
         setConsecutiveFailures(prev => prev + 1)
         
-                 if (reconnectAttempts < maxReconnectAttempts) {
-           setTimeout(() => reconnect(), 1000) // Try again with exponential backoff
-         } else {
-           console.log('Max reconnection attempts reached, switching to polling fallback')
-           setConnectionError('Connection lost after multiple attempts. Switching to polling...')
-           startPollingFallback()
-         }
+        // For mobile devices, try polling fallback sooner
+        if (isMobile() && reconnectAttempts >= Math.max(1, maxReconnectAttempts - 2)) {
+          console.log('Mobile device: switching to polling fallback early')
+          setConnectionError('Connection issues on mobile - switching to polling...')
+          startPollingFallback()
+        } else if (reconnectAttempts < maxReconnectAttempts) {
+          setTimeout(() => reconnect(), 1000) // Try again with exponential backoff
+        } else {
+          console.log('Max reconnection attempts reached, switching to polling fallback')
+          setConnectionError('Connection lost after multiple attempts. Switching to polling...')
+          startPollingFallback()
+        }
       }
     }, backoff)
-     }, [reconnectAttempts, connectionHealth, isInRecoveryMode, maxReconnectAttempts])
+  }, [reconnectAttempts, connectionHealth, isInRecoveryMode, maxReconnectAttempts])
 
   // Enhanced polling fallback with better error handling
   const startPollingFallback = useCallback(async () => {
@@ -388,14 +395,15 @@ export const useWebSocket = () => {
       // Add connection timeout for mobile devices
       let connectionTimeout: number | null = null
       if (isMobile()) {
+        const timeoutDuration = isMobileSafari() ? 8000 : 5000 // Longer timeout for Mobile Safari
         connectionTimeout = setTimeout(() => {
           if (ws.readyState === WebSocket.CONNECTING) {
-            console.log('WebSocket connection timeout on mobile, trying fallback')
+            console.log(`WebSocket connection timeout on mobile (${timeoutDuration}ms), trying fallback`)
             ws.close()
-            setConnectionError('Connection timeout - switching to polling...')
+            setConnectionError(`Connection timeout (${timeoutDuration}ms) - switching to polling...`)
             startPollingFallback()
           }
-        }, 5000) // 5 second timeout for mobile
+        }, timeoutDuration)
       }
       
       // Reset connection stats
@@ -579,14 +587,19 @@ export const useWebSocket = () => {
         console.log('Is mobile Safari:', isMobileSafari())
         
         if (isMobile()) {
-          setConnectionError('Connection issue on mobile device - trying fallback...')
+          // More specific error messages for mobile
+          const errorMessage = isMobileSafari() 
+            ? 'Mobile Safari connection issue - trying fallback...'
+            : 'Mobile connection issue - trying fallback...'
+          setConnectionError(errorMessage)
+          
           // Try polling fallback after a shorter delay for mobile
           setTimeout(() => {
             if (!isConnected) {
               console.log('Attempting polling fallback for mobile device')
               startPollingFallback()
             }
-          }, 1000) // Reduced delay for mobile
+          }, 500) // Even shorter delay for mobile
         } else {
           setConnectionError('Connection error. Please check if the server is running.')
         }

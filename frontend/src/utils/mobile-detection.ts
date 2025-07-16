@@ -39,12 +39,12 @@ export const getMobileOptimizedWebSocketURL = (baseUrl: string): string => {
 
 export const getConnectionRetryDelay = (): number => {
   // Mobile Safari needs longer delays between connection attempts
-  return isMobileSafari() ? 5000 : 3000
+  return isMobileSafari() ? 3000 : 2000 // Reduced from 5000/3000
 }
 
 export const getMaxReconnectAttempts = (): number => {
-  // Mobile devices should try fewer times to avoid blocking and get to fallback faster
-  return isMobile() ? 3 : 10
+  // Mobile devices should try more times before giving up
+  return isMobile() ? 5 : 10 // Increased from 3 for mobile
 }
 
 export const shouldUsePolling = (): boolean => {

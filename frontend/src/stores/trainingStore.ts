@@ -36,7 +36,14 @@ export interface TrainingData {
     loss_stability: number
     improvement_rate: number
     plateau_detection: number
+    load_balancing_efficiency: number
   }
+  load_balancing_reward: number
+  // Enhanced load balancing metrics
+  expert_starvation_rate: number
+  avg_sparsity_score: number
+  avg_balance_quality: number
+  expert_usage_trend: number
 }
 
 export interface CheckpointPlaybackData {
@@ -93,7 +100,7 @@ export interface TrainingState {
   totalEpisodes: number
   
   // Model configuration
-  modelSize: 'small' | 'medium' | 'large'
+  modelSize: 'tiny' | 'small' | 'medium' | 'large'
   
   // Training data
   trainingData: TrainingData | null
@@ -119,7 +126,7 @@ export interface TrainingState {
   updateTrainingData: (data: TrainingData) => void
   updateCheckpointPlaybackData: (data: CheckpointPlaybackData) => void
   setPlayingCheckpoint: (playing: boolean) => void
-  setModelSize: (size: 'small' | 'medium' | 'large') => void
+  setModelSize: (size: 'tiny' | 'small' | 'medium' | 'large') => void
   setLoadingState: (key: keyof LoadingStates, value: boolean | string | null) => void
   startLoadingOperation: (operationType: 'training' | 'playback' | 'newGame' | 'reset', steps: string[]) => void
   updateLoadingProgress: (progress: number, step?: string, estimatedTime?: number) => void
@@ -141,7 +148,7 @@ export const useTrainingStore = create<TrainingState>()(
       isPaused: false,
       currentEpisode: 0,
       totalEpisodes: 10000,
-      modelSize: 'medium',
+      modelSize: 'tiny',
       trainingData: null,
       lossHistory: {episodes: [], values: []},
       scoreHistory: {episodes: [], values: []},

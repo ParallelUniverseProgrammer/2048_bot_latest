@@ -4,7 +4,7 @@ Dynamic model configuration based on available VRAM
 
 import torch
 import psutil
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from rich.console import Console
 
@@ -44,6 +44,16 @@ class DynamicModelConfig:
     
     # Predefined configurations for different VRAM levels
     CONFIGS = {
+        "tiny": ModelConfig(
+            d_model=60,
+            n_heads=2,
+            n_layers=2,  # Increased from 1 to 2 layers
+            n_experts=4,
+            d_ff=60,
+            top_k=2,
+            dropout=0.1,
+            attention_dropout=0.1
+        ),
         "small": ModelConfig(
             d_model=256,
             n_heads=8,
@@ -91,7 +101,7 @@ class DynamicModelConfig:
             return available_memory / (1024**3)  # Convert to GB
         except Exception as e:
             console.print(f"[yellow]Warning: Could not get VRAM info: {e}")
-            return 0.0
+            return 0.0  # Always return a float, never None
     
     @classmethod
     def get_system_ram(cls) -> float:
@@ -104,29 +114,37 @@ class DynamicModelConfig:
             return 4.0  # Default fallback
     
     @classmethod
-    def select_config(cls, target_vram: float = None) -> ModelConfig:
+    def select_config(cls, target_vram: Optional[float] = None) -> ModelConfig:
         """Select appropriate configuration based on available resources"""
         
-        if target_vram is None:
-            available_vram = cls.get_available_vram()
-        else:
+        if target_vram is not None:
+            if target_vram < 2.0:
+                config_name = "tiny"
+            elif target_vram < 4.0:
+                config_name = "small"
+            elif target_vram < 6.0:
+                config_name = "medium"
+            else:
+                config_name = "large"
             available_vram = target_vram
+        else:
+            available_vram = cls.get_available_vram()
+            if available_vram >= 6.0:
+                config_name = "large"
+            elif available_vram >= 4.0:
+                config_name = "medium"
+            elif available_vram >= 2.0:
+                config_name = "small"
+            else:
+                config_name = "tiny"
         
         system_ram = cls.get_system_ram()
         
         console.print(f"[blue]Available VRAM: {available_vram:.1f}GB")
         console.print(f"[blue]Available RAM: {system_ram:.1f}GB")
         
-        # Select configuration based on available VRAM
-        if available_vram >= 6.0:
-            config_name = "large"
-        elif available_vram >= 4.0:
-            config_name = "medium"
-        else:
-            config_name = "small"
-        
         # Fallback to CPU if very low VRAM
-        if available_vram < 2.0 and system_ram >= 8.0:
+        if available_vram < 2.0 and system_ram >= 8.0 and config_name != "tiny":
             console.print("[yellow]Low VRAM detected, using CPU-optimized config")
             config_name = "small"
         
@@ -137,25 +155,25 @@ class DynamicModelConfig:
         return config
     
     @classmethod
-    def get_batch_size(cls, config: ModelConfig, available_vram: float = None) -> int:
+    def get_batch_size(cls, config: ModelConfig, available_vram: Optional[float] = None) -> int:
         """Get appropriate batch size based on model config and VRAM"""
         
         if available_vram is None:
-            available_vram = cls.get_available_vram()
+            available_vram = cls.get_available_vram() or 0.0  # Handle None case
         
-        # Rough estimation: larger models need smaller batches
+        # Optimized for speed: larger base batch sizes
         if config.d_model >= 512:
-            base_batch_size = 32
+            base_batch_size = 64  # Increased from 32
         elif config.d_model >= 384:
-            base_batch_size = 64
+            base_batch_size = 128  # Increased from 64
         else:
-            base_batch_size = 128
+            base_batch_size = 256  # Increased from 128
         
-        # Adjust based on available VRAM
+        # Adjust based on available VRAM - more aggressive for speed
         if available_vram < 4.0:
-            batch_size = max(16, base_batch_size // 4)
+            batch_size = max(32, int(base_batch_size // 2))  # Less aggressive reduction
         elif available_vram < 6.0:
-            batch_size = max(32, base_batch_size // 2)
+            batch_size = max(64, int(base_batch_size // 1.5))  # Less aggressive reduction
         else:
             batch_size = base_batch_size
         

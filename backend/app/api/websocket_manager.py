@@ -46,6 +46,7 @@ class ConnectionHealth:
     is_circuit_open: bool = False
     circuit_open_until: float = 0
     slow_send_count: int = 0
+    is_mobile: bool = False
     
     def record_success(self, send_time: float):
         """Record successful send"""
@@ -71,20 +72,27 @@ class ConnectionHealth:
         self.total_failures += 1
         
         # Open circuit breaker if too many consecutive failures
-        if self.consecutive_failures >= 5:
+        # Be more lenient with mobile devices
+        failure_threshold = 10 if self.is_mobile else 5
+        if self.consecutive_failures >= failure_threshold:
             self.is_circuit_open = True
-            self.circuit_open_until = time.time() + 30.0  # 30 second circuit breaker
-            console.print(f"[red]Circuit breaker opened for connection {id(self)} - too many failures")
+            # Shorter circuit breaker for mobile devices
+            circuit_duration = 15.0 if self.is_mobile else 30.0
+            self.circuit_open_until = time.time() + circuit_duration
+            console.print(f"[red]Circuit breaker opened for connection {id(self)} - too many failures ({self.consecutive_failures})")
     
     def record_slow_send(self):
         """Record slow send"""
         self.slow_send_count += 1
         
-        # Open circuit if too many slow sends
-        if self.slow_send_count >= 10:
+        # Open circuit if too many slow sends - more lenient for mobile
+        slow_send_threshold = 20 if self.is_mobile else 10
+        if self.slow_send_count >= slow_send_threshold:
             self.is_circuit_open = True
-            self.circuit_open_until = time.time() + 15.0  # 15 second circuit breaker
-            console.print(f"[yellow]Circuit breaker opened for connection {id(self)} - too many slow sends")
+            # Shorter circuit breaker for mobile devices
+            circuit_duration = 10.0 if self.is_mobile else 15.0
+            self.circuit_open_until = time.time() + circuit_duration
+            console.print(f"[yellow]Circuit breaker opened for connection {id(self)} - too many slow sends ({self.slow_send_count})")
     
     def should_send(self) -> bool:
         """Check if we should send to this connection"""
@@ -113,7 +121,7 @@ class ConnectionInfo:
         self.last_heartbeat = time.time()
         self.connection_quality = "unknown"
         self.retry_count = 0
-        self.health = ConnectionHealth()
+        self.health = ConnectionHealth(is_mobile=self.is_mobile)
         self.message_batch = MessageBatch()
         self.last_batch_send = int(time.time())
         

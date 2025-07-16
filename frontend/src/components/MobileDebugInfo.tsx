@@ -5,7 +5,11 @@ import {
   isMobile, 
   isSafari, 
   isMobileSafari, 
-  isLocalNetwork 
+  isLocalNetwork,
+  getConnectionRetryDelay,
+  getMaxReconnectAttempts,
+  getTotalRetryTime,
+  getLoadingFallbackTimeout
 } from '../utils/mobile-detection'
 import config from '../utils/config'
 
@@ -13,6 +17,7 @@ const MobileDebugInfo: React.FC = () => {
   const [debugInfo, setDebugInfo] = useState<any>({})
   const [backendReachable, setBackendReachable] = useState<boolean | null>(null)
   const [websocketTest, setWebsocketTest] = useState<string>('Not tested')
+  const [connectionHistory, setConnectionHistory] = useState<string[]>([])
   const { isConnected, connectionError } = useTrainingStore()
 
   useEffect(() => {
@@ -35,6 +40,12 @@ const MobileDebugInfo: React.FC = () => {
       network: {
         onLine: navigator.onLine,
         connection: (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection
+      },
+      connectionSettings: {
+        retryDelay: getConnectionRetryDelay(),
+        maxAttempts: getMaxReconnectAttempts(),
+        totalRetryTime: getTotalRetryTime(),
+        fallbackTimeout: getLoadingFallbackTimeout()
       }
     }
     setDebugInfo(info)
@@ -44,7 +55,17 @@ const MobileDebugInfo: React.FC = () => {
     
     // Test WebSocket connection
     testWebSocketConnection()
-  }, [])
+    
+    // Monitor connection changes
+    const interval = setInterval(() => {
+      const timestamp = new Date().toLocaleTimeString()
+      const status = isConnected ? 'Connected' : 'Disconnected'
+      const error = connectionError ? ` - ${connectionError}` : ''
+      setConnectionHistory(prev => [...prev.slice(-9), `${timestamp}: ${status}${error}`])
+    }, 5000)
+    
+    return () => clearInterval(interval)
+  }, [isConnected, connectionError])
 
   const testBackendConnection = async () => {
     try {
@@ -143,6 +164,23 @@ const MobileDebugInfo: React.FC = () => {
         <div className="font-semibold">Config:</div>
         <div>API: {debugInfo.config?.apiBaseUrl}</div>
         <div>WS: {debugInfo.config?.websocketUrl}</div>
+      </div>
+
+      <div className="mb-2">
+        <div className="font-semibold">Connection Settings:</div>
+        <div>Retry Delay: {debugInfo.connectionSettings?.retryDelay}ms</div>
+        <div>Max Attempts: {debugInfo.connectionSettings?.maxAttempts}</div>
+        <div>Total Retry Time: {debugInfo.connectionSettings?.totalRetryTime}ms</div>
+        <div>Fallback Timeout: {debugInfo.connectionSettings?.fallbackTimeout}ms</div>
+      </div>
+
+      <div className="mb-2">
+        <div className="font-semibold">Connection History:</div>
+        <div className="text-xs max-h-20 overflow-y-auto">
+          {connectionHistory.map((entry, i) => (
+            <div key={i} className="text-gray-300">{entry}</div>
+          ))}
+        </div>
       </div>
 
       <div className="text-xs text-gray-400 mt-2">

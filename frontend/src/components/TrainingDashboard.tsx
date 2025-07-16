@@ -4,7 +4,7 @@ import { Line, Doughnut, Bar } from 'react-chartjs-2'
 import { 
   TrendingDown, Brain, Zap, Target, Activity, Settings, Loader2,
   Clock, Gauge, BarChart3, TrendingUpIcon, TrendingDownIcon, 
-  CheckCircle, AlertTriangle, Info, Star
+  CheckCircle, AlertTriangle, Info, Star, Scale, GitBranch
 } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 import { useDeviceDetection } from '../utils/deviceDetection'
@@ -392,6 +392,34 @@ const TrainingDashboard: React.FC = () => {
       color: 'text-yellow-400',
       bgColor: 'bg-yellow-500/20',
     },
+    {
+      title: 'Load Balance',
+      value: trainingData?.load_balancing_reward ? `${trainingData.load_balancing_reward.toFixed(3)}` : 'N/A',
+      icon: <Scale className="w-4 h-4 text-pink-400" />,
+      color: 'text-pink-400',
+      bgColor: 'bg-pink-500/20',
+    },
+    {
+      title: 'Expert Starvation',
+      value: trainingData?.expert_starvation_rate ? `${(trainingData.expert_starvation_rate * 100).toFixed(1)}%` : 'N/A',
+      icon: <AlertTriangle className="w-4 h-4 text-red-400" />,
+      color: trainingData?.expert_starvation_rate ? (trainingData.expert_starvation_rate > 0.1 ? 'text-red-400' : trainingData.expert_starvation_rate > 0.05 ? 'text-yellow-400' : 'text-green-400') : 'text-gray-400',
+      bgColor: 'bg-red-500/20',
+    },
+    {
+      title: 'Sparsity Score',
+      value: trainingData?.avg_sparsity_score ? `${(trainingData.avg_sparsity_score * 100).toFixed(0)}%` : 'N/A',
+      icon: <GitBranch className="w-4 h-4 text-blue-400" />,
+      color: trainingData?.avg_sparsity_score ? (trainingData.avg_sparsity_score > 0.75 ? 'text-green-400' : trainingData.avg_sparsity_score > 0.5 ? 'text-yellow-400' : 'text-red-400') : 'text-gray-400',
+      bgColor: 'bg-blue-500/20',
+    },
+    {
+      title: 'Balance Quality',
+      value: trainingData?.avg_balance_quality ? `${(trainingData.avg_balance_quality * 100).toFixed(0)}%` : 'N/A',
+      icon: <BarChart3 className="w-4 h-4 text-green-400" />,
+      color: trainingData?.avg_balance_quality ? (trainingData.avg_balance_quality > 0.8 ? 'text-green-400' : trainingData.avg_balance_quality > 0.6 ? 'text-yellow-400' : 'text-red-400') : 'text-gray-400',
+      bgColor: 'bg-green-500/20',
+    },
   ]
 
   return (
@@ -473,7 +501,7 @@ const TrainingDashboard: React.FC = () => {
             <label className="text-xs text-gray-300">Size:</label>
             <select
               value={modelSize}
-              onChange={(e) => setModelSize(e.target.value as 'small' | 'medium' | 'large')}
+              onChange={(e) => setModelSize(e.target.value as 'tiny' | 'small' | 'medium' | 'large')}
               disabled={isTraining || loadingStates.isTrainingStarting}
               className={`
                 bg-gray-700 text-white rounded-lg px-2 py-1 text-xs
@@ -481,6 +509,7 @@ const TrainingDashboard: React.FC = () => {
                 ${isTraining || loadingStates.isTrainingStarting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-600'}
               `}
             >
+              <option value="tiny">Tiny</option>
               <option value="small">Small</option>
               <option value="medium">Medium</option>
               <option value="large">Large</option>
@@ -495,7 +524,11 @@ const TrainingDashboard: React.FC = () => {
           </div>
         </div>
         
-        <div className="grid grid-cols-3 gap-2 text-xs">
+        <div className="grid grid-cols-4 gap-2 mt-3">
+          <div className="text-center p-2 bg-gray-800/50 rounded-lg">
+            <div className="text-red-400 font-medium">Tiny</div>
+            <div className="text-gray-400">2L, 4E, 60d</div>
+          </div>
           <div className="text-center p-2 bg-gray-800/50 rounded-lg">
             <div className="text-blue-400 font-medium">Small</div>
             <div className="text-gray-400">4L, 4E, 256d</div>

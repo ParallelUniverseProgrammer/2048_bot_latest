@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Clock, Target, TrendingUp, Timer, Zap } from 'lucide-react'
+import { Clock, Target, TrendingUp, Timer, Zap, Scale } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 
 const TrainingMetrics: React.FC = () => {
@@ -87,6 +87,13 @@ const TrainingMetrics: React.FC = () => {
       value: trainingData?.estimated_time_to_checkpoint ? formatTime(trainingData.estimated_time_to_checkpoint) : '0s',
       color: 'text-cyan-400',
       bgColor: 'bg-cyan-500/20',
+    },
+    {
+      icon: Scale,
+      label: 'Load Balance',
+      value: trainingData?.load_balancing_reward ? `${trainingData.load_balancing_reward.toFixed(3)}` : '0.000',
+      color: 'text-pink-400',
+      bgColor: 'bg-pink-500/20',
     },
   ]
 
