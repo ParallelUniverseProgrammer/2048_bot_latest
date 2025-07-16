@@ -100,7 +100,7 @@ const LoadingFallback: React.FC<LoadingFallbackProps> = ({ children }) => {
           <div className="space-y-2">
             <button
               onClick={() => window.location.reload()}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-xl transition-colors"
             >
               Refresh Page
             </button>
@@ -112,14 +112,14 @@ const LoadingFallback: React.FC<LoadingFallbackProps> = ({ children }) => {
                 setRetryAttempt(0)
                 setTimeRemaining(0)
               }}
-              className="w-full bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+              className="w-full bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-xl transition-colors"
             >
               Try Again
             </button>
           </div>
 
           {connectionError && (
-            <div className="mt-4 p-3 bg-red-900/50 border border-red-700 rounded-md">
+            <div className="mt-4 p-3 bg-red-900/50 border border-red-700 rounded-xl">
               <p className="text-red-200 text-sm">
                 Error: {connectionError}
               </p>

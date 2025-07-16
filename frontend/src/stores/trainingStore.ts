@@ -68,6 +68,15 @@ export interface CheckpointPlaybackData {
   }
 }
 
+export interface GameCompletionData {
+  final_score: number
+  total_steps: number
+  max_tile: number
+  final_board_state: number[][]
+  checkpoint_id: string
+  game_number: number
+}
+
 export interface LoadingStates {
   isTrainingStarting: boolean
   isPlaybackStarting: boolean
@@ -86,6 +95,12 @@ export interface LoadingStates {
   playbackStartTimeout: number | null
   newGameStartTimeout: number | null
   progressInterval: number | null // Interval ID for progress simulation
+  // Checkpoint loading states
+  isCheckpointLoading: boolean
+  checkpointId: string | null
+  checkpointLoadingMessage: string | null
+  checkpointLoadingProgress: number
+  checkpointLoadingError: string | null
 }
 
 export interface TrainingState {
@@ -111,6 +126,10 @@ export interface TrainingState {
   checkpointPlaybackData: CheckpointPlaybackData | null
   isPlayingCheckpoint: boolean
   
+  // Game completion state
+  gameCompletionData: GameCompletionData | null
+  isShowingGameOver: boolean
+  
   // Loading states
   loadingStates: LoadingStates
   
@@ -126,11 +145,18 @@ export interface TrainingState {
   updateTrainingData: (data: TrainingData) => void
   updateCheckpointPlaybackData: (data: CheckpointPlaybackData) => void
   setPlayingCheckpoint: (playing: boolean) => void
+  setGameCompletionData: (data: GameCompletionData | null) => void
+  setShowingGameOver: (showing: boolean) => void
   setModelSize: (size: 'tiny' | 'small' | 'medium' | 'large') => void
   setLoadingState: (key: keyof LoadingStates, value: boolean | string | null) => void
   startLoadingOperation: (operationType: 'training' | 'playback' | 'newGame' | 'reset', steps: string[]) => void
   updateLoadingProgress: (progress: number, step?: string, estimatedTime?: number) => void
   completeLoadingOperation: () => void
+  // Checkpoint loading methods
+  setCheckpointLoadingState: (state: { isCheckpointLoading: boolean; checkpointId: string | null; loadingMessage: string | null; loadingProgress: number }) => void
+  updateCheckpointLoadingProgress: (progress: number, message?: string) => void
+  completeCheckpointLoading: (message?: string) => void
+  setCheckpointLoadingError: (error: string) => void
   startTraining: () => Promise<void>
   pauseTraining: () => Promise<void>
   resumeTraining: () => Promise<void>
@@ -157,6 +183,10 @@ export const useTrainingStore = create<TrainingState>()(
       checkpointPlaybackData: null,
       isPlayingCheckpoint: false,
       
+      // Game completion state
+      gameCompletionData: null,
+      isShowingGameOver: false,
+      
       // Loading states
       loadingStates: {
         isTrainingStarting: false,
@@ -174,6 +204,12 @@ export const useTrainingStore = create<TrainingState>()(
         playbackStartTimeout: null,
         newGameStartTimeout: null,
         progressInterval: null,
+        // Checkpoint loading states
+        isCheckpointLoading: false,
+        checkpointId: null,
+        checkpointLoadingMessage: null,
+        checkpointLoadingProgress: 0,
+        checkpointLoadingError: null,
       },
       
       // Persisted values
@@ -264,6 +300,10 @@ export const useTrainingStore = create<TrainingState>()(
           set({ isPlayingCheckpoint: playing })
         }
       },
+      
+      setGameCompletionData: (data) => set({ gameCompletionData: data }),
+      
+      setShowingGameOver: (showing) => set({ isShowingGameOver: showing }),
       
       setModelSize: (size) => {
         set({ modelSize: size })
@@ -437,6 +477,75 @@ export const useTrainingStore = create<TrainingState>()(
             }
           })
         }, 1000)
+      },
+
+      // Checkpoint loading methods
+      setCheckpointLoadingState: (state) => {
+        set(prev => ({
+          loadingStates: {
+            ...prev.loadingStates,
+            isCheckpointLoading: state.isCheckpointLoading,
+            checkpointId: state.checkpointId,
+            checkpointLoadingMessage: state.loadingMessage,
+            checkpointLoadingProgress: state.loadingProgress,
+            checkpointLoadingError: null,
+          }
+        }))
+      },
+
+      updateCheckpointLoadingProgress: (progress, message) => {
+        set(prev => ({
+          loadingStates: {
+            ...prev.loadingStates,
+            checkpointLoadingProgress: progress,
+            checkpointLoadingMessage: message || prev.loadingStates.checkpointLoadingMessage,
+          }
+        }))
+      },
+
+      completeCheckpointLoading: (message) => {
+        set(prev => ({
+          loadingStates: {
+            ...prev.loadingStates,
+            isCheckpointLoading: false,
+            checkpointLoadingMessage: message || 'Checkpoint loaded successfully',
+            checkpointLoadingProgress: 100,
+            checkpointLoadingError: null,
+          }
+        }))
+        
+        // Auto-clear success message after 3 seconds
+        setTimeout(() => {
+          set(prev => ({
+            loadingStates: {
+              ...prev.loadingStates,
+              checkpointLoadingMessage: null,
+              checkpointLoadingProgress: 0,
+            }
+          }))
+        }, 3000)
+      },
+
+      setCheckpointLoadingError: (error) => {
+        set(prev => ({
+          loadingStates: {
+            ...prev.loadingStates,
+            isCheckpointLoading: false,
+            checkpointLoadingError: error,
+            checkpointLoadingMessage: null,
+            checkpointLoadingProgress: 0,
+          }
+        }))
+        
+        // Auto-clear error message after 5 seconds
+        setTimeout(() => {
+          set(prev => ({
+            loadingStates: {
+              ...prev.loadingStates,
+              checkpointLoadingError: null,
+            }
+          }))
+        }, 5000)
       },
       
       startTraining: async () => {
@@ -652,6 +761,12 @@ export const useTrainingStore = create<TrainingState>()(
               playbackStartTimeout: null,
               newGameStartTimeout: null,
               progressInterval: null,
+              // Checkpoint loading states
+              isCheckpointLoading: false,
+              checkpointId: null,
+              checkpointLoadingMessage: null,
+              checkpointLoadingProgress: 0,
+              checkpointLoadingError: null,
             },
           })
           

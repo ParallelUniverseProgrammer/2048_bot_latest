@@ -46,7 +46,7 @@ const ConnectionStatus: React.FC = () => {
   return (
     <motion.div
       className={`
-        px-3 py-1 rounded-md text-xs font-medium
+                      px-3 py-1 rounded-xl text-xs font-medium
         ${bgColor} ${textColor} ${glowColor}
         shadow-lg transition-all duration-300
       `}

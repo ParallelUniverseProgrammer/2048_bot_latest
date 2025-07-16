@@ -349,7 +349,9 @@ class FreezeDiagnostics:
     def setup_for_real_system(self):
         """Setup diagnostics for real system (not test mocks)"""
         # Use real checkpoint manager
-        self.checkpoint_manager = CheckpointManager()
+        checkpoint_dir = os.getenv('CHECKPOINTS_DIR', os.path.join(os.path.dirname(__file__), '..', 'backend', 'checkpoints'))
+        print(f"[test_freeze_diagnostics] Using checkpoint_dir: {checkpoint_dir}")
+        self.checkpoint_manager = CheckpointManager(checkpoint_dir)
         
         # Use real WebSocket manager
         from backend.app.api.websocket_manager import WebSocketManager

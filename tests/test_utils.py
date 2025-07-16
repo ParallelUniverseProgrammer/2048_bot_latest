@@ -374,6 +374,71 @@ class BackendTester:
             self.logger.error(f"Error loading checkpoint {checkpoint_id}: {e}")
             return None
     
+    def start_playback(self, checkpoint_id: str) -> Optional[Dict[str, Any]]:
+        """Start playback for a checkpoint"""
+        try:
+            response = requests.post(
+                f"{self.base_url}/checkpoints/{checkpoint_id}/playback/start",
+                timeout=self.timeout
+            )
+            if response.status_code != 200:
+                self.logger.error(f"Failed to start playback for {checkpoint_id}: HTTP {response.status_code}")
+                return None
+            
+            result = response.json()
+            self.logger.ok(f"Playback started for checkpoint {checkpoint_id}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error starting playback for {checkpoint_id}: {e}")
+            return None
+    
+    def set_playback_speed(self, speed: float) -> Optional[Dict[str, Any]]:
+        """Set playback speed multiplier"""
+        try:
+            response = requests.post(
+                f"{self.base_url}/checkpoints/playback/speed",
+                json={"speed": speed},
+                timeout=self.timeout
+            )
+            if response.status_code != 200:
+                self.logger.error(f"Failed to set playback speed {speed}: HTTP {response.status_code}")
+                return None
+            
+            result = response.json()
+            self.logger.ok(f"Playback speed set to {speed}x")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error setting playback speed {speed}: {e}")
+            return None
+    
+    def get_playback_status(self) -> Optional[Dict[str, Any]]:
+        """Get current playback status"""
+        try:
+            response = requests.get(f"{self.base_url}/checkpoints/playback/status", timeout=self.timeout)
+            if response.status_code != 200:
+                self.logger.error(f"Failed to get playback status: HTTP {response.status_code}")
+                return None
+            
+            status = response.json()
+            return status
+        except Exception as e:
+            self.logger.error(f"Error getting playback status: {e}")
+            return None
+    
+    def get_playback_speed(self) -> Optional[Dict[str, Any]]:
+        """Get current playback speed"""
+        try:
+            response = requests.get(f"{self.base_url}/checkpoints/playback/speed", timeout=self.timeout)
+            if response.status_code != 200:
+                self.logger.error(f"Failed to get playback speed: HTTP {response.status_code}")
+                return None
+            
+            result = response.json()
+            return result
+        except Exception as e:
+            self.logger.error(f"Error getting playback speed: {e}")
+            return None
+    
     def test_basic_endpoints(self) -> Dict[str, bool]:
         """Test all basic endpoints and return results"""
         results = {}

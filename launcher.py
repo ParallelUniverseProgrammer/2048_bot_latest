@@ -314,8 +314,12 @@ class ProcessMonitor:
                         break
                     line = line.strip()
                     if line:
-                        # Check if this is an INFO message from the backend
-                        if line.startswith('INFO:'):
+                        # Check if this is a DEBUG message from the backend
+                        if '[DEBUG]' in line:
+                            # Treat DEBUG messages as debug level (not errors)
+                            self.logger.debug(f"[{self.name}] {line}")
+                            # Don't print debug messages to console to reduce noise
+                        elif line.startswith('INFO:'):
                             # Remove the INFO: prefix and treat as info message
                             info_message = line[5:].strip()
                             self.logger.info(f"[{self.name}] {info_message}")

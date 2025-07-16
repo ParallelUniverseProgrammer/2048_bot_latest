@@ -34,6 +34,9 @@ def create_test_checkpoint():
     model = GameTransformer(config)
     model.to(device)
     
+    # Create optimizer (required for checkpoint compatibility)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0003)
+    
     # Create dummy training data
     dummy_board = torch.randint(0, 16, (1, 4, 4), device=device)
     
@@ -48,13 +51,16 @@ def create_test_checkpoint():
         print(f"Value device: {value.device}")
     
     # Save checkpoint
-    checkpoint_dir = Path("../backend/checkpoints")
+    checkpoint_dir = Path(os.getenv('CHECKPOINTS_DIR', '../backend/checkpoints'))
+    print(f"[create_test_checkpoint] Using checkpoint_dir: {checkpoint_dir}")
     checkpoint_dir.mkdir(exist_ok=True)
     
     checkpoint_data = {
         'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),  # Add missing optimizer state
         'config': config,
         'episode_count': 1,
+        'total_steps': 0,  # Add missing total_steps
         'best_score': 1000,
         'loss_history': [(0, 0.5)],
         'score_history': [(0, 1000)],

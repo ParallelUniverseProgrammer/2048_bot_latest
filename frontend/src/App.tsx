@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Activity, Brain, GamepadIcon, Network, Play, Pause, AlertTriangle, Archive } from 'lucide-react'
+import { Activity, Brain, GamepadIcon, Network, Archive } from 'lucide-react'
 
 import TrainingDashboard from './components/TrainingDashboard'
 import GameBoard from './components/GameBoard'
@@ -8,6 +8,7 @@ import NetworkVisualizer from './components/NetworkVisualizer'
 import ConnectionStatus from './components/ConnectionStatus'
 
 import CheckpointManager from './components/CheckpointManager'
+import CheckpointLoadingIndicator from './components/CheckpointLoadingIndicator'
 import { useTrainingStore } from './stores/trainingStore'
 import { useWebSocket } from './utils/websocket'
 import { useDeviceDetection } from './utils/deviceDetection'
@@ -46,17 +47,10 @@ const App: React.FC = () => {
   }, [isMobile])
   
   const { 
-    isConnected, 
     isTraining, 
     isPaused,
     currentEpisode, 
-    trainingData,
-    loadingStates,
-    startTraining,
-    pauseTraining,
-    resumeTraining,
-    stopTraining,
-    resetTraining
+    trainingData
   } = useTrainingStore()
   
   // Initialize WebSocket connection
@@ -97,30 +91,6 @@ const App: React.FC = () => {
     { id: 'network', label: 'Network', icon: Network },
     { id: 'checkpoints', label: 'Checkpoints', icon: Archive },
   ]
-
-  const handleTrainingControl = async (action: 'start' | 'pause' | 'resume' | 'stop' | 'reset') => {
-    try {
-      switch (action) {
-        case 'start':
-          await startTraining()
-          break
-        case 'pause':
-          await pauseTraining()
-          break
-        case 'resume':
-          await resumeTraining()
-          break
-        case 'stop':
-          await stopTraining()
-          break
-        case 'reset':
-          await resetTraining()
-          break
-      }
-    } catch (error) {
-      console.error('Training control error:', error)
-    }
-  }
 
   return (
     <div className={`h-screen flex flex-col relative transition-all duration-1000 ${
@@ -194,25 +164,25 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* Header */}
+      {/* Header - Minimalist and centered */}
       <motion.header 
-        className={`card-glass flex-shrink-0 z-40 ${isMobile ? 'px-3 py-2' : 'px-4 py-3 sm:px-6 lg:px-8'}`}
+        className={`card-glass flex-shrink-0 z-40 ${isMobile ? 'px-4 py-3' : 'px-6 py-4 sm:px-8 lg:px-10'}`}
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6 }}
       >
         <div className="flex items-center justify-between">
-          {/* Logo and Title - Simplified */}
+          {/* Logo - Centered */}
           <div className="flex items-center space-x-3">
             <motion.div
               className={`flex items-center justify-center ${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl`}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
-              <Brain className={`${isMobile ? 'w-4 h-4' : 'w-6 h-6'} text-white`} />
+              <Brain className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-white`} />
             </motion.div>
             <div>
-              <h1 className={`font-bold text-gradient ${isMobile ? 'text-sm' : 'text-lg sm:text-xl'}`}>
+              <h1 className={`font-bold text-gradient ${isMobile ? 'text-base' : 'text-lg sm:text-xl'}`}>
                 {isMobile ? '2048 AI' : '2048 Bot'}
               </h1>
               {!isMobile && (
@@ -223,99 +193,35 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Right side - Connection + Main Control */}
+          {/* Status - Right side */}
           <div className="flex items-center space-x-3">
             {/* Connection Status */}
             <ConnectionStatus />
 
-            {/* Single Primary Control Button */}
-            <motion.button
-              onClick={() => handleTrainingControl(
-                isPaused ? 'resume' : 
-                isTraining && !isPaused ? 'pause' : 
-                'start'
-              )}
-              className={`
-                relative flex items-center justify-center rounded-xl font-bold transition-all duration-300 
-                ${isMobile ? 'w-10 h-10' : 'px-6 py-3 space-x-2'}
-                ${loadingStates.isTrainingStarting 
-                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg shadow-blue-500/30' 
-                  : isTraining && !isPaused 
-                  ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/30' 
-                  : isPaused 
-                  ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white shadow-lg shadow-yellow-500/30'
-                  : 'bg-gradient-to-r from-green-500 to-blue-500 text-white shadow-lg shadow-green-500/30'
-                }
-                ${!isConnected || loadingStates.isTrainingStarting ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}
-              `}
-              whileHover={isConnected && !loadingStates.isTrainingStarting ? { scale: 1.05 } : {}}
-              whileTap={isConnected && !loadingStates.isTrainingStarting ? { scale: 0.95 } : {}}
-              disabled={!isConnected || loadingStates.isTrainingStarting}
-            >
-              {/* Button content */}
-              <div className="relative z-10 flex items-center space-x-2">
-                {loadingStates.isTrainingStarting ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    {!isMobile && <span className="text-sm">Starting...</span>}
-                  </>
-                ) : isPaused ? (
-                  <>
-                    <Play className="w-4 h-4" />
-                    {!isMobile && <span className="text-sm">Resume</span>}
-                  </>
-                ) : isTraining && !isPaused ? (
-                  <>
-                    <Pause className="w-4 h-4" />
-                    {!isMobile && <span className="text-sm">Pause</span>}
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4" />
-                    {!isMobile && <span className="text-sm">Start</span>}
-                  </>
-                )}
-              </div>
-            </motion.button>
-
-            {/* Secondary Actions Menu (Stop/Reset) - Only show when needed */}
-            <AnimatePresence>
-              {(isTraining || isPaused) && (
-                <motion.button
-                  onClick={() => handleTrainingControl('stop')}
-                  disabled={loadingStates.isTrainingStopping}
-                  className={`
-                    relative flex items-center justify-center rounded-xl font-bold transition-all duration-200
-                    ${isMobile ? 'w-8 h-8' : 'px-4 py-3 space-x-1'}
-                    bg-gradient-to-r from-red-600 to-red-800 text-white 
-                    shadow-lg shadow-red-600/40
-                    hover:from-red-700 hover:to-red-900
-                    active:scale-95
-                    ${loadingStates.isTrainingStopping ? 'opacity-75 cursor-not-allowed' : ''}
-                  `}
-                  initial={{ opacity: 0, scale: 0.8, x: 20 }}
-                  animate={{ opacity: 1, scale: 1, x: 0 }}
-                  exit={{ opacity: 0, scale: 0.8, x: 20 }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <AlertTriangle className="w-4 h-4" />
-                  {!isMobile && <span className="text-xs">Stop</span>}
-                </motion.button>
-              )}
-            </AnimatePresence>
+            {/* Training Status Indicator */}
+            <div className="flex items-center space-x-2">
+              <div className={`w-2 h-2 rounded-full ${
+                isTraining && !isPaused ? 'bg-green-400 animate-pulse' :
+                isPaused ? 'bg-yellow-400' :
+                'bg-gray-400'
+              }`} />
+              <span className="text-xs text-gray-300 font-medium">
+                {isTraining && !isPaused ? 'Training' :
+                 isPaused ? 'Paused' : 'Idle'}
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Compact Status Bar - Only show essential info */}
         {trainingData && !isMobile && (
           <motion.div 
-            className="mt-2 flex items-center justify-between text-xs text-gray-400"
+            className="mt-3 flex items-center justify-center text-xs text-gray-400"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
           >
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-6">
               <span>Episode {currentEpisode.toLocaleString()}</span>
               <span>Score: {trainingData.score?.toLocaleString()}</span>
               <span>GPU: {trainingData.gpu_memory?.toFixed(1)}GB</span>
@@ -324,22 +230,22 @@ const App: React.FC = () => {
         )}
       </motion.header>
 
-      {/* Navigation Tabs - Compact with Labels */}
+      {/* Navigation Tabs - More compact */}
       <motion.nav 
-        className={`card-glass flex-shrink-0 mt-2 ${isMobile ? 'mx-3' : 'mx-4 sm:mx-6 lg:mx-8'}`}
+        className={`card-glass flex-shrink-0 mt-1 rounded-2xl ${isMobile ? 'mx-2' : 'mx-4 sm:mx-6 lg:mx-8'}`}
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6, delay: 0.2 }}
       >
-        <div className="flex justify-center space-x-1 p-2">
+        <div className="flex justify-center space-x-1 p-1">
           {tabs.map((tab) => {
             const IconComponent = tab.icon
             return (
               <motion.button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`relative flex flex-col items-center space-y-1 rounded-lg font-medium transition-all duration-200 ${
-                  isMobile ? 'px-3 py-2' : 'px-4 py-2'
+                className={`relative flex flex-col items-center space-y-0.5 rounded-xl font-medium transition-all duration-200 ${
+                  isMobile ? 'px-2 py-1' : 'px-3 py-1'
                 } ${
                   activeTab === tab.id
                     ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
@@ -348,11 +254,11 @@ const App: React.FC = () => {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
-                <IconComponent className="w-4 h-4" />
+                <IconComponent className="w-3 h-3" />
                 <span className="text-xs">{tab.label}</span>
                 {activeTab === tab.id && (
                   <motion.div
-                    className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg -z-10"
+                    className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl -z-10"
                     layoutId="activeTab"
                     initial={false}
                     transition={{ type: 'spring', stiffness: 500, damping: 30 }}
@@ -364,9 +270,9 @@ const App: React.FC = () => {
         </div>
       </motion.nav>
 
-      {/* Main Content - Scrollable */}
+      {/* Main Content - More generous padding */}
       <motion.main 
-        className={`flex-1 overflow-auto ${isMobile ? 'mobile-main pb-6' : 'px-4 py-4 sm:px-6 lg:px-8 pb-6'}`}
+        className={`flex-1 overflow-auto ${isMobile ? 'mobile-main pb-4' : 'px-6 py-4 sm:px-8 lg:px-10 pb-4'}`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.6, delay: 0.4 }}
@@ -424,10 +330,13 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Footer */}
+      {/* Checkpoint Loading Indicator */}
+      <CheckpointLoadingIndicator />
+
+      {/* Footer - Removed for mobile to save space */}
       {!isMobile && (
         <motion.footer 
-          className="card-glass mt-8 mx-4 sm:mx-6 lg:mx-8 p-4 text-center text-sm text-gray-400"
+          className="card-glass mt-4 mx-4 sm:mx-6 lg:mx-8 p-2 text-center text-xs text-gray-400"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.6, delay: 0.6 }}

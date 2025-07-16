@@ -278,9 +278,32 @@ export const useWebSocket = () => {
          useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
          useTrainingStore.getState().setLoadingState('loadingMessage', null)
        }
-     } else if (data.type === 'game_completed') {
-       useTrainingStore.getState().setLoadingState('isNewGameStarting', true)
-       useTrainingStore.getState().setLoadingState('loadingMessage', 'Starting new game...')
+         } else if (data.type === 'game_completed') {
+      console.log('Game completed:', data)
+      
+      // Store the final board state from the last step data
+      const finalBoardState = useTrainingStore.getState().checkpointPlaybackData?.step_data.board_state || [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]
+      
+      // Set game completion data
+      useTrainingStore.getState().setGameCompletionData({
+        final_score: data.final_score,
+        total_steps: data.total_steps,
+        max_tile: data.max_tile,
+        final_board_state: finalBoardState,
+        checkpoint_id: data.checkpoint_id,
+        game_number: data.game_number
+      })
+      
+      // Show game over screen
+      useTrainingStore.getState().setShowingGameOver(true)
+      
+      // Start new game after a delay to let user see the final state
+      setTimeout(() => {
+        useTrainingStore.getState().setShowingGameOver(false)
+        useTrainingStore.getState().setGameCompletionData(null)
+        useTrainingStore.getState().setLoadingState('isNewGameStarting', true)
+        useTrainingStore.getState().setLoadingState('loadingMessage', 'Starting new game...')
+      }, 3000) // 3 second delay - matches the countdown in GameBoard component
      } else if (data.type === 'new_game_started') {
        useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
        useTrainingStore.getState().setLoadingState('loadingMessage', null)
@@ -288,6 +311,31 @@ export const useWebSocket = () => {
        console.log('Received new episode started:', data)
        if (data.episode !== undefined) {
          useTrainingStore.getState().setEpisode(data.episode)
+       }
+     } else if (data.type === 'checkpoint_loading_status') {
+       console.log('Received checkpoint loading status:', data)
+       const { checkpoint_id, status, message } = data
+       
+       // Handle checkpoint loading status updates
+       if (status === 'loading') {
+         useTrainingStore.getState().setCheckpointLoadingState({
+           isCheckpointLoading: true,
+           checkpointId: checkpoint_id,
+           loadingMessage: message || 'Loading checkpoint...',
+           loadingProgress: 10
+         })
+       } else if (status === 'config_loaded') {
+         useTrainingStore.getState().updateCheckpointLoadingProgress(30, message || 'Checkpoint data loaded, initializing model...')
+       } else if (status === 'trainer_created') {
+         useTrainingStore.getState().updateCheckpointLoadingProgress(50, message || 'Model initialized, loading checkpoint weights...')
+       } else if (status === 'weights_loaded') {
+         useTrainingStore.getState().updateCheckpointLoadingProgress(70, message || 'Checkpoint weights loaded, preparing training environment...')
+       } else if (status === 'starting_training') {
+         useTrainingStore.getState().updateCheckpointLoadingProgress(90, message || 'Starting training session...')
+       } else if (status === 'complete') {
+         useTrainingStore.getState().completeCheckpointLoading(message || 'Checkpoint loaded successfully')
+       } else if (status === 'error') {
+         useTrainingStore.getState().setCheckpointLoadingError(message || 'Failed to load checkpoint')
        }
      }
   }, [updateTrainingData, updateCheckpointPlaybackData])

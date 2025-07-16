@@ -16,6 +16,7 @@ import os
 import json
 from datetime import datetime
 import threading
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -61,9 +62,10 @@ class TrainingManager:
         self.is_paused: bool = False
         self.current_episode: int = 0
         self.total_episodes: int = 10_000
+        self.is_initializing: bool = False  # NEW FIELD
         
         # Checkpoint management
-        self.checkpoint_dir = "checkpoints"
+        self.checkpoint_dir = os.getenv("CHECKPOINTS_DIR", "checkpoints")
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         self.checkpoint_manager = CheckpointManager(self.checkpoint_dir)
         
@@ -374,7 +376,7 @@ class TrainingManager:
                     
                     # Train one episode **per environment** using PPO in parallel threads.
                     if self.current_episode < 5:  # Debug logging for first few iterations
-                        print(f"🔄 Training {len(self.envs)} environments sequentially...")
+                        print(f"Training {len(self.envs)} environments sequentially...")
                     
                     self.timing_logger.start_operation("sequential_training", "training", f"n_envs={len(self.envs)}")
                     
@@ -400,7 +402,7 @@ class TrainingManager:
                     
                     self.timing_logger.end_operation("sequential_training", "training", f"results={len(episode_results)}")
                     if self.current_episode < 5:  # Debug logging
-                        print(f"✅ Training completed, got {len(episode_results)} results")
+                        print(f"Training completed, got {len(episode_results)} results")
 
                     # Convenience: last result for logging / checkpoint metrics
                     last_res = episode_results[-1] if episode_results else {}
@@ -509,7 +511,7 @@ class TrainingManager:
                     if episode_results:
                         # Each iteration trains one episode per environment, so increment by number of environments
                         self.current_episode += len(self.envs)
-                        print(f"📈 Training progress: {self.current_episode}/{self.total_episodes} episodes completed")
+                        print(f"Training progress: {self.current_episode}/{self.total_episodes} episodes completed")
                         
                         # Send training status update to frontend (reduced frequency)
                         if self.current_episode % 20 == 0:  # Reduced from every iteration to every 20 episodes
@@ -529,7 +531,7 @@ class TrainingManager:
                     else:
                         # If no results, increment by 1 to prevent infinite loop
                         self.current_episode += 1
-                        print(f"⚠️ No episode results, incrementing episode count to {self.current_episode}")
+                        print(f"Warning: No episode results, incrementing episode count to {self.current_episode}")
                     
                     # Save checkpoint periodically
                     if self.current_episode % self._checkpoint_interval == 0:
@@ -565,7 +567,8 @@ class TrainingManager:
         # Write timing summaries
         self.timing_logger.start_operation("write_timing_summaries", "cleanup")
         self.write_timing_summary()
-        self.trainer.write_timing_summary()
+        if self.trainer is not None:
+            self.trainer.write_timing_summary()
         self.timing_logger.end_operation("write_timing_summaries", "cleanup")
         
         # Generate performance analysis report
@@ -585,14 +588,13 @@ class TrainingManager:
         self.timing_logger.start_operation("checkpoint_save", "io", f"episode={self.current_episode}")
         
         checkpoint_id = f"checkpoint_episode_{self.current_episode}"
-        checkpoint_path = os.path.join(
-            self.checkpoint_dir, 
-            f"{checkpoint_id}.pt"
-        )
+        checkpoint_path = Path(self.checkpoint_dir) / f"{checkpoint_id}.pt"
+        checkpoint_path = checkpoint_path.resolve()  # Ensure absolute path
         
         # Save model checkpoint
         self.timing_logger.start_operation("model_checkpoint_save", "io")
-        self.trainer.save_checkpoint(checkpoint_path)
+        if self.trainer is not None:
+            self.trainer.save_checkpoint(str(checkpoint_path))
         self.timing_logger.end_operation("model_checkpoint_save", "io", f"filepath={checkpoint_path}")
         
         # Create metadata for the checkpoint
@@ -609,7 +611,7 @@ class TrainingManager:
         }
         
         performance_metrics = {
-            'best_score': self.trainer.best_score,
+            'best_score': self.trainer.best_score if self.trainer is not None else 0,
             'avg_score': avg_game_length * 10,  # Rough estimate
             # Use latest computed loss from broadcast metrics; fallback to 0.0
             'final_loss': metrics.get('loss', 0.0) if metrics.get('loss') is not None else 0.0,
@@ -642,6 +644,7 @@ class TrainingManager:
             'type': 'checkpoint_created',
             'checkpoint_id': checkpoint_id,
             'episode': self.current_episode,
+            'absolute_path': str(checkpoint_path),
             'created_at': time.time()
         })
         self.timing_logger.end_operation("checkpoint_notification", "websocket")

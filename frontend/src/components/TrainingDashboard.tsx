@@ -2,9 +2,10 @@ import React, { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Line, Doughnut, Bar } from 'react-chartjs-2'
 import { 
-  TrendingDown, Brain, Zap, Target, Activity, Settings, Loader2,
+  TrendingDown, Brain, Zap, Target, Activity, Loader2,
   Clock, Gauge, BarChart3, TrendingUpIcon, TrendingDownIcon, 
-  CheckCircle, AlertTriangle, Info, Star, Scale, GitBranch
+  CheckCircle, AlertTriangle, Info, Star, Scale, GitBranch,
+  Play, Pause, AlertTriangle as StopIcon
 } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 import { useDeviceDetection } from '../utils/deviceDetection'
@@ -15,15 +16,43 @@ const TrainingDashboard: React.FC = () => {
     lossHistory, 
     scoreHistory, 
     isTraining, 
+    isPaused,
+    isConnected,
     lastPolicyLoss, 
     lastValueLoss, 
     modelSize, 
     setModelSize, 
-    loadingStates 
+    loadingStates,
+    startTraining,
+    pauseTraining,
+    resumeTraining,
+    stopTraining
   } = useTrainingStore()
 
   const { displayMode } = useDeviceDetection()
   const isMobile = displayMode === 'mobile'
+
+  // Training control functions
+  const handleTrainingControl = async (action: 'start' | 'pause' | 'resume' | 'stop') => {
+    try {
+      switch (action) {
+        case 'start':
+          await startTraining()
+          break
+        case 'pause':
+          await pauseTraining()
+          break
+        case 'resume':
+          await resumeTraining()
+          break
+        case 'stop':
+          await stopTraining()
+          break
+      }
+    } catch (error) {
+      console.error('Training control error:', error)
+    }
+  }
 
   // Chart data preparation with fallback mock data
   const createMockData = (episodes: number[], baseValue: number, variance: number = 0.2) => {
@@ -146,16 +175,8 @@ const TrainingDashboard: React.FC = () => {
     }
   }, [trainingData?.expert_usage, isMobile])
 
-
-
-
-
-
-
-
-
-  // Compact chart options for tiny rectangles
-  const compactChartOptions = {
+  // Enhanced chart options for larger charts
+  const enhancedChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
@@ -176,8 +197,8 @@ const TrainingDashboard: React.FC = () => {
         cornerRadius: 8,
         displayColors: false,
         padding: 8,
-        titleFont: { size: 10 },
-        bodyFont: { size: 9 },
+        titleFont: { size: 12 },
+        bodyFont: { size: 11 },
       },
     },
     scales: {
@@ -197,17 +218,17 @@ const TrainingDashboard: React.FC = () => {
     elements: {
       point: {
         radius: 0,
-        hoverRadius: 3,
+        hoverRadius: 4,
       },
       line: {
         borderJoinStyle: 'round' as const,
         borderCapStyle: 'round' as const,
-        borderWidth: 1,
+        borderWidth: 2,
       },
     },
   }
 
-  const compactDoughnutOptions = {
+  const enhancedDoughnutOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -224,8 +245,8 @@ const TrainingDashboard: React.FC = () => {
         cornerRadius: 8,
         displayColors: false,
         padding: 8,
-        titleFont: { size: 10 },
-        bodyFont: { size: 9 },
+        titleFont: { size: 12 },
+        bodyFont: { size: 11 },
         callbacks: {
           label: function(context: any) {
             return `${context.label}: ${context.parsed.toFixed(1)}%`;
@@ -233,10 +254,10 @@ const TrainingDashboard: React.FC = () => {
         }
       },
     },
-    cutout: '70%',
+    cutout: '60%',
   }
 
-  const compactBarOptions = {
+  const enhancedBarOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -253,8 +274,8 @@ const TrainingDashboard: React.FC = () => {
         cornerRadius: 8,
         displayColors: false,
         padding: 8,
-        titleFont: { size: 10 },
-        bodyFont: { size: 9 },
+        titleFont: { size: 12 },
+        bodyFont: { size: 11 },
         callbacks: {
           label: function(context: any) {
             return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}%`;
@@ -423,37 +444,37 @@ const TrainingDashboard: React.FC = () => {
   ]
 
   return (
-    <div className="h-full flex flex-col space-y-3 pb-6">
-      {/* Loading Indicator */}
+    <div className="h-full grid grid-rows-[auto_auto_auto_1fr] gap-2">
+      {/* Loading Indicator - More compact */}
       {loadingStates.isTrainingStarting && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
-          className="card-glass p-3 rounded-xl border border-blue-500/30 bg-blue-500/10 flex-shrink-0"
+          className="card-glass p-3 rounded-2xl border border-blue-500/30 bg-blue-500/10"
         >
-          <div className="space-y-3">
+          <div className="space-y-2">
             {/* Header */}
-            <div className="flex items-center space-x-3">
-              <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+            <div className="flex items-center space-x-2">
+              <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
               <div className="flex-1">
-                <div className="text-sm font-medium text-blue-300">Starting Training Session</div>
+                <div className="text-xs font-medium text-blue-300">Starting Training Session</div>
                 <div className="text-xs text-blue-400/80">
                   {loadingStates.loadingStep || loadingStates.loadingMessage || 'Initializing...'}
                 </div>
               </div>
               <div className="text-xs text-blue-400">
                 {loadingStates.estimatedTimeRemaining !== null 
-                  ? `${Math.ceil(loadingStates.estimatedTimeRemaining)}s remaining`
+                  ? `${Math.ceil(loadingStates.estimatedTimeRemaining)}s`
                   : ''
                 }
               </div>
             </div>
             
             {/* Progress Bar */}
-            <div className="w-full bg-gray-700 rounded-full h-2">
+            <div className="w-full bg-gray-700 rounded-full h-1.5">
               <motion.div
-                className="bg-blue-400 h-2 rounded-full"
+                className="bg-blue-400 h-1.5 rounded-full"
                 initial={{ width: 0 }}
                 animate={{ width: `${loadingStates.loadingProgress}%` }}
                 transition={{ duration: 0.3 }}
@@ -484,28 +505,40 @@ const TrainingDashboard: React.FC = () => {
         </motion.div>
       )}
 
-      {/* Compact Model Configuration */}
+      {/* Training Controls */}
       <motion.div
-        className="card-glass p-3 rounded-xl flex-shrink-0"
-        initial={{ opacity: 0, y: 20 }}
+        className="card-glass p-4 rounded-2xl flex items-center justify-between"
+        initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center space-x-2">
           <h3 className="text-sm font-semibold flex items-center">
-            <Settings className="w-4 h-4 mr-2 text-blue-400" />
-            Model Configuration
+            <Activity className="w-4 h-4 mr-2 text-blue-400" />
+            Training Status
           </h3>
-          
-          <div className="flex items-center space-x-3">
-            <label className="text-xs text-gray-300">Size:</label>
+          <div className="flex items-center space-x-1 text-xs">
+            <span className={`font-medium ${isTraining ? 'text-green-400' : 'text-red-400'}`}>
+              {isTraining ? 'Training' : 'Paused'}
+            </span>
+            {isPaused && (
+              <span className="text-yellow-400"> (Paused)</span>
+            )}
+            {!isConnected && (
+              <span className="text-red-400"> (Disconnected)</span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          {!isTraining && (
             <select
               value={modelSize}
               onChange={(e) => setModelSize(e.target.value as 'tiny' | 'small' | 'medium' | 'large')}
               disabled={isTraining || loadingStates.isTrainingStarting}
               className={`
-                bg-gray-700 text-white rounded-lg px-2 py-1 text-xs
-                focus:outline-none focus:ring-2 focus:ring-blue-500
+                bg-gray-700 text-white rounded-lg px-2 py-1.5 text-xs border border-gray-600
+                focus:outline-none focus:ring-1 focus:ring-blue-500
                 ${isTraining || loadingStates.isTrainingStarting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-600'}
               `}
             >
@@ -514,151 +547,87 @@ const TrainingDashboard: React.FC = () => {
               <option value="medium">Medium</option>
               <option value="large">Large</option>
             </select>
-            
-            {(isTraining || loadingStates.isTrainingStarting) && (
-              <div className="flex items-center space-x-1 text-xs text-yellow-400">
-                <Activity className="w-3 h-3" />
-                <span>Training...</span>
-              </div>
-            )}
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-4 gap-2 mt-3">
-          <div className="text-center p-2 bg-gray-800/50 rounded-lg">
-            <div className="text-red-400 font-medium">Tiny</div>
-            <div className="text-gray-400">2L, 4E, 60d</div>
-          </div>
-          <div className="text-center p-2 bg-gray-800/50 rounded-lg">
-            <div className="text-blue-400 font-medium">Small</div>
-            <div className="text-gray-400">4L, 4E, 256d</div>
-          </div>
-          <div className="text-center p-2 bg-gray-800/50 rounded-lg">
-            <div className="text-green-400 font-medium">Medium</div>
-            <div className="text-gray-400">6L, 6E, 384d</div>
-          </div>
-          <div className="text-center p-2 bg-gray-800/50 rounded-lg">
-            <div className="text-purple-400 font-medium">Large</div>
-            <div className="text-gray-400">8L, 8E, 512d</div>
-          </div>
+          )}
+          {isTraining && (
+            <button
+              onClick={() => handleTrainingControl('pause')}
+              className="flex items-center px-3 py-1.5 rounded-xl text-xs font-medium text-white bg-yellow-500 hover:bg-yellow-600 transition-colors"
+              disabled={loadingStates.isTrainingStarting || !isConnected}
+            >
+              <Pause className="w-3 h-3 mr-1" />
+              Pause
+            </button>
+          )}
+          {!isTraining && (
+            <button
+              onClick={() => handleTrainingControl('start')}
+              className="flex items-center px-3 py-1.5 rounded-xl text-xs font-medium text-white bg-green-500 hover:bg-green-600 transition-colors"
+              disabled={loadingStates.isTrainingStarting || !isConnected}
+            >
+              <Play className="w-3 h-3 mr-1" />
+              Start
+            </button>
+          )}
+          {isTraining && (
+            <button
+              onClick={() => handleTrainingControl('stop')}
+              className="flex items-center px-3 py-1.5 rounded-xl text-xs font-medium text-white bg-red-500 hover:bg-red-600 transition-colors"
+              disabled={loadingStates.isTrainingStarting || !isConnected}
+            >
+              <StopIcon className="w-3 h-3 mr-1" />
+              Stop
+            </button>
+          )}
         </div>
       </motion.div>
 
-      {/* Primary Metrics Dashboard */}
+      {/* Enhanced Charts Section - Moved to top with more space */}
       <motion.div
-        className="card-glass p-3 rounded-xl flex-shrink-0"
+        className="card-glass p-4 rounded-2xl"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1 }}
-      >
-        <div className={`${isMobile ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-3 gap-4'}`}>
-          {metrics.map((metric, index) => {
-            const IconComponent = metric.icon
-            return (
-              <motion.div
-                key={metric.title}
-                className="flex items-center space-x-2"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 + index * 0.05 }}
-              >
-                <div className={`p-2 rounded-lg ${metric.bgColor}`}>
-                  <IconComponent className={`w-4 h-4 ${metric.color}`} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-gray-400 font-medium truncate">{metric.title}</div>
-                  <div className={`font-bold ${metric.color} text-sm truncate`}>{metric.value}</div>
-                </div>
-                {(isTraining || loadingStates.isTrainingStarting) && (
-                  <div className={`w-2 h-2 rounded-full ${
-                    loadingStates.isTrainingStarting 
-                      ? 'bg-blue-400 animate-pulse' 
-                      : 'bg-green-400 animate-pulse'
-                  }`} />
-                )}
-              </motion.div>
-            )
-          })}
-        </div>
-      </motion.div>
-
-      {/* Enhanced Metrics Dashboard */}
-      <motion.div
-        className="card-glass p-3 rounded-xl flex-shrink-0"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-      >
-        <div className={`${isMobile ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-4 gap-4'}`}>
-          {enhancedMetrics.map((metric, index) => {
-            return (
-              <motion.div
-                key={metric.title}
-                className="flex items-center space-x-2"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.5, delay: 0.2 + index * 0.05 }}
-              >
-                <div className={`p-2 rounded-lg ${metric.bgColor}`}>
-                  {metric.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-gray-400 font-medium truncate">{metric.title}</div>
-                  <div className={`font-bold ${metric.color} text-sm truncate`}>{metric.value}</div>
-                </div>
-              </motion.div>
-            )
-          })}
-        </div>
-      </motion.div>
-
-      {/* Compact Charts Table */}
-      <motion.div
-        className="card-glass p-3 rounded-xl flex-shrink-0"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.3 }}
       >
         <h3 className="text-sm font-semibold mb-3 flex items-center">
           <BarChart3 className="w-4 h-4 mr-2 text-blue-400" />
           Training Analytics
         </h3>
         
-        <div className="grid grid-cols-4 gap-3">
-          {/* Training Loss Chart */}
+        <div className="grid grid-cols-2 gap-4">
+          {/* Training Loss Chart - Larger */}
           <div className="flex flex-col items-center space-y-2">
-            <div className="text-xs text-gray-400 font-medium text-center">Loss</div>
-            <div className="w-16 h-12 bg-gray-800/50 rounded-lg p-1">
-              <Line data={lossChartData} options={compactChartOptions} />
+            <div className="text-sm text-gray-400 font-medium text-center">Training Loss</div>
+            <div className="w-full h-20 bg-gray-800/50 rounded-xl p-2">
+              <Line data={lossChartData} options={enhancedChartOptions} />
             </div>
           </div>
 
-          {/* Game Score Chart */}
+          {/* Game Score Chart - Larger */}
           <div className="flex flex-col items-center space-y-2">
-            <div className="text-xs text-gray-400 font-medium text-center">Score</div>
-            <div className="w-16 h-12 bg-gray-800/50 rounded-lg p-1">
-              <Line data={scoreChartData} options={compactChartOptions} />
+            <div className="text-sm text-gray-400 font-medium text-center">Game Score</div>
+            <div className="w-full h-20 bg-gray-800/50 rounded-xl p-2">
+              <Line data={scoreChartData} options={enhancedChartOptions} />
             </div>
           </div>
 
-          {/* Action Distribution Chart */}
+          {/* Action Distribution Chart - Larger */}
           <div className="flex flex-col items-center space-y-2">
-            <div className="text-xs text-gray-400 font-medium text-center">Actions</div>
-            <div className="w-16 h-12 bg-gray-800/50 rounded-lg p-1 flex items-center justify-center">
-              <Doughnut data={actionDistributionData} options={compactDoughnutOptions} />
+            <div className="text-sm text-gray-400 font-medium text-center">Action Distribution</div>
+            <div className="w-full h-20 bg-gray-800/50 rounded-xl p-2 flex items-center justify-center">
+              <Doughnut data={actionDistributionData} options={enhancedDoughnutOptions} />
             </div>
           </div>
 
-          {/* Expert Usage Chart */}
+          {/* Expert Usage Chart - Larger */}
           <div className="flex flex-col items-center space-y-2">
-            <div className="text-xs text-gray-400 font-medium text-center">Experts</div>
-            <div className="w-16 h-12 bg-gray-800/50 rounded-lg p-1">
-              <Bar data={expertUsageData} options={compactBarOptions} />
+            <div className="text-sm text-gray-400 font-medium text-center">Expert Usage</div>
+            <div className="w-full h-20 bg-gray-800/50 rounded-xl p-2">
+              <Bar data={expertUsageData} options={enhancedBarOptions} />
             </div>
           </div>
         </div>
 
-        {/* Chart Legend */}
+        {/* Chart Legend - Enhanced */}
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 bg-red-400 rounded-sm"></div>
@@ -675,6 +644,88 @@ const TrainingDashboard: React.FC = () => {
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 bg-purple-400 rounded-sm"></div>
             <span className="text-gray-400">Expert Usage</span>
+          </div>
+        </div>
+      </motion.div>
+
+
+
+      {/* Unified Stats Card - Reduced height to 2/3 */}
+      <motion.div
+        className="card-glass p-4 rounded-2xl flex flex-col min-h-0"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+        style={{
+          paddingBottom: isMobile ? 'max(12px, env(safe-area-inset-bottom) + 12px)' : '12px',
+          maxHeight: '66vh', // Limit to 2/3 of viewport height
+          height: 'auto'
+        }}
+      >
+        <h3 className="text-sm font-semibold mb-3 flex items-center flex-shrink-0">
+          <Activity className="w-4 h-4 mr-2 text-blue-400" />
+          Training Metrics
+        </h3>
+        
+        <div className="flex-1 overflow-auto min-h-0">
+          {/* Primary Metrics Section */}
+          <div className="mb-4">
+            <h4 className="text-xs font-medium text-gray-400 mb-2">Core Metrics</h4>
+            <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-3'}`}>
+              {metrics.map((metric, index) => {
+                const IconComponent = metric.icon
+                return (
+                  <motion.div
+                    key={metric.title}
+                    className="flex items-center space-x-2 p-3 bg-gray-800/30 rounded-xl"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.5, delay: 0.2 + index * 0.05 }}
+                  >
+                    <div className={`p-1.5 rounded ${metric.bgColor}`}>
+                      <IconComponent className={`w-3 h-3 ${metric.color}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-gray-400 font-medium truncate">{metric.title}</div>
+                      <div className={`font-bold ${metric.color} text-sm truncate`}>{metric.value}</div>
+                    </div>
+                    {(isTraining || loadingStates.isTrainingStarting) && (
+                      <div className={`w-2 h-2 rounded-full ${
+                        loadingStates.isTrainingStarting 
+                          ? 'bg-blue-400 animate-pulse' 
+                          : 'bg-green-400 animate-pulse'
+                      }`} />
+                    )}
+                  </motion.div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Enhanced Metrics Section */}
+          <div>
+            <h4 className="text-xs font-medium text-gray-400 mb-2">Advanced Metrics</h4>
+            <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-4 gap-3'}`}>
+              {enhancedMetrics.map((metric, index) => {
+                return (
+                  <motion.div
+                    key={metric.title}
+                    className="flex items-center space-x-2 p-3 bg-gray-800/30 rounded-xl"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.5, delay: 0.3 + index * 0.05 }}
+                  >
+                    <div className={`p-1.5 rounded ${metric.bgColor}`}>
+                      {metric.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-gray-400 font-medium truncate">{metric.title}</div>
+                      <div className={`font-bold ${metric.color} text-sm truncate`}>{metric.value}</div>
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </div>
           </div>
         </div>
       </motion.div>

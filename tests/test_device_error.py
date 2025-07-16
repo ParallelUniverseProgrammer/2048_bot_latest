@@ -13,8 +13,9 @@ from app.models.checkpoint_metadata import CheckpointManager
 def test_device_compatibility():
     """Test device compatibility with existing checkpoint"""
     
-    # Create checkpoint manager and playback
-    cm = CheckpointManager()
+    checkpoint_dir = os.getenv('CHECKPOINTS_DIR', os.path.join(os.path.dirname(__file__), '..', 'backend', 'checkpoints'))
+    print(f"[test_device_error] Using checkpoint_dir: {checkpoint_dir}")
+    cm = CheckpointManager(checkpoint_dir)
     playback = CheckpointPlayback(cm)
     
     print("Loading checkpoint_episode_1400...")

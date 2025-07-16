@@ -13,7 +13,9 @@ const GameBoard: React.FC = () => {
     lastValueLoss, 
     checkpointPlaybackData, 
     isPlayingCheckpoint,
-    loadingStates
+    loadingStates,
+    gameCompletionData,
+    isShowingGameOver
   } = useTrainingStore()
   
   // Device detection for mobile optimization
@@ -21,6 +23,7 @@ const GameBoard: React.FC = () => {
   // Set attention ON by default
   const [showAttention, setShowAttention] = React.useState(true)
   const [playbackStatus, setPlaybackStatus] = React.useState<any>(null)
+  const [restartCountdown, setRestartCountdown] = React.useState(3)
   
   // Load playback status
   React.useEffect(() => {
@@ -40,6 +43,24 @@ const GameBoard: React.FC = () => {
     const interval = setInterval(loadPlaybackStatus, 1000)
     return () => clearInterval(interval)
   }, [])
+
+  // Handle restart countdown
+  React.useEffect(() => {
+    if (isShowingGameOver) {
+      setRestartCountdown(3)
+      const countdownInterval = setInterval(() => {
+        setRestartCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(countdownInterval)
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+      
+      return () => clearInterval(countdownInterval)
+    }
+  }, [isShowingGameOver])
 
   // Playback control functions
   const pausePlayback = async () => {
@@ -74,6 +95,12 @@ const GameBoard: React.FC = () => {
       if (!playbackStatus?.current_checkpoint) {
         console.error('No checkpoint loaded for new game')
         return
+      }
+      
+      // Clear game over state if showing
+      if (useTrainingStore.getState().isShowingGameOver) {
+        useTrainingStore.getState().setShowingGameOver(false)
+        useTrainingStore.getState().setGameCompletionData(null)
       }
       
       // Start enhanced loading operation
@@ -123,6 +150,31 @@ const GameBoard: React.FC = () => {
   // Simplified state management - just track the current board
   const [displayBoard, setDisplayBoard] = React.useState<number[][]>([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
   
+  // Speed control state
+  const [playbackSpeed, setPlaybackSpeed] = React.useState<number>(2.5) // Default 2.5x speed
+  const [speedOptions] = React.useState<number[]>([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0])
+  
+  // Speed control functions
+  const changePlaybackSpeed = async (newSpeed: number) => {
+    try {
+      const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/speed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ speed: newSpeed })
+      })
+      
+      if (!res.ok) {
+        throw new Error('Failed to change playback speed')
+      }
+      
+      await res.json()
+      setPlaybackSpeed(newSpeed)
+      console.log(`Playback speed changed to ${newSpeed}x`)
+    } catch (err) {
+      console.error('Error changing playback speed:', err)
+    }
+  }
+
   // Get current data (either training or checkpoint playback)
   const currentData = React.useMemo(() => {
     if (isPlayingCheckpoint && checkpointPlaybackData) {
@@ -134,7 +186,8 @@ const GameBoard: React.FC = () => {
         attention_weights: checkpointPlaybackData.step_data.attention_weights,
         episode: 0, // Not applicable for playback
         is_playback: true,
-        checkpoint_id: checkpointPlaybackData.checkpoint_id
+        checkpoint_id: checkpointPlaybackData.checkpoint_id,
+        done: checkpointPlaybackData.step_data.done
       }
     } else if (trainingData) {
       return {
@@ -145,7 +198,8 @@ const GameBoard: React.FC = () => {
         attention_weights: trainingData.attention_weights,
         episode: trainingData.episode,
         is_playback: false,
-        checkpoint_id: null
+        checkpoint_id: null,
+        done: false
       }
     }
     return null
@@ -207,12 +261,12 @@ const GameBoard: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col space-y-2 pb-6">
-      {/* Loading State */}
+      {/* Loading State - Sticky positioned at top of content */}
       {(loadingStates.isPlaybackStarting || loadingStates.isNewGameStarting) && (
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="card-glass p-3 rounded-xl border border-blue-500/30 bg-blue-500/5 flex-shrink-0"
+          className="sticky top-0 z-40 card-glass p-4 rounded-2xl border border-blue-500/30 bg-blue-500/5 shadow-lg mb-2"
         >
           <div className="space-y-3">
             {/* Header */}
@@ -268,20 +322,94 @@ const GameBoard: React.FC = () => {
         </motion.div>
       )}
 
+      {/* Game Over Screen */}
+      {isShowingGameOver && gameCompletionData && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="card-glass p-4 rounded-2xl border border-red-500/30 bg-red-500/5 flex-shrink-0"
+        >
+          <div className="text-center space-y-4">
+            {/* Game Over Header */}
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-red-400">Game Over!</h2>
+              <p className="text-sm text-gray-400">Game #{gameCompletionData.game_number} completed</p>
+            </div>
+            
+            {/* Final Stats */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="text-lg font-bold text-green-400">
+                  {gameCompletionData.final_score.toLocaleString()}
+                </div>
+                <div className="text-xs text-gray-400">Final Score</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-blue-400">
+                  {gameCompletionData.total_steps.toLocaleString()}
+                </div>
+                <div className="text-xs text-gray-400">Total Steps</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-purple-400">
+                  {gameCompletionData.max_tile.toLocaleString()}
+                </div>
+                <div className="text-xs text-gray-400">Max Tile</div>
+              </div>
+            </div>
+            
+            {/* Final Board State */}
+            <div className="space-y-2">
+              <p className="text-sm text-gray-400">Final Board State</p>
+              <div className="grid grid-cols-4 gap-2 max-w-sm mx-auto">
+                {gameCompletionData.final_board_state.map((row, rowIndex) =>
+                  row.map((value, colIndex) => (
+                    <div
+                      key={`${rowIndex}-${colIndex}`}
+                      className={`game-tile aspect-square ${getTileColor(value)} ${getTextColor(value)}`}
+                    >
+                      <span className="text-sm font-bold">
+                        {value > 0 ? value : ''}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            
+            {/* Auto-restart notice and manual restart button */}
+            <div className="space-y-2">
+              <div className="text-xs text-gray-500">
+                Starting new game in {restartCountdown} seconds...
+              </div>
+              <button
+                onClick={startNewGame}
+                className="flex items-center justify-center space-x-2 bg-blue-500/20 text-blue-400 rounded-xl py-2.5 px-4 text-sm font-medium hover:bg-blue-500/30 transition-colors"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Start New Game Now</span>
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Header with Status */}
       <motion.div
-        className="card-glass p-3 rounded-xl flex-shrink-0"
+        className="card-glass p-4 rounded-2xl flex-shrink-0"
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <div className={`w-2 h-2 rounded-full ${
+              currentData?.done ? 'bg-red-400 animate-pulse' :
               currentData?.is_playback ? 'bg-purple-400' : 
               isTraining ? 'bg-green-400 animate-pulse' : 'bg-gray-400'
             }`} />
             <span className="text-sm font-medium text-white">
-              {currentData?.is_playback ? 'Playback' : isTraining ? 'Training' : 'Idle'}
+              {currentData?.done ? 'Game Over' :
+               currentData?.is_playback ? 'Playback' : isTraining ? 'Training' : 'Idle'}
             </span>
           </div>
           
@@ -296,7 +424,7 @@ const GameBoard: React.FC = () => {
       {/* Playback Controls */}
       {isPlayingCheckpoint && (
         <motion.div
-          className="card-glass p-3 rounded-xl flex-shrink-0"
+          className="card-glass p-4 rounded-2xl flex-shrink-0"
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -307,19 +435,19 @@ const GameBoard: React.FC = () => {
             </div>
           </div>
           
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 mb-2">
             {playbackStatus?.is_playing && !playbackStatus?.is_paused ? (
-              <button
-                onClick={pausePlayback}
-                className="flex-1 flex items-center justify-center space-x-2 bg-yellow-500/20 text-yellow-400 rounded-lg py-2 text-sm font-medium"
-              >
+                          <button
+              onClick={pausePlayback}
+              className="flex-1 flex items-center justify-center space-x-2 bg-yellow-500/20 text-yellow-400 rounded-xl py-2.5 text-sm font-medium"
+            >
                 <PauseCircle className="w-4 h-4" />
                 <span>Pause</span>
               </button>
             ) : (
               <button
                 onClick={resumePlayback}
-                className="flex-1 flex items-center justify-center space-x-2 bg-green-500/20 text-green-400 rounded-lg py-2 text-sm font-medium"
+                className="flex-1 flex items-center justify-center space-x-2 bg-green-500/20 text-green-400 rounded-xl py-2.5 text-sm font-medium"
               >
                 <PlayCircle className="w-4 h-4" />
                 <span>Resume</span>
@@ -328,7 +456,7 @@ const GameBoard: React.FC = () => {
             
             <button
               onClick={stopPlayback}
-              className="flex-1 flex items-center justify-center space-x-2 bg-red-500/20 text-red-400 rounded-lg py-2 text-sm font-medium"
+              className="flex-1 flex items-center justify-center space-x-2 bg-red-500/20 text-red-400 rounded-xl py-2.5 text-sm font-medium"
             >
               <StopCircle className="w-4 h-4" />
               <span>Stop</span>
@@ -336,18 +464,38 @@ const GameBoard: React.FC = () => {
             
             <button
               onClick={startNewGame}
-              className="flex-1 flex items-center justify-center space-x-2 bg-blue-500/20 text-blue-400 rounded-lg py-2 text-sm font-medium"
+              className="flex-1 flex items-center justify-center space-x-2 bg-blue-500/20 text-blue-400 rounded-xl py-2.5 text-sm font-medium"
             >
               <RefreshCw className="w-4 h-4" />
               <span>New</span>
             </button>
+          </div>
+          
+          {/* Speed Control */}
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-gray-400">Speed:</div>
+            <div className="flex items-center space-x-1">
+              {speedOptions.map((speed) => (
+                <button
+                  key={speed}
+                  onClick={() => changePlaybackSpeed(speed)}
+                  className={`px-2 py-1 text-xs rounded-lg ${
+                    playbackSpeed === speed
+                      ? 'bg-purple-500/30 text-purple-300 border border-purple-500/50'
+                      : 'bg-gray-700/50 text-gray-400 hover:bg-gray-600/50'
+                  }`}
+                >
+                  {speed}x
+                </button>
+              ))}
+            </div>
           </div>
         </motion.div>
       )}
 
       {/* Game Stats */}
       <motion.div
-        className="card-glass p-3 rounded-xl flex-shrink-0"
+        className="card-glass p-4 rounded-2xl flex-shrink-0"
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
       >
@@ -381,14 +529,24 @@ const GameBoard: React.FC = () => {
         </div>
       </motion.div>
 
-      {/* Main Game Area */}
-      <div className="flex-1 flex flex-col space-y-2 min-h-0">
-        {/* Game Board */}
-        <motion.div
-          className="card-glass p-4 rounded-xl flex-shrink-0"
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-        >
+              {/* Main Game Area */}
+        <div className="flex-1 flex flex-col space-y-2 min-h-0">
+          {/* Game Board */}
+          <motion.div
+            className={`card-glass p-4 rounded-2xl flex-shrink-0 relative ${
+              currentData?.done ? 'border border-red-500/30 bg-red-500/5' : ''
+            }`}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+          >
+          {currentData?.done && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-xl z-10">
+              <div className="text-center">
+                <div className="text-lg font-bold text-red-400 mb-1">Game Over</div>
+                <div className="text-xs text-gray-400">Final Score: {currentData.score?.toLocaleString()}</div>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-4 gap-2 max-w-sm mx-auto">
             {displayBoard.map((row, rowIndex) =>
               row.map((value, colIndex) => (
@@ -410,7 +568,7 @@ const GameBoard: React.FC = () => {
 
         {/* Compact Next Action Bar */}
         {actionProbabilities.length > 0 && (
-          <div className="flex items-center justify-between mt-1 px-2 py-1 bg-gray-800/80 rounded-lg max-w-xs mx-auto">
+          <div className="flex items-center justify-between mt-1 px-3 py-2 bg-gray-800/80 rounded-xl max-w-xs mx-auto">
             {/* Most likely action */}
             {(() => {
               const maxProb = Math.max(...actionProbabilities.map((a: any) => a.probability))
@@ -440,7 +598,7 @@ const GameBoard: React.FC = () => {
       {/* Training Status Footer */}
       {trainingData && (
         <motion.div
-          className="card-glass p-2 rounded-xl flex-shrink-0"
+          className="card-glass p-3 rounded-2xl flex-shrink-0"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
         >

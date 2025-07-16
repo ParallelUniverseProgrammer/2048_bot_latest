@@ -7,7 +7,7 @@ import os
 import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
 @dataclass
@@ -23,16 +23,21 @@ class CheckpointMetadata:
     file_size: int  # bytes
     parent_checkpoint: Optional[str] = None
     tags: Optional[List[str]] = None
+    absolute_path: Optional[str] = None  # New field for absolute path
     
     def __post_init__(self):
         if self.tags is None:
             self.tags = []
+        if self.absolute_path is None and hasattr(self, 'id'):
+            # Fallback for legacy: construct absolute path
+            self.absolute_path = str((Path(os.getenv('CHECKPOINTS_DIR', 'checkpoints')) / f"{self.id}.pt").resolve())
 
 class CheckpointManager:
     """Manages checkpoint metadata and operations"""
     
     def __init__(self, checkpoint_dir: str = "checkpoints"):
         self.checkpoint_dir = Path(checkpoint_dir)
+        print(f"[CheckpointManager] Using checkpoint_dir: {self.checkpoint_dir.resolve()}")
         self.checkpoint_dir.mkdir(exist_ok=True)
         self.metadata_cache = {}
         self._load_all_metadata()
@@ -46,13 +51,13 @@ class CheckpointManager:
         else:
             return 'large'
     
-    def _get_metadata_path(self, checkpoint_id: str) -> Path:
-        """Get the metadata file path for a checkpoint"""
-        return self.checkpoint_dir / f"{checkpoint_id}.json"
-    
     def _get_checkpoint_path(self, checkpoint_id: str) -> Path:
-        """Get the checkpoint file path"""
-        return self.checkpoint_dir / f"{checkpoint_id}.pt"
+        """Get the checkpoint file path (absolute)"""
+        return (self.checkpoint_dir / f"{checkpoint_id}.pt").resolve()
+    
+    def _get_metadata_path(self, checkpoint_id: str) -> Path:
+        """Get the metadata file path (absolute)"""
+        return (self.checkpoint_dir / f"{checkpoint_id}.json").resolve()
     
     def _load_all_metadata(self):
         """Load all existing metadata files into cache"""
@@ -63,6 +68,10 @@ class CheckpointManager:
             try:
                 with open(metadata_file, 'r') as f:
                     data = json.load(f)
+                    # Add absolute_path if missing
+                    checkpoint_id = data.get('id')
+                    abs_path = str((self.checkpoint_dir / f"{checkpoint_id}.pt").resolve())
+                    data['absolute_path'] = abs_path
                     metadata = CheckpointMetadata(**data)
                     self.metadata_cache[metadata.id] = metadata
             except Exception as e:
@@ -216,7 +225,8 @@ class CheckpointManager:
             performance_metrics=performance_metrics,
             file_size=file_size,
             parent_checkpoint=parent_checkpoint,
-            tags=tags
+            tags=tags,
+            absolute_path=str(checkpoint_path)
         )
         
         self.metadata_cache[checkpoint_id] = metadata
@@ -225,11 +235,17 @@ class CheckpointManager:
     
     def get_checkpoint_metadata(self, checkpoint_id: str) -> Optional[CheckpointMetadata]:
         """Get metadata for a specific checkpoint"""
-        return self.metadata_cache.get(checkpoint_id)
+        meta = self.metadata_cache.get(checkpoint_id)
+        if meta and not meta.absolute_path:
+            meta.absolute_path = str(self._get_checkpoint_path(checkpoint_id))
+        return meta
     
     def list_checkpoints(self) -> List[CheckpointMetadata]:
-        """List all checkpoints sorted by episode number"""
+        """List all checkpoints sorted by episode number, with absolute paths"""
         checkpoints = list(self.metadata_cache.values())
+        for cp in checkpoints:
+            if not cp.absolute_path:
+                cp.absolute_path = str(self._get_checkpoint_path(cp.id))
         return sorted(checkpoints, key=lambda x: x.episode, reverse=True)
     
     def update_checkpoint_nickname(self, checkpoint_id: str, new_nickname: str) -> bool:

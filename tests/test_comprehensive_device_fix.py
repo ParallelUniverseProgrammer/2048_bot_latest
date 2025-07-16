@@ -65,7 +65,8 @@ def test_device_compatibility_pipeline():
     print("\n=== Test 2: Checkpoint manager and playback system ===")
     
     # Create checkpoint manager
-    checkpoint_dir = os.path.join(os.path.dirname(__file__), '..', 'backend', 'checkpoints')
+    checkpoint_dir = os.getenv('CHECKPOINTS_DIR', os.path.join(os.path.dirname(__file__), '..', 'backend', 'checkpoints'))
+    print(f"[test_comprehensive_device_fix] Using checkpoint_dir: {checkpoint_dir}")
     cm = CheckpointManager(checkpoint_dir)
     
     # Check available checkpoints

@@ -7,8 +7,9 @@ import random
 import time
 from typing import Dict, List, Optional
 from datetime import datetime
+from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,10 +21,21 @@ from app.training.training_manager import TrainingManager
 from app.training.ppo_trainer import PPOTrainer
 from app.models.checkpoint_playback import CheckpointPlayback
 
+import logging
+logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+
 app = FastAPI(title="2048 Bot Training API", version="1.0.0")
 
 # Enable CORS for frontend
 import os
+import sys
+import socket
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 # Get CORS origins from environment or use defaults
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000").split(",")
 app.add_middleware(
@@ -38,6 +50,10 @@ app.add_middleware(
 websocket_manager = WebSocketManager()
 training_manager = TrainingManager(websocket_manager)
 checkpoint_playback = CheckpointPlayback(training_manager.checkpoint_manager)
+
+# Log checkpoint directory being used
+print(f"[main.py] Backend using checkpoint directory: {training_manager.checkpoint_dir}")
+print(f"[main.py] CheckpointManager directory: {training_manager.checkpoint_manager.checkpoint_dir}")
 
 @app.on_event("startup")
 async def startup_event():
@@ -69,6 +85,8 @@ try:
 
         ckpt_path = create_test_checkpoint()
         print(f"[green]Test checkpoint created at {ckpt_path}")
+        # --- Ensure metadata cache is refreshed after checkpoint creation ---
+        training_manager.checkpoint_manager.refresh_metadata_cache()
 
 except Exception as _e:
     # Fail gracefully – checkpoint generation is best-effort only
@@ -89,6 +107,7 @@ class TrainingStatus(BaseModel):
     current_episode: int = 0
     total_episodes: int = 10000
     start_time: Optional[datetime] = None
+    initializing: bool = False  # NEW FIELD
 
 # Global training state
 training_status = TrainingStatus()
@@ -99,6 +118,9 @@ def _update_training_status():
     training_status.is_training = training_manager.is_training
     training_status.is_paused = training_manager.is_paused
     training_status.current_episode = training_manager.current_episode
+    training_status.total_episodes = getattr(training_manager, 'total_episodes', 10000)
+    training_status.start_time = getattr(training_manager, '_start_time', None)
+    training_status.initializing = getattr(training_manager, 'is_initializing', False)
 
 
 @app.get("/")
@@ -239,11 +261,12 @@ async def reset_training():
 
 @app.get("/checkpoints")
 async def list_checkpoints():
-    """List all checkpoints with metadata"""
+    """List all checkpoints with metadata, ensuring absolute_path is always present in the API response"""
     try:
         checkpoints = training_manager.checkpoint_manager.list_checkpoints()
-        return [
-            {
+        result = []
+        for cp in checkpoints:
+            d = {
                 "id": cp.id,
                 "nickname": cp.nickname,
                 "episode": cp.episode,
@@ -252,13 +275,15 @@ async def list_checkpoints():
                 "model_config": cp.model_config,
                 "performance_metrics": cp.performance_metrics,
                 "file_size": cp.file_size,
+                "parent_checkpoint": cp.parent_checkpoint,
                 "tags": cp.tags,
             }
-            for cp in checkpoints
-        ]
+            # Always add absolute_path, even if missing from object
+            d["absolute_path"] = getattr(cp, "absolute_path", None) or str((training_manager.checkpoint_manager.checkpoint_dir / f"{cp.id}.pt").resolve())
+            result.append(d)
+        return result
     except Exception as e:
-        print(f"Error listing checkpoints: {e}")
-        return []
+        raise HTTPException(status_code=500, detail=f"Error listing checkpoints: {str(e)}")
 
 @app.get("/checkpoints/stats")
 async def get_checkpoint_stats():
@@ -303,6 +328,7 @@ async def get_checkpoint_info(checkpoint_id: str):
         "file_size": metadata.file_size,
         "parent_checkpoint": metadata.parent_checkpoint,
         "tags": metadata.tags,
+        "absolute_path": metadata.absolute_path,
     }
 
 @app.post("/checkpoints/{checkpoint_id}/nickname")
@@ -315,57 +341,171 @@ async def update_checkpoint_nickname(checkpoint_id: str, request: dict):
     return {"message": "Nickname updated successfully"}
 
 @app.delete("/checkpoints/{checkpoint_id}")
-async def delete_checkpoint(checkpoint_id: str):
-    """Delete a checkpoint"""
-    success = training_manager.checkpoint_manager.delete_checkpoint(checkpoint_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Checkpoint not found")
-    return {"message": "Checkpoint deleted successfully"}
+async def delete_checkpoint(checkpoint_id: str, absolute_path: str = Body(default=None, embed=True)):
+    """Delete a checkpoint. If absolute_path is provided, use it directly."""
+    try:
+        # Use absolute_path if provided
+        if absolute_path is not None:
+            if not isinstance(absolute_path, str) or not absolute_path:
+                raise HTTPException(status_code=400, detail="absolute_path must be a non-empty string if provided")
+            checkpoint_path = Path(absolute_path)
+            if not checkpoint_path.exists():
+                raise HTTPException(status_code=404, detail=f"Checkpoint file not found at absolute_path: {absolute_path}")
+            checkpoint_id = checkpoint_path.stem
+            metadata = training_manager.checkpoint_manager.get_checkpoint_metadata(checkpoint_id)
+        else:
+            metadata = training_manager.checkpoint_manager.get_checkpoint_metadata(checkpoint_id)
+            if not metadata:
+                raise HTTPException(status_code=404, detail="Checkpoint not found")
+            checkpoint_path = Path(metadata.absolute_path)
+
+        # Delete the checkpoint file and metadata
+        success = training_manager.checkpoint_manager.delete_checkpoint(checkpoint_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Checkpoint not found")
+        return {"message": "Checkpoint deleted successfully", "checkpoint_id": checkpoint_id, "absolute_path": str(checkpoint_path)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting checkpoint: {str(e)}")
 
 @app.post("/checkpoints/{checkpoint_id}/load")
-async def load_checkpoint_for_training(checkpoint_id: str):
-    """Load a checkpoint and resume training automatically"""
+async def load_checkpoint_for_training(checkpoint_id: str, absolute_path: str = Body(default=None, embed=True)):
+    """Load a checkpoint and resume training automatically. If absolute_path is provided, use it directly."""
     try:
         # Stop ongoing training if necessary
         if training_manager.is_training:
             await training_manager.stop()
 
-        metadata = training_manager.checkpoint_manager.get_checkpoint_metadata(checkpoint_id)
-        if not metadata:
-            raise HTTPException(status_code=404, detail="Checkpoint not found")
+        # Use absolute_path if provided
+        if absolute_path is not None:
+            if not isinstance(absolute_path, str) or not absolute_path:
+                raise HTTPException(status_code=400, detail="absolute_path must be a non-empty string if provided")
+            checkpoint_path = Path(absolute_path)
+            if not checkpoint_path.exists():
+                raise HTTPException(status_code=404, detail=f"Checkpoint file not found at absolute_path: {absolute_path}")
+            checkpoint_id = checkpoint_path.stem
+            metadata = training_manager.checkpoint_manager.get_checkpoint_metadata(checkpoint_id)
+        else:
+            metadata = training_manager.checkpoint_manager.get_checkpoint_metadata(checkpoint_id)
+            if not metadata:
+                raise HTTPException(status_code=404, detail="Checkpoint not found")
+            checkpoint_path = Path(metadata.absolute_path)
 
-        checkpoint_path = training_manager.checkpoint_manager._get_checkpoint_path(checkpoint_id)
+        # Log checkpoint loading attempt
+        logger = logging.getLogger(__name__)
+        logger.info(f"Loading checkpoint: {checkpoint_id}")
         if not checkpoint_path.exists():
             raise HTTPException(status_code=404, detail="Checkpoint file not found")
 
-        # Load checkpoint data to get the config
+        # Return immediately with loading status
+        response_data = {
+            "message": "Checkpoint loading started", 
+            "checkpoint_id": checkpoint_id, 
+            "absolute_path": str(checkpoint_path),
+            "status": "loading"
+        }
+
+        # Start background task for heavy operations
+        asyncio.create_task(_load_checkpoint_background(checkpoint_id, checkpoint_path))
+
+        return response_data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error loading checkpoint {checkpoint_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error loading checkpoint: {str(e)}")
+
+async def _load_checkpoint_background(checkpoint_id: str, checkpoint_path: Path):
+    """Background task to load checkpoint and start training"""
+    try:
+        training_manager.is_initializing = True  # Set initializing True
+        # Notify frontend that loading has started
+        await websocket_manager.broadcast({
+            'type': 'checkpoint_loading_status',
+            'checkpoint_id': checkpoint_id,
+            'status': 'loading',
+            'message': 'Loading checkpoint data...'
+        })
+
+        # Load checkpoint data to get the config (heavy operation - run in thread)
         import torch, time as _time
-        checkpoint_data = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+        
+        # Use asyncio.to_thread for heavy operations to prevent blocking the event loop
+        checkpoint_data = await asyncio.to_thread(
+            torch.load, checkpoint_path, map_location='cpu', weights_only=False
+        )
+
+        await websocket_manager.broadcast({
+            'type': 'checkpoint_loading_status',
+            'checkpoint_id': checkpoint_id,
+            'status': 'config_loaded',
+            'message': 'Checkpoint data loaded, initializing model...'
+        })
 
         # Get the config from the checkpoint
         config = checkpoint_data.get('config')
         if not config:
-            raise HTTPException(status_code=400, detail="Checkpoint does not contain model config")
+            await websocket_manager.broadcast({
+                'type': 'checkpoint_loading_status',
+                'checkpoint_id': checkpoint_id,
+                'status': 'error',
+                'message': 'Checkpoint does not contain model config'
+            })
+            return
 
-        # Recreate trainer with the correct config
-        training_manager.current_config = config
-        training_manager.trainer = PPOTrainer(
-            config=config,
-            learning_rate=0.0003  # Default learning rate, can be adjusted via UI later
-        )
+        # Recreate trainer with the correct config (heavy operation - run in thread)
+        def create_trainer():
+            training_manager.current_config = config
+            training_manager.trainer = PPOTrainer(
+                config=config,
+                learning_rate=0.0003  # Default learning rate, can be adjusted via UI later
+            )
+        
+        await asyncio.to_thread(create_trainer)
 
-        # Load model/optimiser state
-        training_manager.trainer.load_checkpoint(str(checkpoint_path))
+        await websocket_manager.broadcast({
+            'type': 'checkpoint_loading_status',
+            'checkpoint_id': checkpoint_id,
+            'status': 'trainer_created',
+            'message': 'Model initialized, loading checkpoint weights...'
+        })
 
-        # ------------------------------------------------------------------ Sync manager state
+        # Load model/optimiser state (heavy operation - run in thread)
+        def load_checkpoint():
+            if training_manager.trainer is None:
+                raise RuntimeError("Trainer was not created properly")
+            training_manager.trainer.load_checkpoint(str(checkpoint_path))
+        
+        await asyncio.to_thread(load_checkpoint)
+
+        await websocket_manager.broadcast({
+            'type': 'checkpoint_loading_status',
+            'checkpoint_id': checkpoint_id,
+            'status': 'weights_loaded',
+            'message': 'Checkpoint weights loaded, preparing training environment...'
+        })
+
+        # Sync manager state
+        if training_manager.trainer is None:
+            raise RuntimeError("Trainer was not created properly")
         training_manager.current_episode = training_manager.trainer.episode_count
         training_manager._game_lengths = []
         training_manager._episode_start_times = []
         training_manager._start_time = _time.time()
         training_manager.is_paused = False
 
+        await websocket_manager.broadcast({
+            'type': 'checkpoint_loading_status',
+            'checkpoint_id': checkpoint_id,
+            'status': 'starting_training',
+            'message': 'Starting training session...'
+        })
+
         # Automatically resume training from this checkpoint
         training_manager.start()
+        training_manager.is_initializing = False  # Set initializing False
 
         print(f"Loaded checkpoint {checkpoint_id} (episode {training_manager.current_episode}) and resumed training.")
 
@@ -379,16 +519,22 @@ async def load_checkpoint_for_training(checkpoint_id: str):
             'message': f'Training resumed from checkpoint {checkpoint_id}'
         })
 
-        return {
-            "message": f"Checkpoint {checkpoint_id} loaded and training resumed",
-            "episode": training_manager.current_episode,
-        }
+        await websocket_manager.broadcast({
+            'type': 'checkpoint_loading_status',
+            'checkpoint_id': checkpoint_id,
+            'status': 'complete',
+            'message': f'Checkpoint loaded successfully and training started (episode {training_manager.current_episode})'
+        })
 
-    except HTTPException:
-        raise
     except Exception as e:
-        print(f"Error loading checkpoint {checkpoint_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error loading checkpoint: {str(e)}")
+        training_manager.is_initializing = False  # Always reset on error
+        print(f"Error in background checkpoint loading for {checkpoint_id}: {str(e)}")
+        await websocket_manager.broadcast({
+            'type': 'checkpoint_loading_status',
+            'checkpoint_id': checkpoint_id,
+            'status': 'error',
+            'message': f'Error loading checkpoint: {str(e)}'
+        })
 
 @app.post("/checkpoints/save")
 async def save_checkpoint_manual():
@@ -442,14 +588,20 @@ async def save_checkpoint_manual():
 
 # Checkpoint playback endpoints
 @app.post("/checkpoints/{checkpoint_id}/playback/start")
-async def start_checkpoint_playback(checkpoint_id: str):
-    """Start live playback of a checkpoint"""
+async def start_checkpoint_playback(checkpoint_id: str, absolute_path: str = Body(default=None, embed=True)):
+    """Start live playback of a checkpoint. If absolute_path is provided, use it directly."""
     try:
         # Stop any existing playback first
         checkpoint_playback.stop_playback()
         
         # Load the checkpoint
-        success = checkpoint_playback.load_checkpoint(checkpoint_id)
+        if absolute_path is not None:
+            if not isinstance(absolute_path, str) or not absolute_path:
+                raise HTTPException(status_code=400, detail="absolute_path must be a non-empty string if provided")
+            success = checkpoint_playback.load_checkpoint(absolute_path=absolute_path)
+        else:
+            success = checkpoint_playback.load_checkpoint(checkpoint_id=checkpoint_id)
+        
         if not success:
             raise HTTPException(status_code=404, detail="Checkpoint not found or failed to load")
         
@@ -459,6 +611,7 @@ async def start_checkpoint_playback(checkpoint_id: str):
         return {
             "message": f"Playback started for checkpoint {checkpoint_id}",
             "checkpoint_id": checkpoint_id,
+            "absolute_path": absolute_path,
             "connected_clients": websocket_manager.get_connection_count()
         }
         
@@ -469,11 +622,17 @@ async def start_checkpoint_playback(checkpoint_id: str):
         raise HTTPException(status_code=500, detail=f"Error starting playback: {str(e)}")
 
 @app.post("/checkpoints/{checkpoint_id}/playback/game")
-async def play_single_game(checkpoint_id: str):
-    """Play a single game with a checkpoint and return the full history"""
+async def play_single_game(checkpoint_id: str, absolute_path: str = Body(default=None, embed=True)):
+    """Play a single game with a checkpoint and return the full history. If absolute_path is provided, use it directly."""
     try:
         # Load the checkpoint
-        success = checkpoint_playback.load_checkpoint(checkpoint_id)
+        if absolute_path is not None:
+            if not isinstance(absolute_path, str) or not absolute_path:
+                raise HTTPException(status_code=400, detail="absolute_path must be a non-empty string if provided")
+            success = checkpoint_playback.load_checkpoint(absolute_path=absolute_path)
+        else:
+            success = checkpoint_playback.load_checkpoint(checkpoint_id=checkpoint_id)
+        
         if not success:
             raise HTTPException(status_code=404, detail="Checkpoint not found or failed to load")
         
@@ -483,16 +642,16 @@ async def play_single_game(checkpoint_id: str):
         if 'error' in game_result:
             raise HTTPException(status_code=500, detail=game_result['error'])
         
-        # Add metadata to response
-        game_result['checkpoint_id'] = checkpoint_id
-        game_result['played_at'] = time.time()
-        
-        return game_result
+        return {
+            "checkpoint_id": checkpoint_id,
+            "absolute_path": absolute_path,
+            "game_result": game_result
+        }
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error playing single game for checkpoint {checkpoint_id}: {e}")
+        print(f"Error playing game for checkpoint {checkpoint_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error playing game: {str(e)}")
 
 @app.post("/checkpoints/playback/pause")
@@ -537,6 +696,43 @@ async def stop_checkpoint_playback():
         print(f"Error stopping playback: {e}")
         raise HTTPException(status_code=500, detail=f"Error stopping playback: {str(e)}")
 
+@app.post("/checkpoints/playback/speed")
+async def set_playback_speed(request: dict):
+    """Set playback speed multiplier"""
+    try:
+        speed = request.get('speed', 1.0)
+        
+        if not isinstance(speed, (int, float)):
+            raise HTTPException(status_code=400, detail="Speed must be a number")
+        
+        success = checkpoint_playback.set_playback_speed(speed)
+        
+        if not success:
+            raise HTTPException(status_code=400, detail="Invalid speed value")
+        
+        return {
+            "message": f"Playback speed set to {speed}x",
+            "speed": speed,
+            "current_status": checkpoint_playback.get_playback_status()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error setting playback speed: {e}")
+        raise HTTPException(status_code=500, detail=f"Error setting playback speed: {str(e)}")
+
+@app.get("/checkpoints/playback/speed")
+async def get_playback_speed():
+    """Get current playback speed"""
+    try:
+        speed = checkpoint_playback.get_playback_speed()
+        return {
+            "speed": speed,
+            "message": f"Current playback speed is {speed}x"
+        }
+    except Exception as e:
+        print(f"Error getting playback speed: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting playback speed: {str(e)}")
 
 
 @app.get("/checkpoints/playback/status")
@@ -736,11 +932,46 @@ async def get_websocket_performance():
 
 # Remove mock_training_loop in favour of TrainingManager
 
+def wait_for_port_free(port, timeout=10):
+    start = time.time()
+    while time.time() - start < timeout:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(('127.0.0.1', port))
+                return True
+            except OSError:
+                print(f"[main.py] Port {port} still in use, waiting...")
+                time.sleep(0.5)
+    print(f"[main.py] Timeout waiting for port {port} to become free.")
+    return False
+
 if __name__ == "__main__":
+    # Disable reload for testing environments
+    disable_reload = os.getenv("DISABLE_RELOAD", "0") == "1"
+    backend_port = int(os.getenv("BACKEND_PORT", "8000"))
+
+    # --- Kill any process using the backend port (cross-platform) ---
+    def kill_process_on_port(port):
+        if not psutil:
+            print("[main.py] psutil not installed, cannot auto-kill port process.")
+            return
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                for conn in proc.connections(kind='inet'):
+                    if conn.status == psutil.CONN_LISTEN and conn.laddr.port == port:
+                        if proc.pid != os.getpid():
+                            print(f"[main.py] Killing process {proc.pid} ({proc.name()}) using port {port}")
+                            proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+    kill_process_on_port(backend_port)
+    wait_for_port_free(backend_port)
+
     uvicorn.run(
         "main:app",
         host="127.0.0.1",
-        port=8000,
-        reload=True,
+        port=backend_port,
+        reload=not disable_reload,  # Disable reload if DISABLE_RELOAD=1
         log_level="info"
     ) 

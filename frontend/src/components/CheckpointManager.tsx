@@ -255,21 +255,13 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     try {
       setLoading(true)
       
-      // Start enhanced loading operation
-      const loadingSteps = [
-        'Loading checkpoint metadata...',
-        'Validating checkpoint integrity...',
-        'Initializing model with checkpoint weights...',
-        'Resuming training environment...',
-        'Starting training session...'
-      ]
-      
-      useTrainingStore.getState().startLoadingOperation('training', loadingSteps)
-      
-      // Simulate step progression
-      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(20, loadingSteps[1]), 500)
-      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(40, loadingSteps[2]), 1000)
-      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(60, loadingSteps[3]), 1500)
+      // Initialize checkpoint loading state
+      useTrainingStore.getState().setCheckpointLoadingState({
+        isCheckpointLoading: true,
+        checkpointId: checkpointId,
+        loadingMessage: 'Starting checkpoint load...',
+        loadingProgress: 0
+      })
       
       const res = await fetch(`${config.api.baseUrl}/checkpoints/${checkpointId}/load`, {
         method: 'POST'
@@ -279,25 +271,20 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         throw new Error('Failed to load checkpoint')
       }
       
-      const result = await res.json()
+      await res.json() // Response contains status info, but we rely on WebSocket for progress
       
-      // Update to final step
-      useTrainingStore.getState().updateLoadingProgress(80, loadingSteps[4], 3)
+      // The backend will send WebSocket messages with progress updates
+      // The loading state will be managed by the WebSocket message handler
+      console.log(`Checkpoint load initiated for ${checkpointId}`)
       
-      // Update training store state to reflect that training has started
-      useTrainingStore.getState().setTrainingStatus(true, false)
-      useTrainingStore.getState().setEpisode(result.episode)
-      
-      // Navigate to training dashboard automatically
+      // Navigate to training dashboard to show the loading progress
       onNavigateToTab?.('dashboard')
       
-      // Show success message
-      console.log(`Checkpoint loaded successfully (Episode ${result.episode}) and training resumed`)
-      
     } catch (err) {
-      // Clear loading states on error
-      useTrainingStore.getState().setLoadingState('isTrainingStarting', false)
-      useTrainingStore.getState().setLoadingState('loadingMessage', null)
+      // Set error state
+      useTrainingStore.getState().setCheckpointLoadingError(
+        err instanceof Error ? err.message : 'Failed to load checkpoint'
+      )
       setError(err instanceof Error ? err.message : 'Failed to load checkpoint')
     } finally {
       setLoading(false)
@@ -387,7 +374,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="bg-red-500/20 border border-red-500/50 rounded-lg p-3 flex-shrink-0"
+          className="bg-red-500/20 border border-red-500/50 rounded-2xl p-4 flex-shrink-0"
         >
           <div className="flex items-center space-x-2">
             <X className="w-4 h-4 text-red-400" />
@@ -405,7 +392,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       {/* Stats Overview */}
       {stats && (
         <motion.div
-          className="card-glass p-3 rounded-xl flex-shrink-0"
+          className="card-glass p-4 rounded-2xl flex-shrink-0"
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -432,7 +419,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
 
       {/* Search and Controls */}
       <motion.div
-        className="card-glass p-3 rounded-xl flex-shrink-0"
+        className="card-glass p-4 rounded-2xl flex-shrink-0"
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
       >
@@ -444,12 +431,12 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
               placeholder="Search checkpoints..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              className="w-full pl-10 pr-4 py-2 bg-gray-700 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             />
           </div>
           <button
             onClick={() => loadCheckpoints()}
-            className="p-2 bg-gray-700 text-gray-400 rounded-lg hover:bg-gray-600"
+            className="p-2 bg-gray-700 text-gray-400 rounded-xl hover:bg-gray-600"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
@@ -464,7 +451,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.05 }}
-            className={`card-glass rounded-xl p-3 ${
+            className={`card-glass rounded-2xl p-4 ${
               selectedCheckpoint === checkpoint.id ? 'ring-2 ring-blue-500' : ''
             }`}
           >
@@ -477,7 +464,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                       type="text"
                       value={newNickname}
                       onChange={(e) => setNewNickname(e.target.value)}
-                      className="flex-1 bg-gray-700 text-white rounded px-2 py-1 text-sm"
+                      className="flex-1 bg-gray-700 text-white rounded-lg px-3 py-1.5 text-sm"
                       autoFocus
                     />
                     <button
@@ -551,21 +538,21 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             <div className="flex space-x-2">
               <button
                 onClick={() => startPlayback(checkpoint.id)}
-                className="flex-1 flex items-center justify-center space-x-2 bg-green-500/20 text-green-400 rounded-lg py-2 text-sm font-medium"
+                className="flex-1 flex items-center justify-center space-x-2 bg-green-500/20 text-green-400 rounded-xl py-2.5 text-sm font-medium"
               >
                 <Play className="w-4 h-4" />
                 <span>Watch</span>
               </button>
               <button
                 onClick={() => loadCheckpointForTraining(checkpoint.id)}
-                className="flex-1 flex items-center justify-center space-x-2 bg-blue-500/20 text-blue-400 rounded-lg py-2 text-sm font-medium"
+                className="flex-1 flex items-center justify-center space-x-2 bg-blue-500/20 text-blue-400 rounded-xl py-2.5 text-sm font-medium"
               >
                 <Zap className="w-4 h-4" />
                 <span>Resume</span>
               </button>
               <button
                 onClick={() => deleteCheckpoint(checkpoint.id)}
-                className="flex items-center justify-center bg-red-500/20 text-red-400 rounded-lg py-2 px-3 text-sm font-medium"
+                className="flex items-center justify-center bg-red-500/20 text-red-400 rounded-xl py-2.5 px-3 text-sm font-medium"
               >
                 <Trash2 className="w-4 h-4" />
               </button>

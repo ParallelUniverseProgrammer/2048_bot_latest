@@ -101,7 +101,9 @@ class FreezeReproductionTest:
     """Test class to reproduce freezing issues"""
     
     def __init__(self):
-        self.checkpoint_manager = CheckpointManager()
+        checkpoint_dir = os.getenv('CHECKPOINTS_DIR', os.path.join(os.path.dirname(__file__), '..', 'backend', 'checkpoints'))
+        print(f"[test_freeze_reproduction] Using checkpoint_dir: {checkpoint_dir}")
+        self.checkpoint_manager = CheckpointManager(checkpoint_dir)
         self.test_results = []
         
     def log_test(self, test_name, success, duration, error=None):

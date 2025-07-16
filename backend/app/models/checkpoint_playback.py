@@ -9,6 +9,7 @@ import asyncio
 import time
 import traceback
 from datetime import datetime
+from pathlib import Path
 
 from app.models.game_transformer import GameTransformer
 from app.environment.gym_2048_env import Gym2048Env
@@ -37,6 +38,11 @@ class CheckpointPlayback:
         self.current_step_index = 0
         self.current_game_count = 0
         
+        # Playback speed control (2.5x boost from original)
+        self.playback_speed = 2.5  # Speed multiplier (1.0 = normal, 2.5 = 2.5x faster)
+        self.base_step_interval = 0.5  # Base 500ms between steps
+        self.base_game_pause = 2.0  # Base 2s pause between games
+        
         # Performance optimizations
         self.adaptive_broadcast_interval = 0.5  # Start with 500ms between broadcasts
         self.min_broadcast_interval = 0.1  # Minimum 100ms
@@ -49,7 +55,7 @@ class CheckpointPlayback:
         self.message_throttle = {
             'last_step_broadcast': 0.0,
             'step_skip_count': 0,
-            'target_fps': 10,  # Target 10 updates per second max
+            'target_fps': 25,  # Increased from 10 to 25 for 2.5x speed boost
             'adaptive_skip': 1  # Skip every N steps
         }
         
@@ -303,20 +309,34 @@ class CheckpointPlayback:
             self._log_error(f"Broadcast recovery failed: {str(e)}", "_attempt_broadcast_recovery")
             # Don't reset consecutive failures - let the caller handle it
 
-    def load_checkpoint(self, checkpoint_id: str) -> bool:
-        """Load a checkpoint for playback"""
+    def load_checkpoint(self, checkpoint_id: Optional[str] = None, absolute_path: Optional[str] = None) -> bool:
+        """Load a checkpoint for playback. If absolute_path is provided, use it directly."""
         try:
+            # Use absolute_path if provided
+            if absolute_path is not None:
+                if not isinstance(absolute_path, str) or not absolute_path:
+                    self._log_error(f"absolute_path must be a non-empty string if provided", f"load_checkpoint")
+                    return False
+                checkpoint_path = Path(absolute_path)
+                if not checkpoint_path.exists():
+                    self._log_error(f"Checkpoint file not found at absolute_path: {absolute_path}", f"load_checkpoint")
+                    return False
+                # Extract checkpoint_id from path
+                checkpoint_id = checkpoint_path.stem
+            else:
+                if not checkpoint_id:
+                    self._log_error(f"Either checkpoint_id or absolute_path must be provided", f"load_checkpoint")
+                    return False
+                metadata = self.checkpoint_manager.get_checkpoint_metadata(checkpoint_id)
+                if not metadata:
+                    self._log_error(f"Checkpoint metadata not found", f"load_checkpoint({checkpoint_id})")
+                    return False
+                checkpoint_path = Path(metadata.absolute_path)
+                if not checkpoint_path.exists():
+                    self._log_error(f"Checkpoint file not found: {checkpoint_path}", f"load_checkpoint({checkpoint_id})")
+                    return False
+            
             print(f"Loading checkpoint {checkpoint_id} for playback...")
-            
-            metadata = self.checkpoint_manager.get_checkpoint_metadata(checkpoint_id)
-            if not metadata:
-                self._log_error(f"Checkpoint metadata not found", f"load_checkpoint({checkpoint_id})")
-                return False
-            
-            checkpoint_path = self.checkpoint_manager._get_checkpoint_path(checkpoint_id)
-            if not checkpoint_path.exists():
-                self._log_error(f"Checkpoint file not found: {checkpoint_path}", f"load_checkpoint({checkpoint_id})")
-                return False
             
             # Load checkpoint data
             checkpoint_data = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
@@ -339,22 +359,12 @@ class CheckpointPlayback:
             self._update_heartbeat()
             self.last_broadcast_success = time.time()
             self.consecutive_failures = 0
-            self.performance_metrics = {
-                'total_broadcasts': 0,
-                'successful_broadcasts': 0,
-                'failed_broadcasts': 0,
-                'avg_broadcast_time': 0.0,
-                'slow_broadcasts': 0,
-                'steps_skipped': 0,
-                'games_completed': 0
-            }
             
-            print(f"Successfully loaded checkpoint {checkpoint_id}")
+            print(f"Successfully loaded checkpoint {checkpoint_id} from {checkpoint_path}")
             return True
             
         except Exception as e:
-            self._log_error(f"Exception loading checkpoint: {str(e)}", f"load_checkpoint({checkpoint_id})")
-            print(f"Full traceback: {traceback.format_exc()}")
+            self._log_error(f"Error loading checkpoint {checkpoint_id}: {str(e)}", f"load_checkpoint")
             return False
 
     def play_single_game(self) -> Dict[str, Any]:
@@ -568,7 +578,7 @@ class CheckpointPlayback:
                     # Check if we should broadcast this step
                     if not self._should_broadcast_step(step_idx):
                         # Still need to wait for consistent timing
-                        wait_time = 0.5  # Fixed 500ms wait between steps
+                        wait_time = self.get_adjusted_step_interval()  # Speed-adjusted wait between steps
                         await asyncio.sleep(wait_time)
                         continue
                     
@@ -624,8 +634,8 @@ class CheckpointPlayback:
                             await asyncio.sleep(2.0)
                             self.consecutive_failures = 0
                     
-                    # Wait based on fixed timing
-                    wait_time = 0.5  # Fixed 500ms between steps
+                    # Wait based on speed-adjusted timing
+                    wait_time = self.get_adjusted_step_interval()  # Speed-adjusted wait between steps
                     await asyncio.sleep(wait_time)
                     
                     # Check if this was the last step
@@ -652,7 +662,7 @@ class CheckpointPlayback:
                     
                     # Brief pause between games
                     if self.is_playing:
-                        pause_time = 2.0  # Fixed 2 second pause between games
+                        pause_time = self.get_adjusted_game_pause()  # Speed-adjusted pause between games
                         print(f"Waiting {pause_time:.1f}s before next game...")
                         await asyncio.sleep(pause_time)
                 
@@ -753,6 +763,7 @@ class CheckpointPlayback:
             'current_step': self.current_step_index,
             'is_healthy': self._is_healthy(),
             'performance_metrics': self.performance_metrics,
+            'playback_speed': self.playback_speed,
             'adaptive_settings': {
                 'broadcast_interval': self.adaptive_broadcast_interval,
                 'lightweight_mode': self.lightweight_mode,
@@ -890,3 +901,32 @@ class CheckpointPlayback:
     def clear_error_history(self):
         """Clear error history"""
         self.error_history.clear() 
+
+    def get_playback_speed(self) -> float:
+        """Get current playback speed multiplier"""
+        return self.playback_speed
+    
+    def set_playback_speed(self, speed: float) -> bool:
+        """Set playback speed multiplier (1.0 = normal, 2.5 = 2.5x faster)"""
+        if speed <= 0:
+            return False
+        
+        # Clamp speed to reasonable range (0.1x to 10x)
+        speed = max(0.1, min(10.0, speed))
+        
+        self.playback_speed = speed
+        
+        # Adjust target FPS based on speed
+        base_fps = 10  # Original target FPS
+        self.message_throttle['target_fps'] = int(base_fps * speed)
+        
+        print(f"Playback speed set to {speed}x (target FPS: {self.message_throttle['target_fps']})")
+        return True
+    
+    def get_adjusted_step_interval(self) -> float:
+        """Get the step interval adjusted for current playback speed"""
+        return self.base_step_interval / self.playback_speed
+    
+    def get_adjusted_game_pause(self) -> float:
+        """Get the game pause interval adjusted for current playback speed"""
+        return self.base_game_pause / self.playback_speed 

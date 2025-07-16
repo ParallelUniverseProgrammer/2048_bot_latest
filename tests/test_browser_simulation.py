@@ -143,7 +143,8 @@ class BrowserSimulationTest:
     """Test class that simulates real browser conditions"""
     
     def __init__(self):
-        checkpoint_dir = os.path.join(os.path.dirname(__file__), '..', 'backend', 'checkpoints')
+        checkpoint_dir = os.getenv('CHECKPOINTS_DIR', os.path.join(os.path.dirname(__file__), '..', 'backend', 'checkpoints'))
+        print(f"[test_browser_simulation] Using checkpoint_dir: {checkpoint_dir}")
         self.checkpoint_manager = CheckpointManager(checkpoint_dir)
         self.websocket_manager = WebSocketManager()
         self.playback = None

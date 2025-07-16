@@ -136,7 +136,7 @@ const NetworkVisualizer: React.FC = () => {
     <div className="h-full flex flex-col space-y-3 pb-6">
       {/* Sub Navigation Tabs */}
       <motion.div
-        className="card-glass p-2 rounded-xl flex-shrink-0"
+        className="card-glass p-2 rounded-2xl flex-shrink-0"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
@@ -148,7 +148,7 @@ const NetworkVisualizer: React.FC = () => {
               <motion.button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`relative flex flex-col items-center space-y-1 rounded-lg font-medium transition-all duration-200 ${
+                className={`relative flex flex-col items-center space-y-1 rounded-xl font-medium transition-all duration-200 ${
                   isMobile ? 'px-3 py-2' : 'px-4 py-2'
                 } ${
                   activeTab === tab.id
@@ -162,7 +162,7 @@ const NetworkVisualizer: React.FC = () => {
                 <span className="text-xs">{tab.label}</span>
                 {activeTab === tab.id && (
                   <motion.div
-                    className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg -z-10"
+                    className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl -z-10"
                     layoutId="activeSubTab"
                     initial={false}
                     transition={{ type: 'spring', stiffness: 500, damping: 30 }}
@@ -209,7 +209,7 @@ const NetworkVisualizer: React.FC = () => {
                         transition={{ duration: 0.3, delay: index * 0.1 }}
                       >
                         <motion.div
-                          className={`w-12 h-12 ${layer.color} rounded-lg flex items-center justify-center mb-2 mx-auto`}
+                          className={`w-12 h-12 ${layer.color} rounded-xl flex items-center justify-center mb-2 mx-auto`}
                           whileHover={{ scale: 1.1 }}
                         >
                           <Layers className="w-6 h-6 text-white" />
@@ -240,19 +240,19 @@ const NetworkVisualizer: React.FC = () => {
                   </h3>
                   
                   <div className="grid grid-cols-2 gap-3 flex-1">
-                    <div className="bg-gray-800/40 rounded-lg p-3">
+                    <div className="bg-gray-800/40 rounded-xl p-3">
                       <div className="text-xs text-gray-400 mb-1">Experts</div>
                       <div className="text-lg font-bold text-blue-400">{expertNodes.length || '0'}</div>
                     </div>
-                    <div className="bg-gray-800/40 rounded-lg p-3">
+                    <div className="bg-gray-800/40 rounded-xl p-3">
                       <div className="text-xs text-gray-400 mb-1">Load Balance</div>
                       <div className="text-lg font-bold text-green-400">{(loadBalancingScore * 100).toFixed(0)}%</div>
                     </div>
-                    <div className="bg-gray-800/40 rounded-lg p-3">
+                    <div className="bg-gray-800/40 rounded-xl p-3">
                       <div className="text-xs text-gray-400 mb-1">GPU Memory</div>
                       <div className="text-lg font-bold text-purple-400">{trainingData?.gpu_memory?.toFixed(1) || '0.0'}GB</div>
                     </div>
-                    <div className="bg-gray-800/40 rounded-lg p-3">
+                    <div className="bg-gray-800/40 rounded-xl p-3">
                       <div className="text-xs text-gray-400 mb-1">Learning Rate</div>
                       <div className="text-lg font-bold text-orange-400">{trainingData?.learning_rate?.toFixed(6) || '0.000000'}</div>
                     </div>
@@ -287,7 +287,7 @@ const NetworkVisualizer: React.FC = () => {
                     </div>
                   </div>
                   
-                  <div className="relative flex-1 bg-gray-800/30 rounded-lg overflow-hidden">
+                  <div className="relative flex-1 bg-gray-800/30 rounded-xl overflow-hidden">
                     {/* Background grid */}
                     <div className="absolute inset-0 opacity-10">
                       <svg width="100%" height="100%">
@@ -369,7 +369,7 @@ const NetworkVisualizer: React.FC = () => {
                         {/* Tooltip */}
                         {hoveredExpert === expert.id && (
                           <motion.div
-                            className="absolute z-10 bg-gray-900/95 border border-gray-600 rounded-lg p-2 text-xs"
+                            className="absolute z-10 bg-gray-900/95 border border-gray-600 rounded-xl p-2 text-xs"
                             style={{
                               left: expert.x > 150 ? 'auto' : '100%',
                               right: expert.x > 150 ? '100%' : 'auto',
@@ -474,7 +474,7 @@ const NetworkVisualizer: React.FC = () => {
                   </h3>
                   
                   <div className="grid grid-cols-2 gap-3 flex-1">
-                    <div className="bg-gray-800/40 rounded-lg p-3">
+                    <div className="bg-gray-800/40 rounded-xl p-3">
                       <div className="text-xs text-gray-400 mb-1">Top Performer</div>
                       <div className="text-sm font-semibold text-green-400">
                         {expertNodes.length > 0 
@@ -485,7 +485,7 @@ const NetworkVisualizer: React.FC = () => {
                         }
                       </div>
                     </div>
-                    <div className="bg-gray-800/40 rounded-lg p-3">
+                    <div className="bg-gray-800/40 rounded-xl p-3">
                       <div className="text-xs text-gray-400 mb-1">Most Active</div>
                       <div className="text-sm font-semibold text-blue-400">
                         {expertNodes.length > 0
@@ -496,7 +496,7 @@ const NetworkVisualizer: React.FC = () => {
                         }
                       </div>
                     </div>
-                    <div className="bg-gray-800/40 rounded-lg p-3">
+                    <div className="bg-gray-800/40 rounded-xl p-3">
                       <div className="text-xs text-gray-400 mb-1">Avg Efficiency</div>
                       <div className="text-sm font-semibold text-purple-400">
                         {expertNodes.length > 0
@@ -505,7 +505,7 @@ const NetworkVisualizer: React.FC = () => {
                         }%
                       </div>
                     </div>
-                    <div className="bg-gray-800/40 rounded-lg p-3">
+                    <div className="bg-gray-800/40 rounded-xl p-3">
                       <div className="text-xs text-gray-400 mb-1">Load Balance</div>
                       <div className="text-sm font-semibold text-orange-400">
                         {(loadBalancingScore * 100).toFixed(1)}%
@@ -527,19 +527,19 @@ const NetworkVisualizer: React.FC = () => {
                   </h3>
                   
                   <div className="space-y-3 flex-1">
-                    <div className="flex items-center justify-between p-3 bg-gray-800/40 rounded-lg">
+                    <div className="flex items-center justify-between p-3 bg-gray-800/40 rounded-xl">
                       <span className="text-sm text-gray-400">Parameters:</span>
                       <span className="text-sm font-semibold text-blue-400">{trainingData?.model_params || '0'}M</span>
                     </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-800/40 rounded-lg">
+                    <div className="flex items-center justify-between p-3 bg-gray-800/40 rounded-xl">
                       <span className="text-sm text-gray-400">GPU Memory:</span>
                       <span className="text-sm font-semibold text-green-400">{trainingData?.gpu_memory?.toFixed(1) || '0.0'}GB</span>
                     </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-800/40 rounded-lg">
+                    <div className="flex items-center justify-between p-3 bg-gray-800/40 rounded-xl">
                       <span className="text-sm text-gray-400">Learning Rate:</span>
                       <span className="text-sm font-semibold text-purple-400">{trainingData?.learning_rate?.toFixed(6) || '0.000000'}</span>
                     </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-800/40 rounded-lg">
+                    <div className="flex items-center justify-between p-3 bg-gray-800/40 rounded-xl">
                       <span className="text-sm text-gray-400">Total Experts:</span>
                       <span className="text-sm font-semibold text-orange-400">{expertNodes.length}</span>
                     </div>
