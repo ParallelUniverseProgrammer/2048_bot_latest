@@ -47,6 +47,14 @@ class TrainingManager:
         self.trainer = PPOTrainer()
         self.timing_logger.end_operation("trainer_init", "setup")
         
+        # NEW: Create separate trainers for each environment to avoid thread safety issues
+        self.timing_logger.start_operation("env_trainers_init", "setup")
+        self.env_trainers: List[PPOTrainer] = []
+        for i in range(n_envs):
+            env_trainer = PPOTrainer()
+            self.env_trainers.append(env_trainer)
+        self.timing_logger.end_operation("env_trainers_init", "setup", f"created={len(self.env_trainers)}_trainers")
+        
         self.current_config = None
         
         # run-time state
@@ -121,6 +129,16 @@ class TrainingManager:
             config=self.current_config,
             learning_rate=config_dict.get('learning_rate', 0.0003)
         )
+        
+        # NEW: Also reinitialize all environment trainers
+        self.timing_logger.start_operation("env_trainers_reinit", "config")
+        for i, env_trainer in enumerate(self.env_trainers):
+            self.env_trainers[i] = PPOTrainer(
+                config=self.current_config,
+                learning_rate=config_dict.get('learning_rate', 0.0003)
+            )
+        self.timing_logger.end_operation("env_trainers_reinit", "config", f"reinitialized={len(self.env_trainers)}_trainers")
+        
         self.timing_logger.end_operation("trainer_reinit", "config")
         
         self.timing_logger.end_operation("update_config", "config", f"model_size={model_size}, params={self.current_config.estimated_params:.1f}M")
@@ -171,6 +189,16 @@ class TrainingManager:
             config=self.current_config,
             learning_rate=0.0003  # Default learning rate
         )
+        
+        # NEW: Also reinitialize all environment trainers
+        self.timing_logger.start_operation("env_trainers_fresh_init", "control")
+        for i, env_trainer in enumerate(self.env_trainers):
+            self.env_trainers[i] = PPOTrainer(
+                config=self.current_config,
+                learning_rate=0.0003  # Default learning rate
+            )
+        self.timing_logger.end_operation("env_trainers_fresh_init", "control", f"reinitialized={len(self.env_trainers)}_trainers")
+        
         self.timing_logger.end_operation("trainer_fresh_init", "control")
         
         self.timing_logger.end_operation("reset_model", "control", f"config={self.current_config}")
@@ -255,10 +283,10 @@ class TrainingManager:
                     # Optimization: Use ThreadPoolExecutor for better thread management
                     import concurrent.futures
                     with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.envs)) as executor:
-                        # Submit all environment training tasks
+                        # Submit all environment training tasks with their specific trainers
                         future_to_env = {
-                            executor.submit(self.trainer.train_episode, env): env 
-                            for env in self.envs
+                            executor.submit(self.env_trainers[i].train_episode, env): (env, i)
+                            for i, env in enumerate(self.envs)
                         }
                         
                         # Collect results as they complete
@@ -269,15 +297,15 @@ class TrainingManager:
                                 episode_results.append(result)
                             except Exception as e:
                                 print(f"Environment training failed: {e}")
-                                # Add a default result to prevent crashes
-                                episode_results.append({
-                                    'episode': self.current_episode + 1, # Use current_episode + 1 to avoid confusion
-                                    'score': 0,
-                                    'reward': 0.0,
-                                    'length': 0,
-                                    'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
-                                    'best_score': self.trainer.best_score
-                                })
+                                                        # Add a default result to prevent crashes
+                        episode_results.append({
+                            'episode': self.current_episode + 1, # Use current_episode + 1 to avoid confusion
+                            'score': 0,
+                            'reward': 0.0,
+                            'length': 0,
+                            'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
+                            'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
+                        })
                     
                     self.timing_logger.end_operation("parallel_training", "training", f"results={len(episode_results)}")
                     if self.current_episode < 5:  # Debug logging
@@ -307,14 +335,15 @@ class TrainingManager:
                         self._max_tiles_achieved.append(max_tile)
                         
                         # Track load balancing metrics from trainer (thread-safe)
+                        # Use the first trainer as representative for metrics
                         with self._lb_lock:
-                            lb_reward = self.trainer.calculate_load_balancing_reward()
+                            lb_reward = self.env_trainers[0].calculate_load_balancing_reward()
                             self._load_balancing_metrics.append(lb_reward)
                         
                         # NEW: Enhanced load balancing tracking (thread-safe)
-                        # Get expert usage from model
+                        # Get expert usage from model (use first trainer as representative)
                         with self._lb_lock:
-                            expert_usage = self.trainer.model.get_expert_usage()
+                            expert_usage = self.env_trainers[0].model.get_expert_usage()
                             if expert_usage is not None:
                                 usage_list = expert_usage.tolist() if hasattr(expert_usage, 'tolist') else list(expert_usage)
                                 self._expert_usage_history.append([float(u) for u in usage_list])
@@ -381,8 +410,8 @@ class TrainingManager:
                     if self.current_episode % 20 == 0 and episode_results:  # Reduced frequency
                         print(
                             f"Episode {self.current_episode}: Score={last_res['score']}, "
-                            f"Params={self.trainer.model.count_parameters() / 1e6:.1f}M, "
-                            f"LR={self.trainer.optimizer.param_groups[0]['lr']:.6f}"
+                            f"Params={self.env_trainers[0].model.count_parameters() / 1e6:.1f}M, "
+                            f"LR={self.env_trainers[0].optimizer.param_groups[0]['lr']:.6f}"
                         )
 
                     # Update current episode - increment by number of environments trained
@@ -533,13 +562,13 @@ class TrainingManager:
         
         board_state = [list(row) for row in env.game.board]
         
-        # Get trainer metrics
+        # Get trainer metrics (use first trainer as representative)
         self.timing_logger.start_operation("get_trainer_metrics", "processing")
-        trainer_metrics = self.trainer.get_metrics()
+        trainer_metrics = self.env_trainers[0].get_metrics()
         self.timing_logger.end_operation("get_trainer_metrics", "processing")
         
         # Get action probabilities from last model forward pass
-        actions_probs = self.trainer.get_latest_action_probs()
+        actions_probs = self.env_trainers[0].get_latest_action_probs()
         
         # Calculate training speed (episodes per minute)
         training_speed = 0.0
