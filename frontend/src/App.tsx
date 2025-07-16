@@ -213,7 +213,7 @@ const App: React.FC = () => {
             </motion.div>
             <div>
               <h1 className={`font-bold text-gradient ${isMobile ? 'text-sm' : 'text-lg sm:text-xl'}`}>
-                {isMobile ? '2048 AI' : '2048 Transformer'}
+                {isMobile ? '2048 AI' : '2048 Bot'}
               </h1>
               {!isMobile && (
                 <p className="text-xs text-gray-400">
@@ -432,7 +432,7 @@ const App: React.FC = () => {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.6, delay: 0.6 }}
         >
-          <p>2048 Transformer Training • Real-time AI Visualization</p>
+          <p>2048 Bot Training • Real-time AI Visualization</p>
         </motion.footer>
       )}
     </div>

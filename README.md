@@ -1,15 +1,11 @@
-# 🔢 2048-Transformer: Real-Time AI Training & Visualization
+# 🔢 2048 Bot: Real-Time AI Training & Visualization
 
 > A high-performance, real-time visualization platform for training a Mixture-of-Experts (MoE) Transformer to master the game of 2048.
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Node.js 18+](https://img.shields.io/badge/node.js-18+-green.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Status: Active Development](https://img.shields.io/badge/Status-Active%20Development-orange.svg)](https://github.com/krdge/2048_bot_cursor_pro)
-
-***
-> **Disclaimer:** This README was primarily authored and structured by Gemini 2.5 Pro.
-***
+[![Status: Active Development](https://img.shields.io/badge/Status-Active%20Development-orange.svg)](https://github.com/krdge/2048_bot)
 
 ![2048 AI Training Dashboard](./screenshots/2048-ai-training-dashboard.png)
 
@@ -27,8 +23,8 @@ This platform provides a transparent, interactive, and deeply analytical view in
 
 ```bash
 # Clone the repository
-git clone https://github.com/krdge/2048_bot_cursor_pro.git
-cd 2048_bot_cursor_pro
+git clone https://github.com/krdge/2048_bot.git
+cd 2048_bot
 
 # Run the automated launcher
 python launcher.py
@@ -53,7 +49,6 @@ That's it! The launcher handles everything else automatically.
 - [🔌 API Documentation](#-api-documentation)
 - [🏛️ System Architecture](#️-system-architecture)
 - [🤖 Neural Network Deep Dive](#-neural-network-deep-dive)
-
 - [🆘 Troubleshooting](#-troubleshooting)
 - [❓ FAQ](#-faq)
 - [🤝 Contributing](#-contributing)
@@ -66,6 +61,7 @@ That's it! The launcher handles everything else automatically.
 - **🚀 High-Performance Training**: The system leverages parallel environments to accelerate data collection and is built for serious training.
 - **📱 Seamless Mobile Experience**: A full-featured Progressive Web App (PWA) provides a native app-like experience on your phone, with an automated launcher that generates a QR code for instant access.
 - **⚙️ Advanced Checkpoint Management**: A robust system for saving, loading, and managing model checkpoints. Includes performance metadata, user-editable tags, and a full playback system to review historical games.
+- **🔄 Enhanced Loading Feedback**: Comprehensive progress tracking with step-by-step updates, estimated completion times, and visual progress indicators for all operations.
 - **🔧 Effortless Developer Experience**: An automated launcher handles all dependency installation and network configuration. Combined with detailed, colored logging and built-in troubleshooting, the development workflow is streamlined and efficient.
 
 ## 🛠️ Technology Stack
@@ -112,8 +108,8 @@ The included `launcher.py` script is the most efficient way to get started. It a
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/krdge/2048_bot_cursor_pro.git
-    cd 2048_bot_cursor_pro
+    git clone https://github.com/krdge/2048_bot.git
+    cd 2048_bot
     ```
 
 2.  **Run the launcher:**
@@ -135,8 +131,8 @@ For developers who require granular control over the startup process, follow the
 
 1.  **Clone the repository and navigate into it:**
     ```bash
-    git clone https://github.com/krdge/2048_bot_cursor_pro.git
-    cd 2048_bot_cursor_pro
+    git clone https://github.com/krdge/2048_bot.git
+    cd 2048_bot
     ```
 
 2.  **Launch the Backend Server:**
@@ -252,7 +248,7 @@ The project is a decoupled, two-part system: a Python backend and a React fronte
 
 - **Backend**: A FastAPI server manages the entire training pipeline. It uses PyTorch for the neural network, Gymnasium for the game environment, and a custom PPO trainer. A `TrainingManager` runs the main loop in a separate thread, allowing for non-blocking control via REST and WebSocket endpoints. All operations are designed to be thread-safe.
 
-- **Frontend**: A responsive React application built with Vite and TypeScript. It uses Zustand for efficient state management, Chart.js for visualizations, and Framer Motion for smooth animations. A `WebSocket` utility handles real-time data streaming, with logic for adaptive timeouts and reconnections to ensure a stable experience, especially on mobile networks.
+- **Frontend**: A responsive React application built with Vite and TypeScript. It uses Zustand for efficient state management, Chart.js for visualizations, and Framer Motion for smooth animations. A sophisticated `WebSocket` utility handles real-time data streaming with adaptive timeouts, exponential backoff, circuit breaker patterns, and polling fallback to ensure a stable experience, especially on mobile networks. Enhanced loading states provide comprehensive progress tracking with step-by-step feedback and estimated completion times.
 
 ## 🤖 Neural Network Deep Dive
 
@@ -293,8 +289,6 @@ After the board state has been processed through multiple layers of attention an
 
 1.  **Policy Head**: This head outputs a probability distribution over the four possible moves (Up, Down, Left, Right). It represents the model's final decision on which move is most likely to lead to a better outcome.
 2.  **Value Head**: This head outputs a single scalar number, which is the model's assessment of the current board's quality. A high value signifies a strong, promising position, while a low value indicates a weak or dangerous one. This value is critical for the PPO algorithm to learn and improve its policy over time.
-
-
 
 ## 🆘 Troubleshooting
 
@@ -435,24 +429,57 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## 🗺️ Roadmap
 
-### Short Term (Next 3 months)
-- [ ] **Enhanced MoE Architecture**: Deeper integration of expert routing, improved load balancing, and dynamic expert allocation
-- [ ] **Advanced Visualization Framework**: More detailed attention heatmaps, expert specialization analysis, and real-time network introspection
-- [ ] **Streamlined Experimentation**: Simplified interface for testing different network configurations and hyperparameters
-- [ ] **Checkpoint Analysis Tools**: Better tools for comparing model performance and understanding training progression
+### 🚀 High Priority (Immediate Impact)
+- [ ] **📸 Documentation & Screenshots**: Add actual screenshots, demo videos, and visual documentation
+- [ ] **🎯 Sample Checkpoints**: Create pre-trained models for immediate demonstration
+- [ ] **📱 Enhanced Mobile Experience**: Touch gestures, offline improvements, mobile-specific UI optimizations
+- [ ] **⚡ Performance Benchmarks**: Add system requirements and actual training speed metrics
+- [ ] **🎓 Interactive Tutorial**: Guided onboarding experience for new users
+- [ ] **🔧 Enhanced MoE Architecture**: Deeper integration of expert routing, improved load balancing, and dynamic expert allocation
 
-### Medium Term (3-6 months)
-- [ ] **Abstract Network Framework**: Create a flexible architecture system for easily designing and testing new neural network approaches
-- [ ] **Multi-Architecture Support**: Framework to experiment with different transformer variants, attention mechanisms, and expert designs
-- [ ] **Advanced Training Algorithms**: Integration of different RL algorithms and training strategies for 2048
-- [ ] **Performance Optimization**: Deeper optimization of the training pipeline and real-time visualization system
+### 📊 Medium Priority (User Experience)
+- [ ] **📈 Advanced Analytics**: Training efficiency metrics, model behavior analysis, performance comparison tools
+- [ ] **🎮 Enhanced Visualizations**: 3D network visualizations, animated transitions, custom themes
+- [ ] **📱 Mobile Touch Interactions**: Swipe gestures for game board, haptic feedback, customizable game speed
+- [ ] **💾 Export Capabilities**: Model export (ONNX, TorchScript), integration with ML platforms (Weights & Biases)
+- [ ] **🔍 Real-time Feedback**: Progress indicators, performance warnings, success notifications
+- [ ] **📚 Educational Features**: Interactive explanations, step-by-step AI decision breakdown, learning resources
 
-### Long Term (6+ months)
-- [ ] **Comprehensive Experimentation Platform**: A complete framework for systematically exploring different approaches to solving 2048
-- [ ] **Novel Architecture Research**: Development and testing of entirely new neural network designs specifically for game AI
-- [ ] **Academic Integration**: Tools for research and publication of findings in game AI and reinforcement learning
-- [ ] **Community Experimentation**: Platform for the community to contribute and test new architectural ideas
+### 🛠️ Technical Enhancements
+- [ ] **⚡ Performance Optimizations**: WebSocket connection pooling, data compression, background processing
+- [ ] **🔧 Developer Experience**: Docker support, CI/CD pipeline, performance profiling tools, debug mode
+- [ ] **🌐 Deployment Improvements**: Cloud deployment guides, pre-built Docker images, Heroku/Vercel deployment
+- [ ] **🔒 Quality & Testing**: Comprehensive test suite, cross-browser compatibility, mobile device testing
+- [ ] **📊 Monitoring & Observability**: Health check endpoints, error tracking, performance monitoring dashboard
+
+### 🌟 Advanced Features
+- [ ] **🎯 A/B Testing Framework**: Compare different model configurations and hyperparameters
+- [ ] **🎮 Multi-Game Support**: Extend to other puzzle games (15-puzzle, sliding tile puzzles)
+- [ ] **🏆 Community Features**: Leaderboard, model sharing, community challenges, discussion forum
+- [ ] **🎨 Enhanced UI/UX**: Sound effects, accessibility improvements, replay highlights
+- [ ] **📱 Advanced PWA**: Better offline capabilities, push notifications, app store optimization
+
+### 🔬 Research & Innovation
+- [ ] **🧠 Advanced Visualization Framework**: More detailed attention heatmaps, expert specialization analysis
+- [ ] **📊 Checkpoint Analysis Tools**: Better tools for comparing model performance and understanding training progression
+- [ ] **🔬 Multi-Architecture Support**: Framework for different transformer variants and attention mechanisms
+- [ ] **🎯 Advanced Training Algorithms**: Integration of different RL algorithms and training strategies
+- [ ] **📈 Performance Optimization**: Deeper optimization of training pipeline and real-time visualization system
+
+### 🌍 Community & Growth
+- [ ] **📢 Marketing & Discovery**: GitHub optimization, demo videos, blog post series, conference presentations
+- [ ] **📚 Documentation for Different Audiences**: Beginner guides, advanced guides, academic papers, video tutorials
+- [ ] **🤝 Community Experimentation**: Platform for community contributions and architectural testing
+- [ ] **🎓 Academic Integration**: Tools for research and publication of findings in game AI and reinforcement learning
+- [ ] **🔬 Novel Architecture Research**: Development and testing of entirely new neural network designs
+
+### 🚀 Future Vision
+- [ ] **🏗️ Abstract Network Framework**: Flexible architecture system for designing and testing new neural network approaches
+- [ ] **🔬 Comprehensive Experimentation Platform**: Complete framework for systematically exploring different approaches to solving 2048
+- [ ] **🌐 Cloud-Native Architecture**: Scalable deployment options, distributed training, multi-user support
+- [ ] **🎯 AI Research Platform**: Tools for advancing the state-of-the-art in game AI and reinforcement learning
+- [ ] **🌟 Industry Integration**: Enterprise features, commercial applications, and industry partnerships
 
 ---
 
-**Made with ❤️ by the 2048-Transformer community** 
+**Made with ❤️ by the 2048 Bot community** 

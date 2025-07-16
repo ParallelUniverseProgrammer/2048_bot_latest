@@ -1,5 +1,5 @@
 /**
- * Configuration utility for the 2048 Transformer Training app
+ * Configuration utility for the 2048 Bot Training app
  */
 
 // Get backend URL from environment variable or default to localhost

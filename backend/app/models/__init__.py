@@ -1,5 +1,5 @@
 """
-Models package for 2048 transformer architecture
+Models package for 2048 bot architecture
 """
 
 from .game_transformer import GameTransformer

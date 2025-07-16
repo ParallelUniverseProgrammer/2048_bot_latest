@@ -1,4 +1,4 @@
-# 2048 Transformer Training Launcher
+# 2048 Bot Training Launcher
 
 ## Overview
 
@@ -323,4 +323,4 @@ To contribute to the launcher:
 
 ## License
 
-This launcher is part of the 2048 Transformer Training project and follows the same license. 
+This launcher is part of the 2048 Bot Training project and follows the same license. 

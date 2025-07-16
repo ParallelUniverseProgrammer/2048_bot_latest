@@ -76,12 +76,22 @@ const GameBoard: React.FC = () => {
         return
       }
       
-      // Set loading state for new game
-      useTrainingStore.getState().setLoadingState('isNewGameStarting', true)
-      useTrainingStore.getState().setLoadingState('loadingMessage', 'Starting new game...')
+      // Start enhanced loading operation
+      const loadingSteps = [
+        'Resetting game state...',
+        'Initializing new game...',
+        'Starting game simulation...',
+        'Waiting for first move...'
+      ]
+      
+      useTrainingStore.getState().startLoadingOperation('newGame', loadingSteps)
       
       // Optimistically set playing state to prevent brief idle display
       useTrainingStore.getState().setPlayingCheckpoint(true)
+      
+      // Simulate step progression
+      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(25, loadingSteps[1]), 300)
+      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(50, loadingSteps[2]), 600)
       
       const res = await fetch(`${config.api.baseUrl}/checkpoints/${playbackStatus.current_checkpoint}/playback/start`, {
         method: 'POST',
@@ -95,6 +105,9 @@ const GameBoard: React.FC = () => {
         useTrainingStore.getState().setPlayingCheckpoint(false)
         throw new Error('Failed to start new game')
       }
+      
+      // Update to final step
+      useTrainingStore.getState().updateLoadingProgress(75, loadingSteps[3], 2)
       
       // Loading state will be cleared when first game data arrives
       
@@ -201,16 +214,56 @@ const GameBoard: React.FC = () => {
           animate={{ opacity: 1, scale: 1 }}
           className="card-glass p-3 rounded-xl border border-blue-500/30 bg-blue-500/5 flex-shrink-0"
         >
-          <div className="flex items-center space-x-3">
-            <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-blue-300 truncate">
-                {loadingStates.isPlaybackStarting ? 'Loading Playback' : 'Starting Game'}
+          <div className="space-y-3">
+            {/* Header */}
+            <div className="flex items-center space-x-3">
+              <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-blue-300 truncate">
+                  {loadingStates.isPlaybackStarting ? 'Loading Playback' : 'Starting Game'}
+                </div>
+                <div className="text-xs text-blue-400/80 truncate">
+                  {loadingStates.loadingStep || loadingStates.loadingMessage || 'Please wait...'}
+                </div>
               </div>
-              <div className="text-xs text-blue-400/80 truncate">
-                {loadingStates.loadingMessage || 'Please wait...'}
+              <div className="text-xs text-blue-400">
+                {loadingStates.estimatedTimeRemaining !== null 
+                  ? `${Math.ceil(loadingStates.estimatedTimeRemaining)}s`
+                  : ''
+                }
               </div>
             </div>
+            
+            {/* Progress Bar */}
+            <div className="w-full bg-gray-700 rounded-full h-2">
+              <motion.div
+                className="bg-blue-400 h-2 rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${loadingStates.loadingProgress}%` }}
+                transition={{ duration: 0.3 }}
+              />
+            </div>
+            
+            {/* Step Progress */}
+            {loadingStates.loadingSteps.length > 0 && (
+              <div className="flex items-center space-x-2">
+                <div className="text-xs text-gray-400">
+                  Step {loadingStates.currentStepIndex + 1} of {loadingStates.loadingSteps.length}
+                </div>
+                <div className="flex-1 flex space-x-1">
+                  {loadingStates.loadingSteps.map((_, index) => (
+                    <div
+                      key={index}
+                      className={`flex-1 h-1 rounded-full ${
+                        index <= loadingStates.currentStepIndex 
+                          ? 'bg-blue-400' 
+                          : 'bg-gray-600'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </motion.div>
       )}

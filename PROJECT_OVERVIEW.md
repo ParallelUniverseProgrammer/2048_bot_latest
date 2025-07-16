@@ -1,7 +1,7 @@
-# 2048 Transformer Training Visualization
+# 2048 Bot Training Visualization
 
 ## Project Vision
-A real-time visualization system for training a transformer-based neural network to play 2048, featuring:
+A real-time visualization system for training a neural network to play 2048, featuring:
 - Live training progress visualization
 - Real-time bot gameplay viewing
 - Mobile and desktop responsive design
@@ -37,6 +37,7 @@ A real-time visualization system for training a transformer-based neural network
 - **Network Visualizer**: Expert usage visualization, attention heatmaps, MoE routing patterns
 - **Responsive Design**: Mobile-first approach with device detection and adaptive layouts
 - **Advanced Controls**: Playback speed control, pause/resume, new game generation
+- **Enhanced Loading Feedback**: Comprehensive progress tracking with step-by-step updates, estimated completion times, and visual progress indicators
 
 ### 4. System Architecture
 - **Server**: FastAPI with WebSocket support and comprehensive API endpoints
@@ -72,6 +73,8 @@ A real-time visualization system for training a transformer-based neural network
 - Offline capability for viewing saved checkpoints
 - Native app-like PWA experience with iOS-style design
 - Adaptive UI based on device capabilities and screen size
+- Enhanced loading feedback with progress tracking and estimated completion times
+- Comprehensive error handling with graceful degradation and recovery
 
 ### Development Experience
 - Clear error messages and comprehensive logging with colored output
@@ -153,6 +156,8 @@ A real-time visualization system for training a transformer-based neural network
 - **Adaptive UI**: Device detection and screen size optimization
 - **Comprehensive Logging**: Rich console output with colored status messages
 - **Network Troubleshooting**: Built-in connectivity testing and firewall assistance
+- **Enhanced Loading States**: Progress tracking, step-by-step feedback, and estimated completion times
+- **WebSocket Resilience**: Adaptive timeouts, exponential backoff, circuit breaker patterns, and polling fallback
 
 ### Technical Preferences
 - **Installation**: Direct (Anaconda acceptable for dependencies) with automated setup

@@ -52,7 +52,7 @@ QRCodeGenerator.generate_qr_code(app_url)
 ```typescript
 VitePWA({
   manifest: {
-    name: '2048 Transformer Training',
+    name: '2048 Bot Training',
     short_name: '2048 AI',
     display: 'standalone',
     start_url: '/',  // Direct access

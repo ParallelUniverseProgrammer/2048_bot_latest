@@ -47,7 +47,7 @@ class CheckpointPlayback:
         
         # Message throttling
         self.message_throttle = {
-            'last_step_broadcast': 0,
+            'last_step_broadcast': 0.0,
             'step_skip_count': 0,
             'target_fps': 10,  # Target 10 updates per second max
             'adaptive_skip': 1  # Skip every N steps
@@ -70,7 +70,7 @@ class CheckpointPlayback:
             'total_broadcasts': 0,
             'successful_broadcasts': 0,
             'failed_broadcasts': 0,
-            'avg_broadcast_time': 0,
+            'avg_broadcast_time': 0.0,
             'slow_broadcasts': 0,
             'steps_skipped': 0,
             'games_completed': 0
@@ -343,7 +343,7 @@ class CheckpointPlayback:
                 'total_broadcasts': 0,
                 'successful_broadcasts': 0,
                 'failed_broadcasts': 0,
-                'avg_broadcast_time': 0,
+                'avg_broadcast_time': 0.0,
                 'slow_broadcasts': 0,
                 'steps_skipped': 0,
                 'games_completed': 0
@@ -601,12 +601,13 @@ class CheckpointPlayback:
                     last_step_time = current_time
                     
                     # Create appropriate message based on mode
+                    checkpoint_id = self.current_checkpoint_id or "unknown"
                     if self.lightweight_mode:
                         message = self._create_lightweight_message(step_data, game_result, 
-                                                                 self.current_checkpoint_id, game_count)
+                                                                 checkpoint_id, game_count)
                     else:
                         message = self._create_full_message(step_data, game_result, 
-                                                          self.current_checkpoint_id, game_count)
+                                                          checkpoint_id, game_count)
                     
                     # Broadcast step data
                     success = await self._safe_broadcast(websocket_manager, message, f"step_{step_idx}")
@@ -850,4 +851,42 @@ class CheckpointPlayback:
             probs[legal_action] = uniform_prob
         
         self._log_error(f"Using fallback action selection: {action}", "_fallback_action_selection")
-        return action, probs, None 
+        return action, probs, None
+    
+    def get_model_info(self) -> Dict[str, Any]:
+        """Get information about the currently loaded model"""
+        if self.current_model is None:
+            return {
+                "model_loaded": False,
+                "error": "No model currently loaded"
+            }
+        
+        try:
+            return {
+                "model_loaded": True,
+                "checkpoint_id": self.current_checkpoint_id,
+                "config": {
+                    "model_size": getattr(self.current_config, 'model_size', 'unknown'),
+                    "n_layers": getattr(self.current_config, 'n_layers', 'unknown'),
+                    "n_experts": getattr(self.current_config, 'n_experts', 'unknown'),
+                    "d_model": getattr(self.current_config, 'd_model', 'unknown'),
+                    "n_heads": getattr(self.current_config, 'n_heads', 'unknown'),
+                    "estimated_params": getattr(self.current_config, 'estimated_params', 'unknown')
+                } if self.current_config else None,
+                "device": str(self.device),
+                "model_type": type(self.current_model).__name__
+            }
+        except Exception as e:
+            return {
+                "model_loaded": True,
+                "error": f"Error getting model info: {str(e)}",
+                "checkpoint_id": self.current_checkpoint_id
+            }
+    
+    def get_error_history(self) -> List[Dict[str, Any]]:
+        """Get recent error history"""
+        return self.error_history.copy()
+    
+    def clear_error_history(self):
+        """Clear error history"""
+        self.error_history.clear() 

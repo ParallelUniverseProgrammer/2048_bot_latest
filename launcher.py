@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-2048 Transformer Training Launcher
+2048 Bot Training Launcher
 Platform-agnostic launcher script that starts the backend and frontend servers
 and generates a QR code for mobile access on the same LAN.
 """
@@ -824,9 +824,9 @@ export default defineConfig({{
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'favicon-16x16.png'],
       manifest: {{
-        name: '2048 Transformer Training',
-        short_name: '2048 AI',
-        description: 'Real-time visualization for 2048 transformer training',
+                    name: '2048 Bot Training',
+            short_name: '2048 AI',
+            description: 'Real-time visualization for 2048 bot training',
         theme_color: '#3b82f6',
         background_color: '#0f172a',
         display: 'standalone',
@@ -959,7 +959,7 @@ export default defineConfig({{
         frontend_url = f"http://{self.host_ip}:{self.frontend_port}"
         backend_url = f"http://{self.host_ip}:{self.backend_port}"
         
-        print(f"\n{Colors.HEADER}🚀 2048 Transformer Training Server Started!{Colors.ENDC}")
+        print(f"\n{Colors.HEADER}🚀 2048 Bot Training Server Started!{Colors.ENDC}")
         print(f"{Colors.OKGREEN}Frontend: {frontend_url}{Colors.ENDC}")
         print(f"{Colors.OKGREEN}Backend API: {backend_url}{Colors.ENDC}")
         print(f"{Colors.OKGREEN}Backend Docs: {backend_url}/docs{Colors.ENDC}")
@@ -990,7 +990,7 @@ export default defineConfig({{
     
     def run(self):
         """Main launcher routine with enhanced error handling"""
-        print(f"{Colors.HEADER}🚀 2048 Transformer Training Launcher{Colors.ENDC}")
+        print(f"{Colors.HEADER}🚀 2048 Bot Training Launcher{Colors.ENDC}")
         print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
         
         self.logger.info("Launcher started")

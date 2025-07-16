@@ -255,9 +255,21 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     try {
       setLoading(true)
       
-      // Set loading state in training store
-      useTrainingStore.getState().setLoadingState('isTrainingStarting', true)
-      useTrainingStore.getState().setLoadingState('loadingMessage', 'Loading checkpoint and resuming training...')
+      // Start enhanced loading operation
+      const loadingSteps = [
+        'Loading checkpoint metadata...',
+        'Validating checkpoint integrity...',
+        'Initializing model with checkpoint weights...',
+        'Resuming training environment...',
+        'Starting training session...'
+      ]
+      
+      useTrainingStore.getState().startLoadingOperation('training', loadingSteps)
+      
+      // Simulate step progression
+      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(20, loadingSteps[1]), 500)
+      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(40, loadingSteps[2]), 1000)
+      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(60, loadingSteps[3]), 1500)
       
       const res = await fetch(`${config.api.baseUrl}/checkpoints/${checkpointId}/load`, {
         method: 'POST'
@@ -268,6 +280,9 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       }
       
       const result = await res.json()
+      
+      // Update to final step
+      useTrainingStore.getState().updateLoadingProgress(80, loadingSteps[4], 3)
       
       // Update training store state to reflect that training has started
       useTrainingStore.getState().setTrainingStatus(true, false)
@@ -292,9 +307,16 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   // Start playback function (simplified - just starts playback and navigates)
   const startPlayback = async (checkpointId: string) => {
     try {
-      // Set loading state for playback start (store will handle timeout automatically)
-      useTrainingStore.getState().setLoadingState('isPlaybackStarting', true)
-      useTrainingStore.getState().setLoadingState('loadingMessage', 'Loading checkpoint and starting playback...')
+      // Start enhanced loading operation
+      const loadingSteps = [
+        'Loading checkpoint metadata...',
+        'Validating checkpoint integrity...',
+        'Initializing playback environment...',
+        'Starting game simulation...',
+        'Waiting for first game data...'
+      ]
+      
+      useTrainingStore.getState().startLoadingOperation('playback', loadingSteps)
       
       // Navigate to game tab first to show loading state
       setSelectedCheckpoint(checkpointId)
@@ -302,6 +324,11 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       
       // Small delay to ensure loading state is visible
       await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // Simulate step progression
+      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(20, loadingSteps[1]), 500)
+      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(40, loadingSteps[2]), 1000)
+      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(60, loadingSteps[3]), 1500)
       
       const res = await fetch(`${config.api.baseUrl}/checkpoints/${checkpointId}/playback/start`, {
         method: 'POST',
@@ -321,6 +348,9 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
           : `Failed to start playback: ${res.status} ${res.statusText}`
         throw new Error(errorMessage)
       }
+      
+      // Update to final step
+      useTrainingStore.getState().updateLoadingProgress(80, loadingSteps[4], 5)
       
       // Loading state will be cleared when first playback data arrives or timeout expires
       console.log('Playback API call successful. Waiting for WebSocket data...')

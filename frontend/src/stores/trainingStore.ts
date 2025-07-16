@@ -68,9 +68,17 @@ export interface LoadingStates {
   isTrainingStopping: boolean
   isTrainingResetting: boolean
   loadingMessage: string | null
+  // Enhanced loading feedback
+  loadingProgress: number // 0-100
+  loadingStep: string | null // Current step description
+  loadingSteps: string[] // All steps for this operation
+  currentStepIndex: number // Current step index
+  estimatedTimeRemaining: number | null // Estimated seconds remaining
+  startTime: number | null // When the operation started
   // Add timeout tracking
   playbackStartTimeout: number | null
   newGameStartTimeout: number | null
+  progressInterval: number | null // Interval ID for progress simulation
 }
 
 export interface TrainingState {
@@ -113,6 +121,9 @@ export interface TrainingState {
   setPlayingCheckpoint: (playing: boolean) => void
   setModelSize: (size: 'small' | 'medium' | 'large') => void
   setLoadingState: (key: keyof LoadingStates, value: boolean | string | null) => void
+  startLoadingOperation: (operationType: 'training' | 'playback' | 'newGame' | 'reset', steps: string[]) => void
+  updateLoadingProgress: (progress: number, step?: string, estimatedTime?: number) => void
+  completeLoadingOperation: () => void
   startTraining: () => Promise<void>
   pauseTraining: () => Promise<void>
   resumeTraining: () => Promise<void>
@@ -147,8 +158,15 @@ export const useTrainingStore = create<TrainingState>()(
         isTrainingStopping: false,
         isTrainingResetting: false,
         loadingMessage: null,
+        loadingProgress: 0,
+        loadingStep: null,
+        loadingSteps: [],
+        currentStepIndex: 0,
+        estimatedTimeRemaining: null,
+        startTime: null,
         playbackStartTimeout: null,
         newGameStartTimeout: null,
+        progressInterval: null,
       },
       
       // Persisted values
@@ -269,6 +287,12 @@ export const useTrainingStore = create<TrainingState>()(
                 ...currentState.loadingStates,
                 isPlaybackStarting: false,
                 loadingMessage: null,
+                loadingProgress: 0,
+                loadingStep: null,
+                loadingSteps: [],
+                currentStepIndex: 0,
+                estimatedTimeRemaining: null,
+                startTime: null,
                 playbackStartTimeout: null
               }
             })
@@ -310,21 +334,125 @@ export const useTrainingStore = create<TrainingState>()(
           loadingStates: newStates
         })
       },
+
+      // Enhanced loading state management
+      startLoadingOperation: (operationType: 'training' | 'playback' | 'newGame' | 'reset', steps: string[]) => {
+        const startTime = Date.now()
+        const newStates = {
+          ...get().loadingStates,
+          loadingProgress: 0,
+          loadingStep: steps[0] || null,
+          loadingSteps: steps,
+          currentStepIndex: 0,
+          estimatedTimeRemaining: null,
+          startTime: startTime,
+          [`is${operationType.charAt(0).toUpperCase() + operationType.slice(1)}Starting`]: true,
+          loadingMessage: `Starting ${operationType}...`
+        }
+        
+        set({ loadingStates: newStates })
+        
+        // Start progress simulation for operations that don't have real progress
+        if (operationType === 'training' || operationType === 'playback') {
+          const progressInterval = setInterval(() => {
+            const currentState = get()
+            const elapsed = (Date.now() - (currentState.loadingStates.startTime || startTime)) / 1000
+            const progress = Math.min(95, (elapsed / 10) * 100) // Simulate progress over 10 seconds
+            
+            if (progress < 95) {
+              set({
+                loadingStates: {
+                  ...currentState.loadingStates,
+                  loadingProgress: progress,
+                  estimatedTimeRemaining: Math.max(0, 10 - elapsed)
+                }
+              })
+            } else {
+              clearInterval(progressInterval)
+            }
+          }, 500)
+          
+          // Store interval ID for cleanup
+          newStates.progressInterval = progressInterval
+        }
+      },
+
+      updateLoadingProgress: (progress: number, step?: string, estimatedTime?: number) => {
+        const currentState = get()
+        const newStates = {
+          ...currentState.loadingStates,
+          loadingProgress: Math.min(100, Math.max(0, progress))
+        }
+        
+        if (step) {
+          newStates.loadingStep = step
+          const stepIndex = newStates.loadingSteps.indexOf(step)
+          if (stepIndex !== -1) {
+            newStates.currentStepIndex = stepIndex
+          }
+        }
+        
+        if (estimatedTime !== undefined) {
+          newStates.estimatedTimeRemaining = estimatedTime
+        }
+        
+        set({ loadingStates: newStates })
+      },
+
+      completeLoadingOperation: () => {
+        const currentState = get()
+        set({
+          loadingStates: {
+            ...currentState.loadingStates,
+            loadingProgress: 100,
+            loadingStep: 'Complete',
+            estimatedTimeRemaining: 0,
+            isTrainingStarting: false,
+            isPlaybackStarting: false,
+            isNewGameStarting: false,
+            isTrainingResetting: false,
+            loadingMessage: null
+          }
+        })
+        
+        // Clear progress after a short delay
+        setTimeout(() => {
+          const state = get()
+          set({
+            loadingStates: {
+              ...state.loadingStates,
+              loadingProgress: 0,
+              loadingStep: null,
+              loadingSteps: [],
+              currentStepIndex: 0,
+              estimatedTimeRemaining: null,
+              startTime: null
+            }
+          })
+        }, 1000)
+      },
       
       startTraining: async () => {
-        // Set loading state for training start
-        set(prev => ({ 
-          loadingStates: { 
-            ...prev.loadingStates, 
-            isTrainingStarting: true, 
-            loadingMessage: 'Initializing model and training environment...' 
-          } 
-        }))
+        // Start enhanced loading operation
+        const trainingSteps = [
+          'Initializing model configuration...',
+          'Loading training environment...',
+          'Starting GPU/CPU optimization...',
+          'Establishing training loop...',
+          'Waiting for first training data...'
+        ]
+        
+        get().startLoadingOperation('training', trainingSteps)
         
         // Optimistic update for immediate UI feedback
         set({ isTraining: true, isPaused: false })
         
         try {
+          // Simulate step progression
+          setTimeout(() => get().updateLoadingProgress(20, trainingSteps[1]), 1000)
+          setTimeout(() => get().updateLoadingProgress(40, trainingSteps[2]), 2000)
+          setTimeout(() => get().updateLoadingProgress(60, trainingSteps[3]), 3000)
+          
           const response = await fetch(`${config.api.baseUrl}${config.api.endpoints.training.start}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -340,11 +468,20 @@ export const useTrainingStore = create<TrainingState>()(
               loadingStates: { 
                 ...get().loadingStates, 
                 isTrainingStarting: false, 
-                loadingMessage: null 
+                loadingMessage: null,
+                loadingProgress: 0,
+                loadingStep: null,
+                loadingSteps: [],
+                currentStepIndex: 0,
+                estimatedTimeRemaining: null,
+                startTime: null
               } 
             })
             throw new Error('Failed to start training')
           }
+          
+          // Update to final step - waiting for data
+          get().updateLoadingProgress(80, trainingSteps[4], 5)
           
           // Keep loading state active until first training data arrives
           
@@ -356,7 +493,13 @@ export const useTrainingStore = create<TrainingState>()(
             loadingStates: { 
               ...get().loadingStates, 
               isTrainingStarting: false, 
-              loadingMessage: null 
+              loadingMessage: null,
+              loadingProgress: 0,
+              loadingStep: null,
+              loadingSteps: [],
+              currentStepIndex: 0,
+              estimatedTimeRemaining: null,
+              startTime: null
             }
           })
         }
@@ -493,8 +636,15 @@ export const useTrainingStore = create<TrainingState>()(
               isTrainingStopping: false,
               isTrainingResetting: false,
               loadingMessage: null,
+              loadingProgress: 0,
+              loadingStep: null,
+              loadingSteps: [],
+              currentStepIndex: 0,
+              estimatedTimeRemaining: null,
+              startTime: null,
               playbackStartTimeout: null,
               newGameStartTimeout: null,
+              progressInterval: null,
             },
           })
           

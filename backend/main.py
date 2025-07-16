@@ -1,5 +1,5 @@
 """
-Main FastAPI server for 2048 Transformer Training Visualization
+Main FastAPI server for 2048 Bot Training Visualization
 """
 import json
 import asyncio
@@ -20,7 +20,7 @@ from app.training.training_manager import TrainingManager
 from app.training.ppo_trainer import PPOTrainer
 from app.models.checkpoint_playback import CheckpointPlayback
 
-app = FastAPI(title="2048 Transformer Training API", version="1.0.0")
+app = FastAPI(title="2048 Bot Training API", version="1.0.0")
 
 # Enable CORS for frontend
 import os
@@ -45,7 +45,23 @@ checkpoint_playback = CheckpointPlayback(training_manager.checkpoint_manager)
 try:
     if len(training_manager.checkpoint_manager.list_checkpoints()) == 0:
         print("[yellow]No checkpoints detected – generating a test checkpoint for initialisation")
-        from tests.create_test_checkpoint import create_test_checkpoint  # Local helper script
+        import sys
+        import os
+        # Add the project root to Python path
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, project_root)
+        # Import with explicit path to avoid linter issues
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "create_test_checkpoint", 
+            os.path.join(project_root, "tests", "create_test_checkpoint.py")
+        )
+        if spec and spec.loader:
+            create_test_checkpoint_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(create_test_checkpoint_module)
+            create_test_checkpoint = create_test_checkpoint_module.create_test_checkpoint
+        else:
+            raise ImportError("Could not load create_test_checkpoint module")
 
         ckpt_path = create_test_checkpoint()
         print(f"[green]Test checkpoint created at {ckpt_path}")
@@ -83,7 +99,7 @@ def _update_training_status():
 
 @app.get("/")
 async def root():
-    return {"message": "2048 Transformer Training API", "status": "running"}
+    return {"message": "2048 Bot Training API", "status": "running"}
 
 @app.get("/health")
 async def health_check():
@@ -142,7 +158,7 @@ async def mobile_test():
 # ---------------------------- Control Endpoints -----------------------------
 
 @app.post("/training/start")
-async def start_training(request: dict = None):
+async def start_training(request: Optional[dict] = None):
     # Update training manager with current configuration
     model_size = request.get("model_size", training_config.model_size) if request else training_config.model_size
     

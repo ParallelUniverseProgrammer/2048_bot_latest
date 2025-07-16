@@ -404,19 +404,54 @@ const TrainingDashboard: React.FC = () => {
           exit={{ opacity: 0, y: -10 }}
           className="card-glass p-3 rounded-xl border border-blue-500/30 bg-blue-500/10 flex-shrink-0"
         >
-          <div className="flex items-center space-x-3">
-            <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-            <div className="flex-1">
-              <div className="text-sm font-medium text-blue-300">Starting Training Session</div>
-              <div className="text-xs text-blue-400/80">
-                {loadingStates.loadingMessage || 'Initializing model and training environment...'}
+          <div className="space-y-3">
+            {/* Header */}
+            <div className="flex items-center space-x-3">
+              <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+              <div className="flex-1">
+                <div className="text-sm font-medium text-blue-300">Starting Training Session</div>
+                <div className="text-xs text-blue-400/80">
+                  {loadingStates.loadingStep || loadingStates.loadingMessage || 'Initializing...'}
+                </div>
+              </div>
+              <div className="text-xs text-blue-400">
+                {loadingStates.estimatedTimeRemaining !== null 
+                  ? `${Math.ceil(loadingStates.estimatedTimeRemaining)}s remaining`
+                  : ''
+                }
               </div>
             </div>
-            <div className="flex items-center space-x-1">
-              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0ms' }} />
-              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '200ms' }} />
-              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '400ms' }} />
+            
+            {/* Progress Bar */}
+            <div className="w-full bg-gray-700 rounded-full h-2">
+              <motion.div
+                className="bg-blue-400 h-2 rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${loadingStates.loadingProgress}%` }}
+                transition={{ duration: 0.3 }}
+              />
             </div>
+            
+            {/* Step Progress */}
+            {loadingStates.loadingSteps.length > 0 && (
+              <div className="flex items-center space-x-2">
+                <div className="text-xs text-gray-400">
+                  Step {loadingStates.currentStepIndex + 1} of {loadingStates.loadingSteps.length}
+                </div>
+                <div className="flex-1 flex space-x-1">
+                  {loadingStates.loadingSteps.map((_, index) => (
+                    <div
+                      key={index}
+                      className={`flex-1 h-1 rounded-full ${
+                        index <= loadingStates.currentStepIndex 
+                          ? 'bg-blue-400' 
+                          : 'bg-gray-600'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </motion.div>
       )}

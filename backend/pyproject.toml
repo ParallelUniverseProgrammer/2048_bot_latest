@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "2048-transformer-backend"
+name = "2048-bot-backend"
 version = "0.1.0"
-description = "Backend for 2048 Transformer Training Visualization"
+description = "Backend for 2048 Bot Training Visualization"
 authors = ["Your Name <your.email@example.com>"]
 package-mode = false
 
