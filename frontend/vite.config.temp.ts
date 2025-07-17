@@ -52,12 +52,13 @@ export default defineConfig({
     timeout: 30000,
     // CORS settings for mobile
     cors: {
-      origin: ['http://192.168.1.254:5173', 'http://localhost:5173'],
+      origin: ['http://192.168.1.254:5173', 'http://localhost:5173', 'https://*.trycloudflare.com', 'https://*.cfargotunnel.com'],
       credentials: true
     }
   },
   define: {
-    __BACKEND_URL__: JSON.stringify('http://192.168.1.254:8000')
+    global: 'globalThis',
+    __BACKEND_URL__: JSON.stringify('https://yemen-casual-adapted-mug.trycloudflare.com')
   },
   // Build optimizations for mobile
   build: {

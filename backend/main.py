@@ -58,6 +58,9 @@ app.add_middleware(
 # Mount static files from frontend build
 frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
 if frontend_dist.exists():
+    # Mount assets and other static files from the root path
+    app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
+    # Mount other static files (favicon, manifest, etc.)
     app.mount("/static", StaticFiles(directory=str(frontend_dist)), name="static")
     print(f"[main.py] Serving frontend static files from: {frontend_dist}")
 
@@ -161,6 +164,42 @@ async def health_check():
 async def health_check_tunnel():
     """Health check endpoint for tunnel validation"""
     return {"status": "healthy", "timestamp": datetime.now(), "tunnel_ready": True}
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Serve favicon.ico from dist folder"""
+    frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+    favicon_file = frontend_dist / "favicon.ico"
+    if favicon_file.exists():
+        return FileResponse(str(favicon_file), media_type="image/x-icon")
+    raise HTTPException(status_code=404, detail="Favicon not found")
+
+@app.get("/favicon-16x16.png")
+async def favicon_16():
+    """Serve favicon-16x16.png from dist folder"""
+    frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+    favicon_file = frontend_dist / "favicon-16x16.png"
+    if favicon_file.exists():
+        return FileResponse(str(favicon_file), media_type="image/png")
+    raise HTTPException(status_code=404, detail="Favicon not found")
+
+@app.get("/apple-touch-icon.png")
+async def apple_touch_icon():
+    """Serve apple-touch-icon.png from dist folder"""
+    frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+    icon_file = frontend_dist / "apple-touch-icon.png"
+    if icon_file.exists():
+        return FileResponse(str(icon_file), media_type="image/png")
+    raise HTTPException(status_code=404, detail="Apple touch icon not found")
+
+@app.get("/manifest.webmanifest")
+async def manifest():
+    """Serve manifest.webmanifest from dist folder"""
+    frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+    manifest_file = frontend_dist / "manifest.webmanifest"
+    if manifest_file.exists():
+        return FileResponse(str(manifest_file), media_type="application/manifest+json")
+    raise HTTPException(status_code=404, detail="Manifest not found")
 
 @app.get("/model/config")
 async def get_model_config():
@@ -985,7 +1024,7 @@ async def get_websocket_performance():
 async def catch_all(path: str):
     """Catch-all route for SPA client-side routing"""
     # Skip API routes and static files
-    if path.startswith(("api/", "static/", "ws/", "checkpoints/", "training/", "model/")):
+    if path.startswith(("api/", "static/", "assets/", "ws/", "checkpoints/", "training/", "model/")):
         raise HTTPException(status_code=404, detail="Not found")
     
     frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"

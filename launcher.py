@@ -1003,6 +1003,14 @@ class Launcher:
             f"http://127.0.0.1:{self.frontend_port}",
             f"http://{self.host_ip}:{self.frontend_port}"
         ]
+        
+        # Always include tunnel wildcard domains for tunnel support
+        if not self.lan_only:
+            cors_origins.extend([
+                "https://*.trycloudflare.com",
+                "https://*.cfargotunnel.com"
+            ])
+        
         backend_env["CORS_ORIGINS"] = ",".join(cors_origins)
         
         # Backend command
@@ -1107,12 +1115,13 @@ export default defineConfig({{
     timeout: 30000,
     // CORS settings for mobile
     cors: {{
-      origin: ['http://{self.host_ip}:{self.frontend_port}', 'http://localhost:{self.frontend_port}'],
+      origin: ['http://{self.host_ip}:{self.frontend_port}', 'http://localhost:{self.frontend_port}', 'https://*.trycloudflare.com', 'https://*.cfargotunnel.com'],
       credentials: true
     }}
   }},
   define: {{
-    __BACKEND_URL__: JSON.stringify('http://{self.host_ip}:{self.backend_port}')
+    global: 'globalThis',
+    __BACKEND_URL__: JSON.stringify('{self.tunnel_url if self.tunnel_url else f"http://{self.host_ip}:{self.backend_port}"}')
   }},
   // Build optimizations for mobile
   build: {{
@@ -1131,6 +1140,61 @@ export default defineConfig({{
             self.logger.info("Created temporary Vite config")
         except Exception as e:
             error_msg = f"Failed to create Vite config: {e}"
+            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
+            self.logger.error(error_msg)
+            return False
+        
+        # Create a script to inject the backend URL
+        backend_url_script = f"""
+// Backend URL configuration
+window.__BACKEND_URL__ = '{self.tunnel_url if self.tunnel_url else f"http://{self.host_ip}:{self.backend_port}"}';
+console.log('Backend URL set to:', window.__BACKEND_URL__);
+"""
+        
+        script_path = "frontend/public/backend-config.js"
+        try:
+            with open(script_path, "w") as f:
+                f.write(backend_url_script)
+            self.logger.info("Created backend config script")
+        except Exception as e:
+            error_msg = f"Failed to create backend config script: {e}"
+            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
+            self.logger.error(error_msg)
+            return False
+        
+        # After the build is complete, inject the backend URL into the built HTML
+        dist_html_path = "frontend/dist/index.html"
+        
+        # Read the built HTML file
+        try:
+            with open(dist_html_path, "r") as f:
+                html_content = f.read()
+        except FileNotFoundError:
+            error_msg = "Built HTML file not found. Make sure the frontend build completed successfully."
+            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
+            self.logger.error(error_msg)
+            return False
+        
+        # Inject the backend configuration script before the closing head tag
+        backend_config_script = f"""
+    <!-- Backend configuration script -->
+    <script>
+      // Backend URL configuration
+      window.__BACKEND_URL__ = '{self.tunnel_url if self.tunnel_url else f"http://{self.host_ip}:{self.backend_port}"}';
+      console.log('Backend URL set to:', window.__BACKEND_URL__);
+    </script>
+  </head>"""
+        
+        # Replace the closing head tag with our script + closing head tag
+        html_content = html_content.replace("</head>", backend_config_script)
+        
+        # Write the modified HTML back to the dist folder
+        try:
+            with open(dist_html_path, "w") as f:
+                f.write(html_content)
+            self.logger.info("Updated built HTML with backend config script")
+        except Exception as e:
+            error_msg = f"Failed to update built HTML: {e}"
             print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False

@@ -4,7 +4,7 @@
 
 // Get backend URL from environment variable or default to localhost
 const getBackendUrl = (): string => {
-  // Check if we're in development mode and have a backend URL defined
+  // Check if we have a backend URL defined in the window object (injected by launcher)
   if (typeof window !== 'undefined' && (window as any).__BACKEND_URL__) {
     return (window as any).__BACKEND_URL__
   }
