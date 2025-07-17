@@ -9,6 +9,7 @@ import ConnectionStatus from './components/ConnectionStatus'
 
 import CheckpointManager from './components/CheckpointManager'
 import CheckpointLoadingIndicator from './components/CheckpointLoadingIndicator'
+import TrainingLoadingIndicator from './components/TrainingLoadingIndicator'
 import { useTrainingStore } from './stores/trainingStore'
 import { useWebSocket } from './utils/websocket'
 import { useDeviceDetection } from './utils/deviceDetection'
@@ -335,6 +336,9 @@ const App: React.FC = () => {
 
       {/* Checkpoint Loading Indicator */}
       <CheckpointLoadingIndicator />
+
+      {/* Training Loading Indicator */}
+      <TrainingLoadingIndicator />
 
       {/* Footer - Removed for mobile to save space */}
       {!isMobile && (

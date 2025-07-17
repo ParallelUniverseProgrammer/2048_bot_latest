@@ -2,7 +2,7 @@ import React, { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Line, Doughnut, Bar } from 'react-chartjs-2'
 import { 
-  TrendingDown, Brain, Zap, Target, Activity, Loader2,
+  TrendingDown, Brain, Zap, Target, Activity,
   Clock, Gauge, BarChart3, TrendingUpIcon, TrendingDownIcon, 
   CheckCircle, AlertTriangle, Info, Star, Scale, GitBranch,
   Play, Pause, AlertTriangle as StopIcon
@@ -445,66 +445,6 @@ const TrainingDashboard: React.FC = () => {
 
   return (
     <div className="h-full grid grid-rows-[auto_auto_auto_1fr] gap-2 pb-6">
-      {/* Loading Indicator - More compact */}
-      {loadingStates.isTrainingStarting && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          className="card-glass p-3 rounded-2xl border border-blue-500/30 bg-blue-500/10"
-        >
-          <div className="space-y-2">
-            {/* Header */}
-            <div className="flex items-center space-x-2">
-              <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
-              <div className="flex-1">
-                <div className="text-xs font-medium text-blue-300">Starting Training Session</div>
-                <div className="text-xs text-blue-400/80">
-                  {loadingStates.loadingStep || loadingStates.loadingMessage || 'Initializing...'}
-                </div>
-              </div>
-              <div className="text-xs text-blue-400">
-                {loadingStates.estimatedTimeRemaining !== null 
-                  ? `${Math.ceil(loadingStates.estimatedTimeRemaining)}s`
-                  : ''
-                }
-              </div>
-            </div>
-            
-            {/* Progress Bar */}
-            <div className="w-full bg-gray-700 rounded-full h-1.5">
-              <motion.div
-                className="bg-blue-400 h-1.5 rounded-full"
-                initial={{ width: 0 }}
-                animate={{ width: `${loadingStates.loadingProgress}%` }}
-                transition={{ duration: 0.3 }}
-              />
-            </div>
-            
-            {/* Step Progress */}
-            {loadingStates.loadingSteps.length > 0 && (
-              <div className="flex items-center space-x-2">
-                <div className="text-xs text-gray-400">
-                  Step {loadingStates.currentStepIndex + 1} of {loadingStates.loadingSteps.length}
-                </div>
-                <div className="flex-1 flex space-x-1">
-                  {loadingStates.loadingSteps.map((_, index) => (
-                    <div
-                      key={index}
-                      className={`flex-1 h-1 rounded-full ${
-                        index <= loadingStates.currentStepIndex 
-                          ? 'bg-blue-400' 
-                          : 'bg-gray-600'
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </motion.div>
-      )}
-
       {/* Training Controls */}
       <motion.div
         className="card-glass p-4 rounded-2xl flex items-center justify-between"
@@ -669,13 +609,7 @@ const TrainingDashboard: React.FC = () => {
                       <div className="text-xs text-gray-400 font-medium truncate">{metric.title}</div>
                       <div className={`font-bold ${metric.color} text-sm truncate`}>{metric.value}</div>
                     </div>
-                    {(isTraining || loadingStates.isTrainingStarting) && (
-                      <div className={`w-2 h-2 rounded-full ${
-                        loadingStates.isTrainingStarting 
-                          ? 'bg-blue-400 animate-pulse' 
-                          : 'bg-green-400 animate-pulse'
-                      }`} />
-                    )}
+                    {/* Removed loading indicator dot for isTrainingStarting */}
                   </motion.div>
                 )
               })}

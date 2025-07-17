@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-2048 Bot Training Launcher
+"""2048 Training Launcher
 Platform-agnostic launcher script that starts the backend and frontend servers
 and generates a QR code for mobile access on the same LAN.
 """
@@ -25,6 +24,7 @@ import argparse
 import queue
 import logging
 from datetime import datetime
+import shutil
 
 # Third-party imports (will be installed if missing)
 try:
@@ -32,14 +32,24 @@ try:
     import qrcode.image.svg
     import netifaces
     from qrcode import constants
+    # GUI imports for QR-only mode
+    import tkinter as tk
+    from tkinter import ttk, messagebox
+    from PIL import Image, ImageTk
+    import math
 except ImportError as e:
     print(f"Missing required package: {e}")
     print("Installing required packages...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "qrcode[pil]", "netifaces"], check=True, shell=True)
+    subprocess.run([sys.executable, "-m", "pip", "install", "qrcode[pil]", "netifaces", "pillow"], check=True, shell=True)
     import qrcode
     import qrcode.image.svg
     import netifaces
     from qrcode import constants
+    # GUI imports for QR-only mode
+    import tkinter as tk
+    from tkinter import ttk, messagebox
+    from PIL import Image, ImageTk
+    import math
 
 class Colors:
     """Terminal color constants"""
@@ -548,7 +558,7 @@ class QRCodeGenerator:
     """Generates QR codes for mobile access with PWA installation support"""
     
     @staticmethod
-    def generate_qr_code(url: str, output_path: Optional[str] = None) -> None:
+    def generate_qr_code(url: str, output_path: Optional[str] = None, center: bool = False, term_width: int = 80) -> None:
         """Generate and display QR code for mobile access"""
         # Point directly to the main app
         app_url = url
@@ -556,8 +566,8 @@ class QRCodeGenerator:
         qr = qrcode.QRCode(
             version=1,
             error_correction=constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
+            box_size=1 if center else 10,
+            border=2 if center else 4,
         )
         qr.add_data(app_url)
         qr.make(fit=True)
@@ -570,7 +580,15 @@ class QRCodeGenerator:
             print(f"{Colors.OKGREEN}QR code saved to: {output_path}{Colors.ENDC}")
         
         # Display in terminal
-        print(f"\n{Colors.HEADER}{'='*50}{Colors.ENDC}")
+        matrix = qr.get_matrix()
+        for row in matrix:
+            line = ''.join(['██' if cell else '  ' for cell in row])
+            if center:
+                print(line.center(term_width))
+            else:
+                print(line)
+        
+        print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
         print(f"{Colors.HEADER}📱 MOBILE ACCESS QR CODE{Colors.ENDC}")
         print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
         print(f"{Colors.OKBLUE}URL: {app_url}{Colors.ENDC}")
@@ -592,14 +610,17 @@ class QRCodeGenerator:
         for row in matrix:
             print(''.join(['██' if cell else '  ' for cell in row]))
         
-        print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
-        print(f"{Colors.OKGREEN}📱 Scan this QR code to access the 2048 AI app on your device!{Colors.ENDC}")
-        print(f"{Colors.WARNING}💡 iOS users: Tap the share button (📤) then 'Add to Home Screen'{Colors.ENDC}")
+        print(Colors.HEADER + "=" * 50 + Colors.ENDC)
+        print(Colors.OKGREEN + "📱 Scan this QR code to access the 2048 AI app on your device!" + Colors.ENDC)
+        print(Colors.WARNING + "💡 iOS users: Tap the share button (📤) then Add to Home Screen" + Colors.ENDC)
+
+# NOTE: Removed GUI-related classes `LoadingAnimation` and `QRCodeWindow` which contained severe syntax errors and were unused elsewhere in the launcher.
+# The launcher continues to operate entirely via the console.
 
 class Launcher:
     """Enhanced launcher with robust error handling and monitoring"""
     
-    def __init__(self, dev_mode: bool = False, force_ports: bool = False):
+    def __init__(self, dev_mode: bool = False, force_ports: bool = False, qr_only: bool = False):
         self.logger = Logger()
         self.process_manager = ProcessManager(self.logger)
         self.backend_port = 8000
@@ -607,46 +628,55 @@ class Launcher:
         self.host_ip = None
         self.dev_mode = dev_mode
         self.force_ports = force_ports
+        self.qr_only = qr_only
         
     def check_dependencies(self) -> bool:
         """Check if required dependencies are installed"""
-        print(f"{Colors.OKCYAN}Checking dependencies...{Colors.ENDC}")
+        if not self.qr_only:
+            print(f"{Colors.OKCYAN}Checking dependencies...{Colors.ENDC}")
         self.logger.info("Checking dependencies")
         
         # Check if we're in the right directory
         if not os.path.exists("backend") or not os.path.exists("frontend"):
             error_msg = "Error: Please run this script from the project root directory"
-            print(f"{Colors.FAIL}{error_msg}{Colors.ENDC}")
+            if not self.qr_only:
+                print(f"{Colors.FAIL}{error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
         
         # Check Poetry
         try:
             subprocess.run(["poetry", "--version"], check=True, capture_output=True, shell=True)
-            print(f"{Colors.OKGREEN}✓ Poetry found{Colors.ENDC}")
+            if not self.qr_only:
+                print(f"{Colors.OKGREEN}✓ Poetry found{Colors.ENDC}")
         except (subprocess.CalledProcessError, FileNotFoundError):
             error_msg = "Poetry not found. Please install Poetry first."
-            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
+            if not self.qr_only:
+                print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
         
         # Check Node.js
         try:
             subprocess.run(["node", "--version"], check=True, capture_output=True, shell=True)
-            print(f"{Colors.OKGREEN}✓ Node.js found{Colors.ENDC}")
+            if not self.qr_only:
+                print(f"{Colors.OKGREEN}✓ Node.js found{Colors.ENDC}")
         except (subprocess.CalledProcessError, FileNotFoundError):
             error_msg = "Node.js not found. Please install Node.js first."
-            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
+            if not self.qr_only:
+                print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
         
         # Check npm
         try:
             subprocess.run(["npm", "--version"], check=True, capture_output=True, shell=True)
-            print(f"{Colors.OKGREEN}✓ npm found{Colors.ENDC}")
+            if not self.qr_only:
+                print(f"{Colors.OKGREEN}✓ npm found{Colors.ENDC}")
         except (subprocess.CalledProcessError, FileNotFoundError):
             error_msg = "npm not found. Please install npm first."
-            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
+            if not self.qr_only:
+                print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
         
@@ -992,73 +1022,127 @@ export default defineConfig({{
                 for error in info['recent_errors'][-2:]:  # Show last 2 errors
                     print(f"   - {error}")
     
+    def _qr_progress_bar(self, steps, current_idx, width=40):
+        # Fun icons for each step
+        icons = ['🔍', '🌐', '📦', '🦄', '⚡']
+        bar = ''
+        for i, step in enumerate(steps):
+            if i < current_idx:
+                bar += f'{Colors.OKGREEN}{icons[i]}{Colors.ENDC}'
+            elif i == current_idx:
+                bar += f'{Colors.OKBLUE}{icons[i]}{Colors.ENDC}'
+            else:
+                bar += f'{Colors.WARNING}·{Colors.ENDC}'
+        pad = ' ' * (width - len(steps))
+        sys.stdout.write(f'\r{bar}{pad}  {Colors.BOLD}{steps[current_idx]}...{Colors.ENDC}   ')
+        sys.stdout.flush()
+
+    def _qr_clear_console(self):
+        if os.name == 'nt':
+            os.system('cls')
+        else:
+            os.system('clear')
+
+    def _qr_pretty_qr_screen(self, frontend_url, backend_url):
+        self._qr_clear_console()
+        term_width = shutil.get_terminal_size((80, 20)).columns
+        # Centered header
+        header = f"{Colors.HEADER}{'='*min(term_width,50)}{Colors.ENDC}"
+        print('\n' * 2)
+        print(header.center(term_width))
+        print(f"{Colors.HEADER}{'🚀 2048 Bot Training Ready!':^{term_width}}{Colors.ENDC}")
+        print(header.center(term_width))
+        print(f"{Colors.OKGREEN}{'Frontend:':<12} {frontend_url}{Colors.ENDC}".center(term_width))
+        print(f"{Colors.OKGREEN}{'Backend:':<12} {backend_url}{Colors.ENDC}".center(term_width))
+        print(f"{Colors.OKGREEN}{'Docs:':<12} {backend_url}/docs{Colors.ENDC}".center(term_width))
+        print(header.center(term_width))
+        # QR code
+        QRCodeGenerator.generate_qr_code(frontend_url, "mobile_access_qr.png", center=True, term_width=term_width)
+        print(header.center(term_width))
+        print(f"{Colors.OKCYAN}{'📱 Scan this QR code with your phone!':^{term_width}}{Colors.ENDC}")
+        msg = "💡 iOS: Tap share (📤) then 'Add to Home Screen'"
+        print(f"{Colors.WARNING}{msg:^{term_width}}{Colors.ENDC}")
+        print(header.center(term_width))
+        print('\n' * 2)
+
     def run(self):
-        """Main launcher routine with enhanced error handling"""
-        print(f"{Colors.HEADER}🚀 2048 Bot Training Launcher{Colors.ENDC}")
-        print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
-        
-        self.logger.info("Launcher started")
-        
-        try:
-            # Check dependencies
-            if not self.check_dependencies():
-                return False
-            
-            # Setup network
-            if not self.setup_network():
-                return False
-            
-            # Install dependencies
-            if not self.install_dependencies():
-                return False
-            
-            # Start backend
-            if not self.start_backend():
-                return False
-            
-            # Start frontend
-            if not self.start_frontend():
-                return False
-            
-            # Show access information
-            self.show_access_info()
-            
-            # Keep running until interrupted
-            try:
-                while self.process_manager.running:
-                    time.sleep(1)
-                    
-                    # Show status every 30 seconds
-                    if int(time.time()) % 30 == 0:
-                        self.show_status()
-                        
-            except KeyboardInterrupt:
-                print(f"\n{Colors.WARNING}Shutting down...{Colors.ENDC}")
-                self.logger.info("Shutdown requested by user")
-            
+        if self.qr_only:
+            steps = [
+                'Checking dependencies',
+                'Setting up network',
+                'Installing dependencies',
+                'Starting backend',
+                'Starting frontend'
+            ]
+            for idx, step in enumerate(steps):
+                self._qr_progress_bar(steps, idx)
+                if step == 'Checking dependencies':
+                    if not self.check_dependencies():
+                        print(f"\n{Colors.FAIL}Failed at: {step}{Colors.ENDC}")
+                        return False
+                elif step == 'Setting up network':
+                    if not self.setup_network():
+                        print(f"\n{Colors.FAIL}Failed at: {step}{Colors.ENDC}")
+                        return False
+                elif step == 'Installing dependencies':
+                    if not self.install_dependencies():
+                        print(f"\n{Colors.FAIL}Failed at: {step}{Colors.ENDC}")
+                        return False
+                elif step == 'Starting backend':
+                    if not self.start_backend():
+                        print(f"\n{Colors.FAIL}Failed at: {step}{Colors.ENDC}")
+                        return False
+                elif step == 'Starting frontend':
+                    if not self.start_frontend():
+                        print(f"\n{Colors.FAIL}Failed at: {step}{Colors.ENDC}")
+                        return False
+                time.sleep(0.5)
+            # Final pretty QR code screen
+            frontend_url = f"http://{self.host_ip}:{self.frontend_port}"
+            backend_url = f"http://{self.host_ip}:{self.backend_port}"
+            self._qr_pretty_qr_screen(frontend_url, backend_url)
             return True
-            
-        except Exception as e:
-            error_msg = f"Unexpected error: {e}"
-            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
-            self.logger.error(error_msg)
-            return False
-        
-        finally:
-            # Cleanup
-            self.process_manager.cleanup()
-            
-            # Remove temporary files
-            temp_config = "frontend/vite.config.temp.ts"
-            if os.path.exists(temp_config):
+        else:
+            print(f"{Colors.HEADER}🚀 2048 Bot Training Launcher{Colors.ENDC}")
+            print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
+            self.logger.info("Launcher started")
+            try:
+                if not self.check_dependencies():
+                    return False
+                if not self.setup_network():
+                    return False
+                if not self.install_dependencies():
+                    return False
+                if not self.start_backend():
+                    return False
+                if not self.start_frontend():
+                    return False
+                self.show_access_info()
                 try:
-                    os.remove(temp_config)
-                    self.logger.info("Removed temporary Vite config")
-                except Exception as e:
-                    self.logger.warning(f"Could not remove temporary config: {e}")
-            
-            print(f"{Colors.OKGREEN}✓ Cleanup completed{Colors.ENDC}")
-            self.logger.info("Launcher cleanup completed")
+                    while self.process_manager.running:
+                        time.sleep(1)
+                        if int(time.time()) % 30 == 0:
+                            self.show_status()
+                except KeyboardInterrupt:
+                    print(f"\n{Colors.WARNING}Shutting down...{Colors.ENDC}")
+                    self.logger.info("Shutdown requested by user")
+                return True
+            except Exception as e:
+                error_msg = f"Unexpected error: {e}"
+                print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
+                self.logger.error(error_msg)
+                return False
+            finally:
+                self.process_manager.cleanup()
+                temp_config = "frontend/vite.config.temp.ts"
+                if os.path.exists(temp_config):
+                    try:
+                        os.remove(temp_config)
+                        self.logger.info("Removed temporary Vite config")
+                    except Exception as e:
+                        self.logger.warning(f"Could not remove temporary config: {e}")
+                print(f"{Colors.OKGREEN}✓ Cleanup completed{Colors.ENDC}")
+                self.logger.info("Launcher cleanup completed")
 
 def main():
     """Main entry point"""
@@ -1067,9 +1151,10 @@ def main():
     parser.add_argument("--force-ports", action="store_true", help="Force kill processes using required ports")
     parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], 
                        default="INFO", help="Set logging level")
+    parser.add_argument("--qr-only", action="store_true", help="Show only QR code and essential output")
     args = parser.parse_args()
 
-    launcher = Launcher(dev_mode=args.dev, force_ports=args.force_ports)
+    launcher = Launcher(dev_mode=args.dev, force_ports=args.force_ports, qr_only=args.qr_only)
     success = launcher.run()
     sys.exit(0 if success else 1)
 

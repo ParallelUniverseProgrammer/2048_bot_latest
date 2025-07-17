@@ -8,7 +8,6 @@ import config from '../utils/config'
 const GameBoard: React.FC = () => {
   const { 
     trainingData, 
-    isTraining, 
     lastPolicyLoss, 
     lastValueLoss, 
     checkpointPlaybackData, 
@@ -47,7 +46,7 @@ const GameBoard: React.FC = () => {
   // Handle restart countdown
   React.useEffect(() => {
     if (isShowingGameOver) {
-      setRestartCountdown(3)
+      setRestartCountdown(30)
       const countdownInterval = setInterval(() => {
         setRestartCountdown(prev => {
           if (prev <= 1) {
@@ -395,103 +394,7 @@ const GameBoard: React.FC = () => {
       )}
 
       {/* Header with Status */}
-      <motion.div
-        className="card-glass p-4 rounded-2xl flex-shrink-0"
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className={`w-2 h-2 rounded-full ${
-              currentData?.done ? 'bg-red-400 animate-pulse' :
-              currentData?.is_playback ? 'bg-purple-400' : 
-              isTraining ? 'bg-green-400 animate-pulse' : 'bg-gray-400'
-            }`} />
-            <span className="text-sm font-medium text-white">
-              {currentData?.done ? 'Game Over' :
-               currentData?.is_playback ? 'Playback' : isTraining ? 'Training' : 'Idle'}
-            </span>
-          </div>
-          
-          {currentData?.is_playback && (
-            <div className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded">
-              {currentData.checkpoint_id}
-            </div>
-          )}
-        </div>
-      </motion.div>
-
-      {/* Playback Controls */}
-      {isPlayingCheckpoint && (
-        <motion.div
-          className="card-glass p-4 rounded-2xl flex-shrink-0"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-medium text-white">Playback Controls</div>
-            <div className="text-xs text-gray-400">
-              Step {checkpointPlaybackData?.step_data?.step || 0}
-            </div>
-          </div>
-          
-          <div className="flex items-center space-x-2 mb-2">
-            {playbackStatus?.is_playing && !playbackStatus?.is_paused ? (
-                          <button
-              onClick={pausePlayback}
-              className="flex-1 flex items-center justify-center space-x-2 bg-yellow-500/20 text-yellow-400 rounded-xl py-2.5 text-sm font-medium"
-            >
-                <PauseCircle className="w-4 h-4" />
-                <span>Pause</span>
-              </button>
-            ) : (
-              <button
-                onClick={resumePlayback}
-                className="flex-1 flex items-center justify-center space-x-2 bg-green-500/20 text-green-400 rounded-xl py-2.5 text-sm font-medium"
-              >
-                <PlayCircle className="w-4 h-4" />
-                <span>Resume</span>
-              </button>
-            )}
-            
-            <button
-              onClick={stopPlayback}
-              className="flex-1 flex items-center justify-center space-x-2 bg-red-500/20 text-red-400 rounded-xl py-2.5 text-sm font-medium"
-            >
-              <StopCircle className="w-4 h-4" />
-              <span>Stop</span>
-            </button>
-            
-            <button
-              onClick={startNewGame}
-              className="flex-1 flex items-center justify-center space-x-2 bg-blue-500/20 text-blue-400 rounded-xl py-2.5 text-sm font-medium"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>New</span>
-            </button>
-          </div>
-          
-          {/* Speed Control */}
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-400">Speed:</div>
-            <div className="flex items-center space-x-1">
-              {speedOptions.map((speed) => (
-                <button
-                  key={speed}
-                  onClick={() => changePlaybackSpeed(speed)}
-                  className={`px-2 py-1 text-xs rounded-lg ${
-                    playbackSpeed === speed
-                      ? 'bg-purple-500/30 text-purple-300 border border-purple-500/50'
-                      : 'bg-gray-700/50 text-gray-400 hover:bg-gray-600/50'
-                  }`}
-                >
-                  {speed}x
-                </button>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
+      {/* (Removed the status header with colored dot and text) */}
 
       {/* Game Stats */}
       <motion.div
@@ -529,16 +432,16 @@ const GameBoard: React.FC = () => {
         </div>
       </motion.div>
 
-              {/* Main Game Area */}
-        <div className="flex-1 flex flex-col space-y-2 min-h-0">
-          {/* Game Board */}
-          <motion.div
-            className={`card-glass p-4 rounded-2xl flex-shrink-0 relative ${
-              currentData?.done ? 'border border-red-500/30 bg-red-500/5' : ''
-            }`}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-          >
+      {/* Main Game Area */}
+      <div className="flex-1 flex flex-col space-y-2 min-h-0">
+        {/* Game Board */}
+        <motion.div
+          className={`card-glass p-4 rounded-2xl flex-shrink-0 relative ${
+            currentData?.done ? 'border border-red-500/30 bg-red-500/5' : ''
+          }`}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+        >
           {currentData?.done && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-xl z-10">
               <div className="text-center">
@@ -594,6 +497,108 @@ const GameBoard: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Playback Controls - Always Visible */}
+      <motion.div
+        className={`card-glass p-4 rounded-2xl flex-shrink-0 ${
+          !isPlayingCheckpoint ? 'opacity-50' : ''
+        }`}
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center space-x-2">
+            <div className="text-sm font-medium text-white">Playback Controls</div>
+            {currentData?.checkpoint_id && (
+              <div className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded">
+                {currentData.checkpoint_id}
+              </div>
+            )}
+          </div>
+          <div className="text-xs text-gray-400">
+            Step {checkpointPlaybackData?.step_data?.step || 0}
+          </div>
+        </div>
+        
+        <div className="flex items-center space-x-2 mb-2">
+          {playbackStatus?.is_playing && !playbackStatus?.is_paused ? (
+            <button
+              onClick={pausePlayback}
+              disabled={!isPlayingCheckpoint}
+              className={`flex-1 flex items-center justify-center space-x-2 rounded-xl py-2.5 text-sm font-medium ${
+                isPlayingCheckpoint 
+                  ? 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
+                  : 'bg-gray-700/50 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              <PauseCircle className="w-4 h-4" />
+              <span>Pause</span>
+            </button>
+          ) : (
+            <button
+              onClick={resumePlayback}
+              disabled={!isPlayingCheckpoint}
+              className={`flex-1 flex items-center justify-center space-x-2 rounded-xl py-2.5 text-sm font-medium ${
+                isPlayingCheckpoint 
+                  ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                  : 'bg-gray-700/50 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              <PlayCircle className="w-4 h-4" />
+              <span>Resume</span>
+            </button>
+          )}
+          
+          <button
+            onClick={stopPlayback}
+            disabled={!isPlayingCheckpoint}
+            className={`flex-1 flex items-center justify-center space-x-2 rounded-xl py-2.5 text-sm font-medium ${
+              isPlayingCheckpoint 
+                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                : 'bg-gray-700/50 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            <StopCircle className="w-4 h-4" />
+            <span>Stop</span>
+          </button>
+          
+          <button
+            onClick={startNewGame}
+            disabled={!isPlayingCheckpoint}
+            className={`flex-1 flex items-center justify-center space-x-2 rounded-xl py-2.5 text-sm font-medium ${
+              isPlayingCheckpoint 
+                ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                : 'bg-gray-700/50 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>New</span>
+          </button>
+        </div>
+        
+        {/* Speed Control */}
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-gray-400">Speed:</div>
+          <div className="flex items-center space-x-1">
+            {speedOptions.map((speed) => (
+              <button
+                key={speed}
+                onClick={() => changePlaybackSpeed(speed)}
+                disabled={!isPlayingCheckpoint}
+                className={`px-2 py-1 text-xs rounded-lg ${
+                  !isPlayingCheckpoint
+                    ? 'bg-gray-700/50 text-gray-400 cursor-not-allowed'
+                    : playbackSpeed === speed
+                      ? 'bg-purple-500/30 text-purple-300 border border-purple-500/50'
+                      : 'bg-gray-700/50 text-gray-400 hover:bg-gray-600/50'
+                }`}
+              >
+                {speed}x
+              </button>
+            ))}
+          </div>
+        </div>
+      </motion.div>
 
       {/* Training Status Footer */}
       {trainingData && (
