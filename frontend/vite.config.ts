@@ -36,15 +36,29 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // Use tunnel-aware cache names to avoid collision with localhost versions
+        cacheId: '2048-bot-tunnel-v1',
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'google-fonts-cache',
+              cacheName: '2048-bot-fonts-cache-v1',
               expiration: {
                 maxEntries: 10,
                 maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
+              }
+            }
+          },
+          {
+            // Cache API calls from tunnel domains
+            urlPattern: /^https:\/\/.*\.(trycloudflare\.com|cfargotunnel\.com)\/.*$/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: '2048-bot-api-cache-v1',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 // 1 hour
               }
             }
           }

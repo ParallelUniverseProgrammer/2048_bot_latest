@@ -69,13 +69,36 @@
 # Clone & enter the repo
 $ git clone https://github.com/krdge/2048_bot_latest.git && cd 2048_bot_latest
 
-# Fire up everything via the launcher (backend, frontend & ngrok/QR)
+# Fire up everything via the launcher (backend, frontend & tunnel/QR)
 $ python launcher.py
 
-# Open http://localhost:3000  (QR code printed for mobile)
+# Open http://localhost:8000  (QR code printed for mobile)
 ```
 
-The launcher installs dependencies, detects hardware (CUDA ↔︎ CPU) and starts both servers (with optional hot-reload, although iOS PWA support may break).
+The launcher installs dependencies, detects hardware (CUDA ↔︎ CPU) and starts both servers with automatic Cloudflare Tunnel creation for internet access.
+
+### Advanced Usage
+
+The launcher supports multiple deployment modes:
+
+```bash
+# Development mode (LAN only, hot reload)
+python launcher.py --dev
+
+# LAN access only (no tunnel, faster startup)
+python launcher.py --lan-only
+
+# Tunnel access only (cloud-first deployment)
+python launcher.py --tunnel-only
+
+# Production mode (named tunnel, optimized build)
+python launcher.py --production
+
+# Custom configuration
+python launcher.py --port 9000 --tunnel-type named --no-qr
+```
+
+See [LAUNCHER_README.md](./LAUNCHER_README.md) for complete usage instructions and all available options.
 
 ---
 
@@ -94,6 +117,13 @@ The interface is split into three tabs:
 1. Launch the backend & frontend (see *Quick Start*).
 2. Navigate to **Training** and press **Start**. Select model size if prompted.
 3. Monitor metrics or switch to **Game** to visually inspect gameplay.
+
+### Remote Access
+The launcher automatically creates a Cloudflare Tunnel for internet access:
+- **Quick Tunnel**: Temporary HTTPS URL (no account required)
+- **Named Tunnel**: Persistent HTTPS URL (requires Cloudflare account setup)
+- **Mobile PWA**: Install directly from tunnel URL for offline access
+- **QR Code**: Scan to access from any mobile device
 
 ### Playing a Checkpoint
 1. Open **Checkpoints** and click *Watch* on any entry.
@@ -161,15 +191,15 @@ More in `docs/TROUBLESHOOTING.md` (coming soon).
 
 ## 🚀 Development Roadmap
 
-### Remote Access Integration (In Development)
-We're implementing **Cloudflare Tunnel integration** to transform this LAN-only development tool into an internet-reachable, HTTPS-secured service. This will enable:
+### Remote Access Integration ✅ COMPLETED
+We've successfully implemented **Cloudflare Tunnel integration** to transform this LAN-only development tool into an internet-reachable, HTTPS-secured service. This enables:
 
 • **Internet Accessibility** – Access from anywhere via HTTPS with automatic QR code generation
 • **Zero Configuration** – Automatic tunnel setup with Quick Tunnel fallback
 • **Production Ready** – Named tunnels with auto-reconnect, monitoring, and service persistence
 • **Mobile PWA Support** – Seamless installation and offline functionality across all devices
 
-See [REMOTE_ACCESS_ROADMAP.md](./REMOTE_ACCESS_ROADMAP.md) for the complete 8-phase implementation plan.
+The launcher now supports multiple deployment modes including development, production, and cloud-first configurations. See [LAUNCHER_README.md](./LAUNCHER_README.md) for complete usage instructions.
 
 ### Background Service Installer (Planned)
 We're working on a **platform-agnostic background service installer** that will transform this development tool into a production-ready service. This will enable:

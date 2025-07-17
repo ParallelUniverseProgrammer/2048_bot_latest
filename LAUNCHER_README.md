@@ -2,21 +2,25 @@
 
 ## Overview
 
-The launcher script (`launcher.py`) is a robust Python-based development tool that automatically:
+The launcher script (`launcher.py`) is a comprehensive Python-based deployment tool that automatically:
 - Launches the backend server with comprehensive error monitoring
 - Waits for the backend to be ready with detailed health checks
 - Launches the frontend development server with real-time output monitoring
+- **Creates Cloudflare Tunnels for internet access** (Quick or Named tunnels)
 - Configures both servers for LAN access with intelligent port management
-- Generates a QR code for easy mobile access
+- Generates QR codes for easy mobile access
 - Handles network discovery and configuration
 - Provides comprehensive logging and error reporting
 - Ensures proper cleanup of all resources
+- **Supports multiple deployment modes** (development, production, cloud-first)
 
 ## Features
 
 - **Platform Agnostic**: Works on Windows, macOS, and Linux
 - **Automatic Network Discovery**: Finds the best local IP address for LAN access
-- **Mobile QR Code**: Generates a QR code for easy mobile access
+- **Cloudflare Tunnel Integration**: Automatic HTTPS tunnel creation for internet access
+- **Multiple Deployment Modes**: Development, production, LAN-only, and tunnel-only modes
+- **Mobile QR Code**: Generates QR codes for easy mobile access
 - **Robust Error Handling**: Comprehensive error checking, logging, and recovery
 - **Process Monitoring**: Real-time monitoring of server output and health
 - **Port Management**: Intelligent port conflict detection and resolution
@@ -24,6 +28,8 @@ The launcher script (`launcher.py`) is a robust Python-based development tool th
 - **Clean Shutdown**: Properly terminates all processes and frees ports on exit
 - **Comprehensive Logging**: File-based logging with multiple verbosity levels
 - **Status Monitoring**: Real-time display of process status and recent errors
+- **Tunnel Fallback**: Automatic fallback from named to quick tunnels
+- **Production Ready**: Named tunnels with persistent URLs and auto-reconnect
 
 ## Prerequisites
 
@@ -33,6 +39,7 @@ Before using the launcher, ensure you have:
 2. **Poetry** installed for Python dependency management
 3. **Node.js** and **npm** installed for frontend development
 4. **Git** (optional, for version control)
+5. **cloudflared** (optional, for tunnel functionality - auto-downloaded if missing)
 
 ## Installation
 
@@ -57,6 +64,24 @@ Simply run the launcher from the project root directory:
 python launcher.py
 ```
 
+This will start both servers with automatic Cloudflare Tunnel creation for internet access.
+
+### Deployment Modes
+
+```bash
+# Development mode (LAN only, hot reload)
+python launcher.py --dev
+
+# LAN access only (no tunnel, faster startup)
+python launcher.py --lan-only
+
+# Tunnel access only (cloud-first deployment)
+python launcher.py --tunnel-only
+
+# Production mode (named tunnel, optimized build)
+python launcher.py --production
+```
+
 ### Advanced Usage Options
 
 ```bash
@@ -69,36 +94,88 @@ python launcher.py --force-ports
 # Set logging verbosity
 python launcher.py --log-level DEBUG
 
+# Custom tunnel configuration
+python launcher.py --tunnel-type named --tunnel-name my-2048-bot
+
+# Custom ports
+python launcher.py --port 9000 --frontend-port 3000
+
+# Skip QR code generation
+python launcher.py --no-qr
+
+# Quiet mode (minimal output)
+python launcher.py --quiet
+
 # Combine options
 python launcher.py --dev --force-ports --log-level INFO
 ```
 
 ### Command Line Options
 
+#### Operation Modes
 | Option | Description |
 |--------|-------------|
-| `--dev` | Run frontend in Vite dev mode with Hot Module Replacement |
-| `--force-ports` | Force kill processes using required ports (8000, 5173, 5174) |
-| `--log-level` | Set logging level: DEBUG, INFO, WARNING, ERROR (default: INFO) |
+| `--dev` | Development mode - LAN only with hot reload |
+| `--lan-only` | LAN access only - no tunnel created (faster startup) |
+| `--tunnel-only` | Tunnel access only - no LAN serving (cloud-first) |
+| `--production` | Production mode - named tunnel with optimized build |
+
+#### Tunnel Configuration
+| Option | Description |
+|--------|-------------|
+| `--tunnel-type` | Tunnel type: `quick` (temporary) or `named` (persistent) |
+| `--tunnel-name` | Named tunnel identifier (default: "2048-bot") |
+| `--tunnel-domain` | Custom domain for named tunnel (optional) |
+| `--no-tunnel-fallback` | Don't fallback to quick tunnel if named tunnel fails |
+
+#### Network Configuration
+| Option | Description |
+|--------|-------------|
+| `--port` | Backend server port (default: 8000) |
+| `--frontend-port` | Frontend dev server port (default: 5173) |
+| `--host` | Backend server host (default: 0.0.0.0) |
+| `--force-ports` | Force kill processes using required ports |
+
+#### UI and Output
+| Option | Description |
+|--------|-------------|
+| `--no-qr` | Skip QR code generation |
+| `--qr-only` | Show only QR code and essential output |
+| `--no-color` | Disable colored output |
+| `--quiet` | Suppress non-essential output |
+| `--log-level` | Set logging level: DEBUG, INFO, WARNING, ERROR |
+
+#### Advanced Options
+| Option | Description |
+|--------|-------------|
+| `--skip-build` | Skip frontend build step (use existing dist/) |
+| `--skip-deps` | Skip dependency checks |
+| `--cloudflared-path` | Custom path to cloudflared binary |
+| `--timeout` | Startup timeout in seconds (default: 30) |
 
 ### What the Launcher Does
 
-1. **Dependency Check**: Verifies Poetry, Node.js, and npm are installed
+1. **Dependency Check**: Verifies Poetry, Node.js, npm, and cloudflared are installed
 2. **Network Discovery**: Finds the best local IP address for LAN access
 3. **Port Management**: 
-   - Checks that ports 8000 (backend), 5173 (frontend), and 5174 (HMR) are available
+   - Checks that required ports are available
    - Optionally kills conflicting processes with `--force-ports`
    - Provides detailed error messages for port conflicts
 4. **Backend Launch**: 
    - Starts the FastAPI server with external access enabled
    - Monitors stdout/stderr for real-time error reporting
    - Waits for server to be ready with health checks
-5. **Frontend Launch**: 
+5. **Tunnel Creation** (if enabled):
+   - Creates Cloudflare Tunnel for internet access
+   - Supports Quick Tunnel (temporary) or Named Tunnel (persistent)
+   - Automatic fallback from named to quick tunnel
+   - Waits for tunnel URL to be available
+6. **Frontend Launch**: 
    - Starts the Vite development server with LAN access
    - Monitors build process and server output
    - Handles both dev and production modes
-6. **QR Code Generation**: Creates a QR code for mobile access
-7. **Status Monitoring**: 
+7. **QR Code Generation**: Creates QR codes for mobile access (LAN and/or tunnel)
+8. **Status Monitoring**: 
    - Real-time display of process status
    - Shows recent errors and warnings
    - Automatic status updates every 30 seconds
@@ -106,15 +183,28 @@ python launcher.py --dev --force-ports --log-level INFO
 ### Mobile Access
 
 Once the launcher is running, you'll see:
-- A QR code displayed in the terminal
-- The QR code saved as `mobile_access_qr.png`
+- QR codes displayed in the terminal (LAN and/or tunnel)
+- QR codes saved as `mobile_access_qr.png`
 - Access URLs for both desktop and mobile
-- Real-time status of both servers
+- Real-time status of all servers and tunnels
 
-To access on mobile:
+#### LAN Access
+To access on mobile via LAN:
 1. Ensure your phone is on the same Wi-Fi network
-2. Scan the QR code with your phone's camera
+2. Scan the LAN QR code with your phone's camera
 3. The app will open in your mobile browser
+
+#### Internet Access (Tunnel)
+To access from anywhere via tunnel:
+1. Scan the tunnel QR code with your phone's camera
+2. The app will open in your mobile browser
+3. Install as PWA for offline access
+4. Share the tunnel URL with others for remote access
+
+#### PWA Installation
+- **iOS**: Tap the share button (📤) then "Add to Home Screen"
+- **Android**: Tap "Install App" when prompted
+- **Desktop**: Click the install icon in the browser address bar
 
 ### Network Configuration
 
@@ -124,6 +214,38 @@ The launcher automatically:
 - Avoids virtual adapters (WSL, Hyper-V, VPN) when possible
 - Configures CORS headers for secure cross-origin requests
 - Sets up WebSocket connections for real-time updates
+
+### Tunnel Configuration
+
+The launcher supports two types of Cloudflare Tunnels:
+
+#### Quick Tunnel (Default)
+- **No account required** - works immediately
+- **Temporary URL** - changes each time you restart
+- **Perfect for demos** and quick testing
+- **Automatic fallback** if named tunnel fails
+
+#### Named Tunnel (Production)
+- **Requires Cloudflare account** setup
+- **Persistent URL** - same URL every time
+- **Production ready** with auto-reconnect
+- **Custom domains** supported
+- **Better performance** and reliability
+
+To set up a named tunnel:
+```bash
+# Login to Cloudflare (one-time setup)
+cloudflared tunnel login
+
+# Create a named tunnel
+cloudflared tunnel create 2048-bot
+
+# Route DNS (optional - uses cfargotunnel.com by default)
+cloudflared tunnel route dns 2048-bot your-domain.com
+
+# Use with launcher
+python launcher.py --tunnel-type named
+```
 
 ## Enhanced Features
 
@@ -171,6 +293,10 @@ The launcher handles port conflicts intelligently:
 - **Frontend**: 5173
 - **HMR (Hot Module Replacement)**: 5174
 
+### Tunnel URLs
+- **Quick Tunnel**: `https://[random].trycloudflare.com`
+- **Named Tunnel**: `https://[name].cfargotunnel.com` or custom domain
+
 ### Environment Variables
 
 The launcher sets the following environment variables:
@@ -199,25 +325,49 @@ Log levels available:
    netstat -an | grep :8000     # Linux/macOS
    ```
 
-2. **Network Discovery Issues**
+2. **Tunnel Creation Fails**
+   ```bash
+   # Check if cloudflared is installed
+   cloudflared --version
+   
+   # Try LAN-only mode
+   python launcher.py --lan-only
+   
+   # Check firewall settings for outbound connections
+   ```
+
+3. **Named Tunnel Not Working**
+   ```bash
+   # Verify Cloudflare login
+   cloudflared tunnel list
+   
+   # Check tunnel configuration
+   cat ~/.cloudflared/config.yml
+   
+   # Use quick tunnel fallback
+   python launcher.py --tunnel-type quick
+   ```
+
+4. **Network Discovery Issues**
    - Ensure you're connected to a network
    - Check firewall settings
    - Try connecting to the IP address manually
    - Check the log file for detailed network information
 
-3. **Mobile Access Issues**
-   - Ensure phone and computer are on the same network
+5. **Mobile Access Issues**
+   - Ensure phone and computer are on the same network (for LAN access)
    - Check that the mobile browser supports the features used
    - Try accessing the URL directly instead of scanning the QR code
    - Check the launcher logs for connection issues
+   - For tunnel access, ensure internet connectivity on mobile device
 
-4. **Dependency Issues**
+6. **Dependency Issues**
    - Ensure Poetry is properly installed and configured
    - Check that Node.js and npm are in your PATH
    - Try running the installation steps manually
    - Check the log file for detailed error messages
 
-5. **Process Termination Issues**
+7. **Process Termination Issues**
    - The launcher now has enhanced cleanup
    - Check `launcher.log` for cleanup details
    - Use `--force-ports` to resolve port conflicts
@@ -267,11 +417,12 @@ Process output is captured and logged for debugging purposes.
 
 ## Security Considerations
 
-- The launcher only allows connections from the local network
-- CORS is configured to only allow specific origins
-- No external internet access is required
-- All data remains on the local network
-- Process monitoring doesn't expose sensitive information
+- **LAN Mode**: Only allows connections from the local network
+- **Tunnel Mode**: Uses Cloudflare's secure HTTPS tunnels with automatic SSL
+- **CORS**: Configured to only allow specific origins
+- **Data Privacy**: All training data remains on your local machine
+- **Process Monitoring**: Doesn't expose sensitive information
+- **Tunnel Security**: Cloudflare tunnels provide enterprise-grade security
 
 ## Advanced Usage
 

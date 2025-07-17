@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
@@ -37,7 +37,16 @@ except ImportError:
     psutil = None
 
 # Get CORS origins from environment or use defaults
-cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000").split(",")
+default_origins = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000"
+cors_origins = os.getenv("CORS_ORIGINS", default_origins).split(",")
+
+# Add tunnel domains to allowed origins
+tunnel_origins = [
+    "https://*.trycloudflare.com",
+    "https://*.cfargotunnel.com"
+]
+cors_origins.extend(tunnel_origins)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -45,6 +54,12 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Mount static files from frontend build
+frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    app.mount("/static", StaticFiles(directory=str(frontend_dist)), name="static")
+    print(f"[main.py] Serving frontend static files from: {frontend_dist}")
 
 # WebSocket manager for real-time updates
 websocket_manager = WebSocketManager()
@@ -127,11 +142,25 @@ def _update_training_status():
 
 @app.get("/")
 async def root():
+    """Serve the frontend or return API info"""
+    frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+    index_file = frontend_dist / "index.html"
+    
+    # If frontend is built, serve it
+    if index_file.exists():
+        return FileResponse(str(index_file), media_type="text/html")
+    
+    # Otherwise return API info
     return {"message": "2048 Bot Training API", "status": "running"}
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now()}
+
+@app.get("/healthz")
+async def health_check_tunnel():
+    """Health check endpoint for tunnel validation"""
+    return {"status": "healthy", "timestamp": datetime.now(), "tunnel_ready": True}
 
 @app.get("/model/config")
 async def get_model_config():
@@ -950,6 +979,22 @@ async def get_websocket_stats():
 async def get_websocket_performance():
     """Get WebSocket performance statistics"""
     return websocket_manager.get_performance_stats()
+
+# Catch-all route for SPA - must be last
+@app.get("/{path:path}")
+async def catch_all(path: str):
+    """Catch-all route for SPA client-side routing"""
+    # Skip API routes and static files
+    if path.startswith(("api/", "static/", "ws/", "checkpoints/", "training/", "model/")):
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+    index_file = frontend_dist / "index.html"
+    
+    if index_file.exists():
+        return FileResponse(str(index_file), media_type="text/html")
+    
+    raise HTTPException(status_code=404, detail="Frontend not built")
 
 # Remove mock_training_loop in favour of TrainingManager
 

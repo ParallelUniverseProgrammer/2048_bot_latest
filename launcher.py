@@ -620,15 +620,225 @@ class QRCodeGenerator:
 class Launcher:
     """Enhanced launcher with robust error handling and monitoring"""
     
-    def __init__(self, dev_mode: bool = False, force_ports: bool = False, qr_only: bool = False):
+    def __init__(self, dev_mode: bool = False, force_ports: bool = False, qr_only: bool = False,
+                 lan_only: bool = False, tunnel_only: bool = False, tunnel_type: str = "quick",
+                 tunnel_name: str = "2048-bot", tunnel_domain: Optional[str] = None,
+                 no_tunnel_fallback: bool = False, backend_port: int = 8000,
+                 frontend_port: int = 5173, host: str = "0.0.0.0", no_qr: bool = False,
+                 no_color: bool = False, quiet: bool = False, skip_build: bool = False,
+                 skip_deps: bool = False, cloudflared_path: Optional[str] = None,
+                 timeout: int = 30):
         self.logger = Logger()
         self.process_manager = ProcessManager(self.logger)
-        self.backend_port = 8000
-        self.frontend_port = 5173
+        self.backend_port = backend_port
+        self.frontend_port = frontend_port
         self.host_ip = None
         self.dev_mode = dev_mode
         self.force_ports = force_ports
         self.qr_only = qr_only
+        
+        # New tunnel and configuration options
+        self.lan_only = lan_only
+        self.tunnel_only = tunnel_only
+        self.tunnel_type = tunnel_type
+        self.tunnel_name = tunnel_name
+        self.tunnel_domain = tunnel_domain
+        self.no_tunnel_fallback = no_tunnel_fallback
+        self.host = host
+        self.no_qr = no_qr
+        self.no_color = no_color
+        self.quiet = quiet
+        self.skip_build = skip_build
+        self.skip_deps = skip_deps
+        self.cloudflared_path = cloudflared_path or self._find_cloudflared()
+        self.timeout = timeout
+        
+        # Tunnel state
+        self.tunnel_process = None
+        self.tunnel_url = None
+    
+    def _find_cloudflared(self) -> Optional[str]:
+        """Find cloudflared binary in current directory or PATH"""
+        # Check current directory first
+        local_cloudflared = Path("./cloudflared.exe" if platform.system() == "Windows" else "./cloudflared")
+        if local_cloudflared.exists():
+            return str(local_cloudflared)
+        
+        # Check PATH
+        return shutil.which("cloudflared")
+    
+    def _start_tunnel(self) -> Optional[str]:
+        """Start cloudflared tunnel and return the public URL"""
+        if not self.cloudflared_path:
+            if not self.quiet:
+                print(f"{Colors.WARNING}⚠️  cloudflared not found - skipping tunnel creation{Colors.ENDC}")
+            self.logger.warning("cloudflared not found, skipping tunnel")
+            return None
+        
+        if not self.quiet:
+            print(f"{Colors.OKCYAN}🌐 Starting Cloudflare Tunnel...{Colors.ENDC}")
+        self.logger.info("Starting Cloudflare Tunnel")
+        
+        try:
+            if self.tunnel_type == "named":
+                return self._start_named_tunnel()
+            else:
+                return self._start_quick_tunnel()
+        except Exception as e:
+            if not self.quiet:
+                print(f"{Colors.FAIL}❌ Failed to start tunnel: {e}{Colors.ENDC}")
+            self.logger.error(f"Failed to start tunnel: {e}")
+            return None
+    
+    def _start_quick_tunnel(self) -> Optional[str]:
+        """Start a quick tunnel (temporary, no account required)"""
+        cmd = [self.cloudflared_path, "tunnel", "--url", f"http://localhost:{self.backend_port}"]
+        
+        if not self.quiet:
+            print(f"{Colors.OKCYAN}  Starting quick tunnel...{Colors.ENDC}")
+        
+        try:
+            self.tunnel_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+            
+            # Wait for tunnel URL
+            import re
+            tunnel_url = None
+            start_time = time.time()
+            
+            while time.time() - start_time < self.timeout:
+                if not self.tunnel_process.stdout:
+                    break
+                line = self.tunnel_process.stdout.readline()
+                if not line:
+                    break
+                
+                if not self.quiet and self.dev_mode:
+                    print(f"{Colors.OKCYAN}  [cloudflared] {line.strip()}{Colors.ENDC}")
+                
+                # Look for tunnel URL
+                url_match = re.search(r'https://[a-zA-Z0-9-]+\.trycloudflare\.com', line)
+                if url_match:
+                    tunnel_url = url_match.group(0)
+                    break
+            
+            if tunnel_url:
+                self.tunnel_url = tunnel_url
+                if not self.quiet:
+                    print(f"{Colors.OKGREEN}✅ Quick tunnel created: {tunnel_url}{Colors.ENDC}")
+                self.logger.info(f"Quick tunnel created: {tunnel_url}")
+                return tunnel_url
+            else:
+                if not self.quiet:
+                    print(f"{Colors.FAIL}❌ Failed to get tunnel URL within {self.timeout}s{Colors.ENDC}")
+                self.logger.error("Failed to get tunnel URL")
+                return None
+                
+        except Exception as e:
+            if not self.quiet:
+                print(f"{Colors.FAIL}❌ Quick tunnel failed: {e}{Colors.ENDC}")
+            self.logger.error(f"Quick tunnel failed: {e}")
+            return None
+    
+    def _start_named_tunnel(self) -> Optional[str]:
+        """Start a named tunnel (requires Cloudflare account setup)"""
+        if not self.quiet:
+            print(f"{Colors.OKCYAN}  Starting named tunnel: {self.tunnel_name}{Colors.ENDC}")
+        
+        # Check if tunnel exists and is configured
+        config_path = Path.home() / ".cloudflared" / "config.yml"
+        if not config_path.exists():
+            if not self.quiet:
+                print(f"{Colors.WARNING}⚠️  No cloudflared config found at {config_path}{Colors.ENDC}")
+            
+            if not self.no_tunnel_fallback:
+                if not self.quiet:
+                    print(f"{Colors.OKCYAN}  Falling back to quick tunnel...{Colors.ENDC}")
+                return self._start_quick_tunnel()
+            else:
+                if not self.quiet:
+                    print(f"{Colors.FAIL}❌ Named tunnel not configured and fallback disabled{Colors.ENDC}")
+                return None
+        
+        # Build tunnel URL
+        if self.tunnel_domain:
+            tunnel_url = f"https://{self.tunnel_domain}"
+        else:
+            tunnel_url = f"https://{self.tunnel_name}.cfargotunnel.com"
+        
+        try:
+            cmd = [self.cloudflared_path, "tunnel", "--config", str(config_path), "run", self.tunnel_name]
+            
+            self.tunnel_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+            
+            # Wait for tunnel to establish
+            start_time = time.time()
+            while time.time() - start_time < self.timeout:
+                if not self.tunnel_process.stdout:
+                    break
+                line = self.tunnel_process.stdout.readline()
+                if not line:
+                    break
+                
+                if not self.quiet and self.dev_mode:
+                    print(f"{Colors.OKCYAN}  [cloudflared] {line.strip()}{Colors.ENDC}")
+                
+                # Check for successful connection
+                if "Connection established" in line or "Registered tunnel connection" in line:
+                    self.tunnel_url = tunnel_url
+                    if not self.quiet:
+                        print(f"{Colors.OKGREEN}✅ Named tunnel running: {tunnel_url}{Colors.ENDC}")
+                    self.logger.info(f"Named tunnel running: {tunnel_url}")
+                    return tunnel_url
+            
+            # If we get here, tunnel didn't establish in time
+            if not self.quiet:
+                print(f"{Colors.FAIL}❌ Named tunnel failed to establish within {self.timeout}s{Colors.ENDC}")
+            
+            if not self.no_tunnel_fallback:
+                if not self.quiet:
+                    print(f"{Colors.OKCYAN}  Falling back to quick tunnel...{Colors.ENDC}")
+                self._stop_tunnel()
+                return self._start_quick_tunnel()
+            else:
+                return None
+                
+        except Exception as e:
+            if not self.quiet:
+                print(f"{Colors.FAIL}❌ Named tunnel failed: {e}{Colors.ENDC}")
+            self.logger.error(f"Named tunnel failed: {e}")
+            
+            if not self.no_tunnel_fallback:
+                if not self.quiet:
+                    print(f"{Colors.OKCYAN}  Falling back to quick tunnel...{Colors.ENDC}")
+                return self._start_quick_tunnel()
+            else:
+                return None
+    
+    def _stop_tunnel(self):
+        """Stop the tunnel process"""
+        if self.tunnel_process:
+            try:
+                self.tunnel_process.terminate()
+                self.tunnel_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.tunnel_process.kill()
+            except Exception as e:
+                self.logger.error(f"Error stopping tunnel: {e}")
+            finally:
+                self.tunnel_process = None
+                self.tunnel_url = None
         
     def check_dependencies(self) -> bool:
         """Check if required dependencies are installed"""
@@ -990,21 +1200,72 @@ export default defineConfig({{
     
     def show_access_info(self):
         """Display access information and QR code"""
-        frontend_url = f"http://{self.host_ip}:{self.frontend_port}"
-        backend_url = f"http://{self.host_ip}:{self.backend_port}"
+        if not self.quiet:
+            print(f"\n{Colors.HEADER}🚀 2048 Bot Training Server Started!{Colors.ENDC}")
+            print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
         
-        print(f"\n{Colors.HEADER}🚀 2048 Bot Training Server Started!{Colors.ENDC}")
-        print(f"{Colors.OKGREEN}Frontend: {frontend_url}{Colors.ENDC}")
-        print(f"{Colors.OKGREEN}Backend API: {backend_url}{Colors.ENDC}")
-        print(f"{Colors.OKGREEN}Backend Docs: {backend_url}/docs{Colors.ENDC}")
+        # Determine URLs to display
+        urls_to_show = []
+        primary_url = None
         
-        # Generate QR code
-        QRCodeGenerator.generate_qr_code(frontend_url, "mobile_access_qr.png")
+        if not self.tunnel_only:
+            # Show LAN URLs
+            frontend_url = f"http://{self.host_ip}:{self.frontend_port}"
+            backend_url = f"http://{self.host_ip}:{self.backend_port}"
+            
+            if not self.quiet:
+                print(f"{Colors.OKGREEN}🏠 Local Network Access:{Colors.ENDC}")
+                print(f"   Frontend: {frontend_url}")
+                print(f"   Backend API: {backend_url}")
+                print(f"   Backend Docs: {backend_url}/docs")
+            
+            urls_to_show.append(("LAN", frontend_url))
+            if not primary_url:
+                primary_url = frontend_url
+            
+            self.logger.info(f"LAN access - Frontend: {frontend_url}, Backend: {backend_url}")
         
-        print(f"\n{Colors.OKCYAN}📱 Scan the QR code above with your phone to access the app!{Colors.ENDC}")
-        print(f"{Colors.WARNING}Press Ctrl+C to stop the servers{Colors.ENDC}")
+        if self.tunnel_url:
+            # Show tunnel URLs
+            if not self.quiet:
+                print(f"{Colors.OKGREEN}🌐 Public Tunnel Access:{Colors.ENDC}")
+                print(f"   Frontend: {self.tunnel_url}")
+                print(f"   Backend API: {self.tunnel_url}")
+                print(f"   Backend Docs: {self.tunnel_url}/docs")
+            
+            urls_to_show.append(("Tunnel", self.tunnel_url))
+            # Tunnel takes priority as primary URL for QR code
+            primary_url = self.tunnel_url
+            
+            self.logger.info(f"Tunnel access: {self.tunnel_url}")
         
-        self.logger.info(f"Servers started successfully - Frontend: {frontend_url}, Backend: {backend_url}")
+        # Generate QR code for primary URL
+        if primary_url and not self.no_qr:
+            if not self.quiet:
+                print(f"\n{Colors.OKCYAN}📱 QR Code for Mobile Access:{Colors.ENDC}")
+            
+            QRCodeGenerator.generate_qr_code(primary_url, "mobile_access_qr.png")
+            
+            if not self.quiet:
+                print(f"{Colors.OKCYAN}Scan the QR code above with your phone to access the app!{Colors.ENDC}")
+        
+        # Show usage instructions
+        if not self.quiet:
+            print(f"\n{Colors.HEADER}📋 Usage Instructions:{Colors.ENDC}")
+            if self.tunnel_url:
+                print(f"🌐 Remote access: Share the tunnel URL with anyone")
+                print(f"📱 Mobile PWA: Install from tunnel URL for offline access")
+            if not self.tunnel_only:
+                print(f"🏠 Local access: Use LAN URL for faster local development")
+            print(f"🎮 Start training: Click 'Start Training' in the web interface")
+            print(f"\n{Colors.WARNING}Press Ctrl+C to stop the servers{Colors.ENDC}")
+        
+        # Log summary
+        log_msg = "Servers started successfully"
+        if urls_to_show:
+            url_summary = ", ".join([f"{name}: {url}" for name, url in urls_to_show])
+            log_msg += f" - {url_summary}"
+        self.logger.info(log_msg)
     
     def show_status(self):
         """Show current status of all processes"""
@@ -1092,14 +1353,23 @@ export default defineConfig({{
                     if not self.start_backend():
                         print(f"\n{Colors.FAIL}Failed at: {step}{Colors.ENDC}")
                         return False
+                    # Start tunnel if needed
+                    if not self.lan_only:
+                        self.tunnel_url = self._start_tunnel()
                 elif step == 'Starting frontend':
                     if not self.start_frontend():
                         print(f"\n{Colors.FAIL}Failed at: {step}{Colors.ENDC}")
                         return False
                 time.sleep(0.5)
             # Final pretty QR code screen
-            frontend_url = f"http://{self.host_ip}:{self.frontend_port}"
-            backend_url = f"http://{self.host_ip}:{self.backend_port}"
+            if self.tunnel_url:
+                # Use tunnel URL for QR code (preferred for mobile access)
+                frontend_url = self.tunnel_url
+                backend_url = self.tunnel_url
+            else:
+                # Fallback to LAN URLs
+                frontend_url = f"http://{self.host_ip}:{self.frontend_port}"
+                backend_url = f"http://{self.host_ip}:{self.backend_port}"
             self._qr_pretty_qr_screen(frontend_url, backend_url)
             return True
         else:
@@ -1115,6 +1385,11 @@ export default defineConfig({{
                     return False
                 if not self.start_backend():
                     return False
+                
+                # Start tunnel if needed
+                if not self.lan_only:
+                    self.tunnel_url = self._start_tunnel()
+                
                 if not self.start_frontend():
                     return False
                 self.show_access_info()
@@ -1134,6 +1409,7 @@ export default defineConfig({{
                 return False
             finally:
                 self.process_manager.cleanup()
+                self._stop_tunnel()
                 temp_config = "frontend/vite.config.temp.ts"
                 if os.path.exists(temp_config):
                     try:
@@ -1146,15 +1422,120 @@ export default defineConfig({{
 
 def main():
     """Main entry point"""
-    parser = argparse.ArgumentParser(description="Launch 2048 training stack")
-    parser.add_argument("--dev", action="store_true", help="Run frontend in Vite dev mode (HMR)")
-    parser.add_argument("--force-ports", action="store_true", help="Force kill processes using required ports")
-    parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], 
-                       default="INFO", help="Set logging level")
-    parser.add_argument("--qr-only", action="store_true", help="Show only QR code and essential output")
+    parser = argparse.ArgumentParser(
+        description="Launch 2048 training stack with various deployment options",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python launcher.py                           # Default: LAN + tunnel with QR code
+  python launcher.py --lan-only                # LAN access only (no tunnel)
+  python launcher.py --tunnel-only             # Tunnel access only (no LAN)
+  python launcher.py --dev                     # Development mode with hot reload
+  python launcher.py --tunnel-type named       # Use named tunnel (requires setup)
+  python launcher.py --port 9000               # Custom backend port
+  python launcher.py --no-qr                   # Skip QR code generation
+  python launcher.py --qr-only                 # Show only QR code and essential output
+        """
+    )
+    
+    # Core operation modes
+    mode_group = parser.add_argument_group('Operation Modes')
+    mode_group.add_argument("--lan-only", action="store_true", 
+                           help="LAN access only - no tunnel created (faster startup)")
+    mode_group.add_argument("--tunnel-only", action="store_true", 
+                           help="Tunnel access only - no LAN serving (cloud-first)")
+    mode_group.add_argument("--dev", action="store_true", 
+                           help="Development mode - hot reload, detailed logs, LAN only")
+    mode_group.add_argument("--production", action="store_true", 
+                           help="Production mode - optimized build, tunnel preferred")
+    
+    # Tunnel configuration
+    tunnel_group = parser.add_argument_group('Tunnel Configuration')
+    tunnel_group.add_argument("--tunnel-type", choices=["quick", "named"], default="quick",
+                             help="Tunnel type: 'quick' (temporary) or 'named' (persistent)")
+    tunnel_group.add_argument("--tunnel-name", default="2048-bot",
+                             help="Named tunnel identifier (for --tunnel-type named)")
+    tunnel_group.add_argument("--tunnel-domain", 
+                             help="Custom domain for named tunnel (optional)")
+    tunnel_group.add_argument("--no-tunnel-fallback", action="store_true",
+                             help="Don't fallback to quick tunnel if named tunnel fails")
+    
+    # Network configuration
+    network_group = parser.add_argument_group('Network Configuration')
+    network_group.add_argument("--port", type=int, default=8000,
+                              help="Backend server port (default: 8000)")
+    network_group.add_argument("--frontend-port", type=int, default=5173,
+                              help="Frontend dev server port (default: 5173)")
+    network_group.add_argument("--host", default="0.0.0.0",
+                              help="Backend server host (default: 0.0.0.0)")
+    network_group.add_argument("--force-ports", action="store_true", 
+                              help="Force kill processes using required ports")
+    
+    # Output and UI configuration
+    ui_group = parser.add_argument_group('UI and Output')
+    ui_group.add_argument("--no-qr", action="store_true", 
+                         help="Skip QR code generation")
+    ui_group.add_argument("--qr-only", action="store_true", 
+                         help="Show only QR code and essential output")
+    ui_group.add_argument("--no-color", action="store_true", 
+                         help="Disable colored output")
+    ui_group.add_argument("--quiet", action="store_true", 
+                         help="Suppress non-essential output")
+    ui_group.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], 
+                         default="INFO", help="Set logging level")
+    
+    # Advanced options
+    advanced_group = parser.add_argument_group('Advanced Options')
+    advanced_group.add_argument("--skip-build", action="store_true",
+                               help="Skip frontend build step (use existing dist/)")
+    advanced_group.add_argument("--skip-deps", action="store_true",
+                               help="Skip dependency checks")
+    advanced_group.add_argument("--cloudflared-path", 
+                               help="Custom path to cloudflared binary")
+    advanced_group.add_argument("--timeout", type=int, default=30,
+                               help="Startup timeout in seconds")
+    
     args = parser.parse_args()
-
-    launcher = Launcher(dev_mode=args.dev, force_ports=args.force_ports, qr_only=args.qr_only)
+    
+    # Validate argument combinations
+    if args.lan_only and args.tunnel_only:
+        parser.error("Cannot specify both --lan-only and --tunnel-only")
+    
+    if args.dev and args.production:
+        parser.error("Cannot specify both --dev and --production")
+    
+    if args.qr_only and args.no_qr:
+        parser.error("Cannot specify both --qr-only and --no-qr")
+    
+    # Auto-configure based on mode
+    if args.dev:
+        args.lan_only = True  # Dev mode implies LAN only
+        args.log_level = "DEBUG"
+    
+    if args.production:
+        args.tunnel_type = "named"  # Production prefers named tunnels
+    
+    launcher = Launcher(
+        dev_mode=args.dev,
+        force_ports=args.force_ports,
+        qr_only=args.qr_only,
+        lan_only=args.lan_only,
+        tunnel_only=args.tunnel_only,
+        tunnel_type=args.tunnel_type,
+        tunnel_name=args.tunnel_name,
+        tunnel_domain=args.tunnel_domain,
+        no_tunnel_fallback=args.no_tunnel_fallback,
+        backend_port=args.port,
+        frontend_port=args.frontend_port,
+        host=args.host,
+        no_qr=args.no_qr,
+        no_color=args.no_color,
+        quiet=args.quiet,
+        skip_build=args.skip_build,
+        skip_deps=args.skip_deps,
+        cloudflared_path=args.cloudflared_path,
+        timeout=args.timeout
+    )
     success = launcher.run()
     sys.exit(0 if success else 1)
 

@@ -9,8 +9,14 @@ const getBackendUrl = (): string => {
     return (window as any).__BACKEND_URL__
   }
   
+  // Check if we're running on a tunnel domain (*.trycloudflare.com or *.cfargotunnel.com)
+  const { hostname, protocol } = window.location
+  if (hostname.includes('.trycloudflare.com') || hostname.includes('.cfargotunnel.com')) {
+    // We're accessing via tunnel - use the same origin for API calls
+    return `${protocol}//${hostname}`
+  }
+  
   // Fallback: use current hostname so production preview on LAN works
-  const { protocol, hostname } = window.location
   const backendProtocol = protocol === 'https:' ? 'https:' : 'http:'
   return `${backendProtocol}//${hostname}:8000`
 }
