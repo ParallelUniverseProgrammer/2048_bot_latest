@@ -4,19 +4,22 @@ import { Clock, Target, TrendingUp, Timer, Zap, Scale, Activity, GitBranch } fro
 import { useTrainingStore } from '../stores/trainingStore'
 
 const TrainingMetrics: React.FC = () => {
-  const { trainingData, isTraining } = useTrainingStore()
+  const { isTraining, getCurrentTrainingData } = useTrainingStore()
   const [currentElapsedTime, setCurrentElapsedTime] = useState(0)
   const [progressAnimation, setProgressAnimation] = useState(0)
 
+  // Get current training data with fallback
+  const currentTrainingData = getCurrentTrainingData()
+
   // Update elapsed time in real-time
   useEffect(() => {
-    if (!isTraining || !trainingData?.wall_clock_elapsed) {
-      setCurrentElapsedTime(trainingData?.wall_clock_elapsed || 0)
+    if (!isTraining || !currentTrainingData?.wall_clock_elapsed) {
+      setCurrentElapsedTime(currentTrainingData?.wall_clock_elapsed || 0)
       return
     }
 
     // Calculate the base time when we received the last update
-    const lastUpdateTime = Date.now() / 1000 - trainingData.wall_clock_elapsed
+    const lastUpdateTime = Date.now() / 1000 - currentTrainingData.wall_clock_elapsed
     
     // Update elapsed time every second
     const interval = setInterval(() => {
@@ -25,11 +28,11 @@ const TrainingMetrics: React.FC = () => {
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [isTraining, trainingData?.wall_clock_elapsed])
+  }, [isTraining, currentTrainingData?.wall_clock_elapsed])
 
   // Animated progress indicator for training activity
   useEffect(() => {
-    if (!isTraining || !trainingData?.is_training_active) {
+    if (!isTraining || !currentTrainingData?.is_training_active) {
       setProgressAnimation(0)
       return
     }
@@ -43,7 +46,7 @@ const TrainingMetrics: React.FC = () => {
     }, 100)
 
     return () => clearInterval(interval)
-  }, [isTraining, trainingData?.is_training_active])
+  }, [isTraining, currentTrainingData?.is_training_active])
 
   // Helper function to format time duration
   const formatTime = (seconds: number): string => {
@@ -71,32 +74,32 @@ const TrainingMetrics: React.FC = () => {
 
   // Calculate estimated time to next episode
   const getNextEpisodeEstimate = (): string => {
-    if (!trainingData?.next_episode_estimate || trainingData.next_episode_estimate <= 0) {
+    if (!currentTrainingData?.next_episode_estimate || currentTrainingData.next_episode_estimate <= 0) {
       return 'Calculating...'
     }
-    return formatTime(trainingData.next_episode_estimate)
+    return formatTime(currentTrainingData.next_episode_estimate)
   }
 
   const metrics = [
     {
       icon: Zap,
       label: 'Speed',
-      value: trainingData?.training_speed ? formatSpeed(trainingData.training_speed) : '0.0 eps/min',
+      value: currentTrainingData?.training_speed ? formatSpeed(currentTrainingData.training_speed) : '0.0 eps/min',
       color: 'text-blue-400',
       bgColor: 'bg-blue-500/20',
     },
     {
       icon: Target,
       label: 'Avg Game Length',
-      value: trainingData?.avg_game_length ? `${Math.round(trainingData.avg_game_length)} moves` : '0 moves',
+      value: currentTrainingData?.avg_game_length ? `${Math.round(currentTrainingData.avg_game_length)} moves` : '0 moves',
       color: 'text-green-400',
       bgColor: 'bg-green-500/20',
     },
     {
       icon: TrendingUp,
       label: 'Min/Max Length',
-      value: trainingData?.min_game_length && trainingData?.max_game_length 
-        ? `${trainingData.min_game_length}/${trainingData.max_game_length}` 
+      value: currentTrainingData?.min_game_length && currentTrainingData?.max_game_length 
+        ? `${currentTrainingData.min_game_length}/${currentTrainingData.max_game_length}` 
         : '0/0',
       color: 'text-purple-400',
       bgColor: 'bg-purple-500/20',
@@ -111,14 +114,14 @@ const TrainingMetrics: React.FC = () => {
     {
       icon: Timer,
       label: 'Next Checkpoint',
-      value: trainingData?.estimated_time_to_checkpoint ? formatTime(trainingData.estimated_time_to_checkpoint) : '0s',
+      value: currentTrainingData?.estimated_time_to_checkpoint ? formatTime(currentTrainingData.estimated_time_to_checkpoint) : '0s',
       color: 'text-cyan-400',
       bgColor: 'bg-cyan-500/20',
     },
     {
       icon: Scale,
       label: 'Load Balance',
-      value: trainingData?.load_balancing_reward ? `${trainingData.load_balancing_reward.toFixed(3)}` : '0.000',
+      value: currentTrainingData?.load_balancing_reward ? `${currentTrainingData.load_balancing_reward.toFixed(3)}` : '0.000',
       color: 'text-pink-400',
       bgColor: 'bg-pink-500/20',
     },
@@ -126,15 +129,15 @@ const TrainingMetrics: React.FC = () => {
     {
       icon: Activity,
       label: 'Starvation Severity',
-      value: trainingData?.avg_starvation_severity ? `${(trainingData.avg_starvation_severity * 100).toFixed(1)}%` : '0.0%',
-      color: trainingData?.avg_starvation_severity ? (trainingData.avg_starvation_severity > 0.5 ? 'text-red-400' : trainingData.avg_starvation_severity > 0.2 ? 'text-yellow-400' : 'text-green-400') : 'text-gray-400',
+      value: currentTrainingData?.avg_starvation_severity ? `${(currentTrainingData.avg_starvation_severity * 100).toFixed(1)}%` : '0.0%',
+      color: currentTrainingData?.avg_starvation_severity ? (currentTrainingData.avg_starvation_severity > 0.5 ? 'text-red-400' : currentTrainingData.avg_starvation_severity > 0.2 ? 'text-yellow-400' : 'text-green-400') : 'text-gray-400',
       bgColor: 'bg-red-500/20',
     },
     {
       icon: GitBranch,
       label: 'Recovery Rate',
-      value: trainingData?.expert_recovery_rates ? `${Object.keys(trainingData.expert_recovery_rates).length} experts` : '0 experts',
-      color: trainingData?.expert_recovery_rates && Object.keys(trainingData.expert_recovery_rates).length > 0 ? 'text-green-400' : 'text-gray-400',
+      value: currentTrainingData?.expert_recovery_rates ? `${Object.keys(currentTrainingData.expert_recovery_rates).length} experts` : '0 experts',
+      color: currentTrainingData?.expert_recovery_rates && Object.keys(currentTrainingData.expert_recovery_rates).length > 0 ? 'text-green-400' : 'text-gray-400',
       bgColor: 'bg-green-500/20',
     },
   ]
@@ -142,7 +145,7 @@ const TrainingMetrics: React.FC = () => {
   return (
     <div className="space-y-4">
       {/* Animated Training Progress Indicator */}
-      {isTraining && trainingData?.is_training_active && (
+      {isTraining && currentTrainingData?.is_training_active && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}

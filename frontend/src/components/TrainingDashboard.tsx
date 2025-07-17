@@ -5,14 +5,14 @@ import {
   TrendingDown, Brain, Zap, Target, Activity,
   Clock, Gauge, BarChart3, TrendingUpIcon, TrendingDownIcon, 
   CheckCircle, AlertTriangle, Info, Star, Scale, GitBranch,
-  Play, Pause, AlertTriangle as StopIcon
+  Play, Pause, AlertTriangle as StopIcon, Save
 } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 import { useDeviceDetection } from '../utils/deviceDetection'
+import config from '../utils/config'
 
 const TrainingDashboard: React.FC = () => {
   const { 
-    trainingData, 
     lossHistory, 
     scoreHistory, 
     isTraining, 
@@ -24,6 +24,7 @@ const TrainingDashboard: React.FC = () => {
     setModelSize, 
     loadingStates,
     isWaitingForFirstData,
+    getCurrentTrainingData,
     startTraining,
     pauseTraining,
     resumeTraining,
@@ -33,9 +34,15 @@ const TrainingDashboard: React.FC = () => {
   const { displayMode } = useDeviceDetection()
   const isMobile = displayMode === 'mobile'
   const [activeTab, setActiveTab] = useState<'core' | 'trends' | 'stats'>('core')
+  
+  // NEW: Manual checkpoint state
+  const [isCreatingCheckpoint, setIsCreatingCheckpoint] = useState(false)
 
   // Use isWaitingForFirstData from store
   const showWaitingForFirstData = isWaitingForFirstData
+
+  // Get current training data with fallback
+  const currentTrainingData = getCurrentTrainingData()
 
   // Training control functions
   const handleTrainingControl = async (action: 'start' | 'pause' | 'resume' | 'stop') => {
@@ -56,6 +63,38 @@ const TrainingDashboard: React.FC = () => {
       }
     } catch (error) {
       console.error('Training control error:', error)
+    }
+  }
+
+  // NEW: Manual checkpoint creation
+  const handleManualCheckpoint = async () => {
+    if (!isTraining) {
+      console.warn('Cannot create checkpoint: training not active')
+      return
+    }
+    
+    try {
+      setIsCreatingCheckpoint(true)
+      const res = await fetch(`${config.api.baseUrl}/training/checkpoint/manual`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      if (!res.ok) {
+        throw new Error('Failed to create manual checkpoint')
+      }
+      
+      const result = await res.json()
+      console.log('Manual checkpoint created:', result.checkpoint_id)
+      
+      // Show success feedback (could be enhanced with a toast notification)
+      alert(`Checkpoint created successfully: ${result.checkpoint_id}`)
+      
+    } catch (error) {
+      console.error('Manual checkpoint error:', error)
+      alert(`Failed to create checkpoint: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsCreatingCheckpoint(false)
     }
   }
 
@@ -138,7 +177,7 @@ const TrainingDashboard: React.FC = () => {
   }, [scoreHistory, isMobile])
 
   const actionDistributionData = useMemo(() => {
-    const actions = trainingData?.actions || [0.25, 0.25, 0.25, 0.25]
+    const actions = currentTrainingData?.actions || [0.25, 0.25, 0.25, 0.25]
 
     return {
       labels: isMobile ? ['↑', '↓', '←', '→'] : ['Up', 'Down', 'Left', 'Right'],
@@ -158,10 +197,10 @@ const TrainingDashboard: React.FC = () => {
         },
       ],
     }
-  }, [trainingData?.actions, isMobile])
+  }, [currentTrainingData?.actions, isMobile])
 
   const expertUsageData = useMemo(() => {
-    const expertUsage = trainingData?.expert_usage || [0.2, 0.2, 0.2, 0.2, 0.2]
+    const expertUsage = currentTrainingData?.expert_usage || [0.2, 0.2, 0.2, 0.2, 0.2]
 
     return {
       labels: expertUsage.map((_, index) => isMobile ? `E${index + 1}` : `Expert ${index + 1}`),
@@ -178,7 +217,7 @@ const TrainingDashboard: React.FC = () => {
         },
       ],
     }
-  }, [trainingData?.expert_usage, isMobile])
+  }, [currentTrainingData?.expert_usage, isMobile])
 
   // Enhanced chart options for larger charts
   const enhancedChartOptions = {
@@ -306,21 +345,21 @@ const TrainingDashboard: React.FC = () => {
 
   // Enhanced metrics calculations
   const getScoreTrendIcon = () => {
-    const trend = trainingData?.score_trend || 0
+    const trend = currentTrainingData?.score_trend || 0
     if (trend > 100) return <TrendingUpIcon className="w-4 h-4 text-green-400" />
     if (trend < -100) return <TrendingDownIcon className="w-4 h-4 text-red-400" />
     return <BarChart3 className="w-4 h-4 text-yellow-400" />
   }
 
   const getLossTrendIcon = () => {
-    const trend = trainingData?.loss_trend || 0
+    const trend = currentTrainingData?.loss_trend || 0
     if (trend < -0.1) return <TrendingDownIcon className="w-4 h-4 text-green-400" />
     if (trend > 0.1) return <TrendingUpIcon className="w-4 h-4 text-red-400" />
     return <BarChart3 className="w-4 h-4 text-yellow-400" />
   }
 
   const getEfficiencyStatus = () => {
-    const efficiency = trainingData?.training_efficiency
+    const efficiency = currentTrainingData?.training_efficiency
     if (!efficiency) return { icon: <Info className="w-4 h-4 text-gray-400" />, color: 'text-gray-400' }
     
     const avgEfficiency = (efficiency.score_consistency + efficiency.loss_stability + 
@@ -334,7 +373,7 @@ const TrainingDashboard: React.FC = () => {
   const metrics = [
     {
       title: 'Current Score',
-      value: trainingData?.score?.toLocaleString() || '0',
+      value: currentTrainingData?.score?.toLocaleString() || '0',
       icon: Target,
       color: 'text-green-400',
       bgColor: 'bg-green-500/20',
@@ -342,8 +381,8 @@ const TrainingDashboard: React.FC = () => {
     {
       title: 'Training Loss',
       value: (() => {
-        if (trainingData?.loss != null) {
-          return trainingData.loss.toFixed(4)
+        if (currentTrainingData?.loss != null) {
+          return currentTrainingData.loss.toFixed(4)
         }
         if (lastPolicyLoss != null && lastValueLoss != null) {
           return (lastPolicyLoss + lastValueLoss).toFixed(4)
@@ -356,28 +395,28 @@ const TrainingDashboard: React.FC = () => {
     },
     {
       title: 'Learning Rate',
-      value: trainingData?.learning_rate?.toFixed(6) || '0.000000',
+      value: currentTrainingData?.learning_rate?.toFixed(6) || '0.000000',
       icon: Zap,
       color: 'text-blue-400',
       bgColor: 'bg-blue-500/20',
     },
     {
       title: 'Training Speed',
-      value: `${trainingData?.training_speed?.toFixed(1) || '0.0'} ep/min`,
+      value: `${currentTrainingData?.training_speed?.toFixed(1) || '0.0'} ep/min`,
       icon: Gauge,
       color: 'text-purple-400',
       bgColor: 'bg-purple-500/20',
     },
     {
       title: 'Avg Game Length',
-      value: trainingData?.avg_game_length?.toFixed(0) || '0',
+      value: currentTrainingData?.avg_game_length?.toFixed(0) || '0',
       icon: Clock,
       color: 'text-orange-400',
       bgColor: 'bg-orange-500/20',
     },
     {
       title: 'GPU Memory',
-      value: `${trainingData?.gpu_memory?.toFixed(1) || '0.0'}GB`,
+      value: `${currentTrainingData?.gpu_memory?.toFixed(1) || '0.0'}GB`,
       icon: Brain,
       color: 'text-cyan-400',
       bgColor: 'bg-cyan-500/20',
@@ -387,21 +426,21 @@ const TrainingDashboard: React.FC = () => {
   const enhancedMetrics = [
     {
       title: 'Score Trend',
-      value: trainingData?.score_trend ? `${trainingData.score_trend > 0 ? '+' : ''}${trainingData.score_trend.toFixed(0)}` : 'N/A',
+      value: currentTrainingData?.score_trend ? `${currentTrainingData.score_trend > 0 ? '+' : ''}${currentTrainingData.score_trend.toFixed(0)}` : 'N/A',
       icon: getScoreTrendIcon(),
-      color: trainingData?.score_trend ? (trainingData.score_trend > 100 ? 'text-green-400' : trainingData.score_trend < -100 ? 'text-red-400' : 'text-yellow-400') : 'text-gray-400',
+      color: currentTrainingData?.score_trend ? (currentTrainingData.score_trend > 100 ? 'text-green-400' : currentTrainingData.score_trend < -100 ? 'text-red-400' : 'text-yellow-400') : 'text-gray-400',
       bgColor: 'bg-gray-500/20',
     },
     {
       title: 'Loss Trend',
-      value: trainingData?.loss_trend ? `${trainingData.loss_trend > 0 ? '+' : ''}${trainingData.loss_trend.toFixed(3)}` : 'N/A',
+      value: currentTrainingData?.loss_trend ? `${currentTrainingData.loss_trend > 0 ? '+' : ''}${currentTrainingData.loss_trend.toFixed(3)}` : 'N/A',
       icon: getLossTrendIcon(),
-      color: trainingData?.loss_trend ? (trainingData.loss_trend < -0.1 ? 'text-green-400' : trainingData.loss_trend > 0.1 ? 'text-red-400' : 'text-yellow-400') : 'text-gray-400',
+      color: currentTrainingData?.loss_trend ? (currentTrainingData.loss_trend < -0.1 ? 'text-green-400' : currentTrainingData.loss_trend > 0.1 ? 'text-red-400' : 'text-yellow-400') : 'text-gray-400',
       bgColor: 'bg-gray-500/20',
     },
     {
       title: 'Training Efficiency',
-      value: trainingData?.training_efficiency ? `${((trainingData.training_efficiency.score_consistency + trainingData.training_efficiency.loss_stability + trainingData.training_efficiency.improvement_rate + trainingData.training_efficiency.plateau_detection) / 4 * 100).toFixed(0)}%` : 'N/A',
+      value: currentTrainingData?.training_efficiency ? `${((currentTrainingData.training_efficiency.score_consistency + currentTrainingData.training_efficiency.loss_stability + currentTrainingData.training_efficiency.improvement_rate + currentTrainingData.training_efficiency.plateau_detection) / 4 * 100).toFixed(0)}%` : 'N/A',
       icon: getEfficiencyStatus().icon,
       color: getEfficiencyStatus().color,
       bgColor: 'bg-gray-500/20',
@@ -409,7 +448,7 @@ const TrainingDashboard: React.FC = () => {
     {
       title: 'Best Max Tile',
       value: (() => {
-        const frequency = trainingData?.max_tile_frequency
+        const frequency = currentTrainingData?.max_tile_frequency
         if (!frequency || Object.keys(frequency).length === 0) return 'N/A'
         const maxTile = Math.max(...Object.keys(frequency).map(Number))
         return maxTile.toString()
@@ -420,30 +459,30 @@ const TrainingDashboard: React.FC = () => {
     },
     {
       title: 'Load Balance',
-      value: trainingData?.load_balancing_reward ? `${trainingData.load_balancing_reward.toFixed(3)}` : 'N/A',
+      value: currentTrainingData?.load_balancing_reward ? `${currentTrainingData.load_balancing_reward.toFixed(3)}` : 'N/A',
       icon: <Scale className="w-4 h-4 text-pink-400" />,
       color: 'text-pink-400',
       bgColor: 'bg-pink-500/20',
     },
     {
       title: 'Expert Starvation',
-      value: trainingData?.expert_starvation_rate ? `${(trainingData.expert_starvation_rate * 100).toFixed(1)}%` : 'N/A',
+      value: currentTrainingData?.expert_starvation_rate ? `${(currentTrainingData.expert_starvation_rate * 100).toFixed(1)}%` : 'N/A',
       icon: <AlertTriangle className="w-4 h-4 text-red-400" />,
-      color: trainingData?.expert_starvation_rate ? (trainingData.expert_starvation_rate > 0.1 ? 'text-red-400' : trainingData.expert_starvation_rate > 0.05 ? 'text-yellow-400' : 'text-green-400') : 'text-gray-400',
+      color: currentTrainingData?.expert_starvation_rate ? (currentTrainingData.expert_starvation_rate > 0.1 ? 'text-red-400' : currentTrainingData.expert_starvation_rate > 0.05 ? 'text-yellow-400' : 'text-green-400') : 'text-gray-400',
       bgColor: 'bg-red-500/20',
     },
     {
       title: 'Sparsity Score',
-      value: trainingData?.avg_sparsity_score ? `${(trainingData.avg_sparsity_score * 100).toFixed(0)}%` : 'N/A',
+      value: currentTrainingData?.avg_sparsity_score ? `${(currentTrainingData.avg_sparsity_score * 100).toFixed(0)}%` : 'N/A',
       icon: <GitBranch className="w-4 h-4 text-blue-400" />,
-      color: trainingData?.avg_sparsity_score ? (trainingData.avg_sparsity_score > 0.75 ? 'text-green-400' : trainingData.avg_sparsity_score > 0.5 ? 'text-yellow-400' : 'text-red-400') : 'text-gray-400',
+      color: currentTrainingData?.avg_sparsity_score ? (currentTrainingData.avg_sparsity_score > 0.75 ? 'text-green-400' : currentTrainingData.avg_sparsity_score > 0.5 ? 'text-yellow-400' : 'text-red-400') : 'text-gray-400',
       bgColor: 'bg-blue-500/20',
     },
     {
       title: 'Balance Quality',
-      value: trainingData?.avg_balance_quality ? `${(trainingData.avg_balance_quality * 100).toFixed(0)}%` : 'N/A',
+      value: currentTrainingData?.avg_balance_quality ? `${(currentTrainingData.avg_balance_quality * 100).toFixed(0)}%` : 'N/A',
       icon: <BarChart3 className="w-4 h-4 text-green-400" />,
-      color: trainingData?.avg_balance_quality ? (trainingData.avg_balance_quality > 0.8 ? 'text-green-400' : trainingData.avg_balance_quality > 0.6 ? 'text-yellow-400' : 'text-red-400') : 'text-gray-400',
+      color: currentTrainingData?.avg_balance_quality ? (currentTrainingData.avg_balance_quality > 0.8 ? 'text-green-400' : currentTrainingData.avg_balance_quality > 0.6 ? 'text-yellow-400' : 'text-red-400') : 'text-gray-400',
       bgColor: 'bg-green-500/20',
     },
   ]
@@ -528,6 +567,16 @@ const TrainingDashboard: React.FC = () => {
             >
               <Play className="w-3 h-3 mr-1" />
               Start
+            </button>
+          )}
+          {isTraining && (
+            <button
+              onClick={handleManualCheckpoint}
+              className="flex items-center px-3 py-1.5 rounded-xl text-xs font-medium text-white bg-purple-500 hover:bg-purple-600 transition-colors"
+              disabled={loadingStates.isTrainingStarting || !isConnected || isCreatingCheckpoint}
+            >
+              <Save className="w-3 h-3 mr-1" />
+              {isCreatingCheckpoint ? 'Creating...' : 'Manual Checkpoint'}
             </button>
           )}
           {isTraining && (

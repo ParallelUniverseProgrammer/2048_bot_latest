@@ -69,11 +69,16 @@ class TrainingManager:
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         self.checkpoint_manager = CheckpointManager(self.checkpoint_dir)
         
+        # NEW: Checkpoint configuration
+        self._checkpoint_interval = 50  # Default: save every 50 episodes
+        self._long_run_mode = False  # Default: keep all checkpoints
+        self._current_run_id = None  # Track current training run
+        self._last_checkpoint_path = None  # Track last checkpoint for long run mode
+        
         # Metrics tracking
         self._start_time: Optional[float] = None
         self._game_lengths: List[int] = []
         self._episode_start_times: List[float] = []
-        self._checkpoint_interval = 50  # Reduced from 100 to 50 for more frequent checkpoints
         
         # Enhanced metrics tracking
         self._recent_scores: List[int] = []  # Last 100 scores for trend analysis
@@ -171,6 +176,39 @@ class TrainingManager:
         from app.training.ppo_trainer import TimingLogger
         return TimingLogger("logs/training_manager_timing.log")
 
+    # ------------------------------------------------------------------ Checkpoint Configuration
+    def set_checkpoint_interval(self, interval: int):
+        """Set the interval between automatic checkpoints (in episodes)"""
+        if interval < 1:
+            raise ValueError("Checkpoint interval must be at least 1 episode")
+        self._checkpoint_interval = interval
+        print(f"Checkpoint interval set to {interval} episodes")
+
+    def set_long_run_mode(self, enabled: bool):
+        """Enable/disable long run mode (only keep latest checkpoint from current run)"""
+        self._long_run_mode = enabled
+        if enabled:
+            self._current_run_id = f"run_{int(time.time())}"
+            print(f"Long run mode enabled with run ID: {self._current_run_id}")
+        else:
+            self._current_run_id = None
+            print("Long run mode disabled")
+
+    def get_checkpoint_config(self) -> Dict[str, Any]:
+        """Get current checkpoint configuration"""
+        return {
+            'interval': self._checkpoint_interval,
+            'long_run_mode': self._long_run_mode,
+            'current_run_id': self._current_run_id,
+            'next_checkpoint_episode': self._get_next_checkpoint_episode()
+        }
+
+    def _get_next_checkpoint_episode(self) -> int:
+        """Calculate the next episode when a checkpoint will be saved"""
+        if self.current_episode == 0:
+            return self._checkpoint_interval
+        return ((self.current_episode // self._checkpoint_interval) + 1) * self._checkpoint_interval
+
     # ------------------------------------------------------------------ Control
     def update_config(self, config_dict: Dict[str, Any]):
         """Update training configuration"""
@@ -259,6 +297,11 @@ class TrainingManager:
         self.is_training = True
         self.is_paused = False
         self._start_time = time.time()  # Track start time for speed calculation
+        
+        # NEW: Initialize run tracking for long run mode
+        if self._long_run_mode and not self._current_run_id:
+            self._current_run_id = f"run_{int(time.time())}"
+            print(f"Training run started with ID: {self._current_run_id}")
         
         # Send training start message (handle both sync and async contexts)
         try:
@@ -709,11 +752,24 @@ class TrainingManager:
         checkpoint_path = Path(self.checkpoint_dir) / f"{checkpoint_id}.pt"
         checkpoint_path = checkpoint_path.resolve()  # Ensure absolute path
         
+        # NEW: Handle long run mode - delete previous checkpoint from this run
+        if self._long_run_mode and self._current_run_id and self._last_checkpoint_path:
+            try:
+                if self._last_checkpoint_path.exists():
+                    self._last_checkpoint_path.unlink()
+                    print(f"Deleted previous checkpoint from long run: {self._last_checkpoint_path}")
+            except Exception as e:
+                print(f"Warning: Could not delete previous checkpoint {self._last_checkpoint_path}: {e}")
+        
         # Save model checkpoint
         self.timing_logger.start_operation("model_checkpoint_save", "io")
         if self.trainer is not None:
             self.trainer.save_checkpoint(str(checkpoint_path))
         self.timing_logger.end_operation("model_checkpoint_save", "io", f"filepath={checkpoint_path}")
+        
+        # NEW: Track this checkpoint for long run mode
+        if self._long_run_mode:
+            self._last_checkpoint_path = checkpoint_path
         
         # Create metadata for the checkpoint
         training_duration = time.time() - self._start_time if self._start_time else 0
@@ -747,13 +803,20 @@ class TrainingManager:
             }),
         }
         
+        # NEW: Add run information to metadata
+        tags = []
+        if self._long_run_mode and self._current_run_id:
+            tags.append(f"run_{self._current_run_id}")
+            tags.append("long_run")
+        
         self.timing_logger.start_operation("metadata_creation", "io")
         self.checkpoint_manager.create_checkpoint_metadata(
             checkpoint_id=checkpoint_id,
             episode=self.current_episode,
             training_duration=training_duration,
             model_config=model_config,
-            performance_metrics=performance_metrics
+            performance_metrics=performance_metrics,
+            tags=tags
         )
         self.timing_logger.end_operation("metadata_creation", "io")
 
@@ -764,11 +827,82 @@ class TrainingManager:
             'checkpoint_id': checkpoint_id,
             'episode': self.current_episode,
             'absolute_path': str(checkpoint_path),
-            'created_at': time.time()
+            'created_at': time.time(),
+            'long_run_mode': self._long_run_mode,
+            'run_id': self._current_run_id
         })
         self.timing_logger.end_operation("checkpoint_notification", "websocket")
         
         self.timing_logger.end_operation("checkpoint_save", "io", f"checkpoint_id={checkpoint_id}")
+
+    async def create_manual_checkpoint(self) -> str:
+        """Manually create a checkpoint from current training state"""
+        if not self.is_training or not self.trainer:
+            raise ValueError("Cannot create checkpoint: training not active")
+        
+        # Calculate current metrics
+        training_speed = self._calculate_training_speed_with_checkpoint_offset()
+        avg_game_length = sum(self._game_lengths) / len(self._game_lengths) if self._game_lengths else 0
+        
+        # Create a manual checkpoint with timestamp
+        checkpoint_id = f"checkpoint_manual_{int(time.time())}"
+        checkpoint_path = Path(self.checkpoint_dir) / f"{checkpoint_id}.pt"
+        checkpoint_path = checkpoint_path.resolve()
+        
+        # Save model checkpoint
+        self.trainer.save_checkpoint(str(checkpoint_path))
+        
+        # Create metadata
+        training_duration = time.time() - self._start_time if self._start_time else 0
+        n_experts = getattr(self.current_config, 'n_experts', 6)
+        d_model = getattr(self.current_config, 'd_model', 384)
+        inferred_size = self.checkpoint_manager._infer_model_size_from_experts(n_experts, d_model)
+        model_config = {
+            'model_size': getattr(self.current_config, 'model_size', inferred_size),
+            'learning_rate': 0.0003,
+            'n_experts': n_experts,
+            'n_layers': getattr(self.current_config, 'n_layers', 6),
+            'd_model': d_model,
+            'n_heads': getattr(self.current_config, 'n_heads', 8),
+        }
+        
+        performance_metrics = {
+            'best_score': self.trainer.best_score if self.trainer is not None else 0,
+            'avg_score': avg_game_length * 10,
+            'final_loss': 0.0,  # Would need current loss calculation
+            'training_speed': training_speed,
+        }
+        
+        # Add manual checkpoint tags
+        tags = ['manual']
+        if self._long_run_mode and self._current_run_id:
+            tags.append(f"run_{self._current_run_id}")
+            tags.append("long_run")
+        
+        self.checkpoint_manager.create_checkpoint_metadata(
+            checkpoint_id=checkpoint_id,
+            episode=self.current_episode,
+            training_duration=training_duration,
+            model_config=model_config,
+            performance_metrics=performance_metrics,
+            nickname=f"Manual Checkpoint (Episode {self.current_episode})",
+            tags=tags
+        )
+        
+        # Notify clients
+        await self.ws_manager.broadcast({
+            'type': 'checkpoint_created',
+            'checkpoint_id': checkpoint_id,
+            'episode': self.current_episode,
+            'absolute_path': str(checkpoint_path),
+            'created_at': time.time(),
+            'manual': True,
+            'long_run_mode': self._long_run_mode,
+            'run_id': self._current_run_id
+        })
+        
+        print(f"Manual checkpoint created: {checkpoint_id}")
+        return checkpoint_id
 
     # ------------------------------------------------------------------ Helpers
     def _build_metrics(self, episode_result: Dict[str, Any], env: Gym2048Env) -> Dict[str, Any]:

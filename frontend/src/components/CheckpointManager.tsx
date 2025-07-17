@@ -13,7 +13,8 @@ import {
   Search,
   RefreshCw,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Settings
 } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 import { useDeviceDetection } from '../utils/deviceDetection'
@@ -70,6 +71,12 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   const [editingNickname, setEditingNickname] = useState<string | null>(null)
   const [newNickname, setNewNickname] = useState('')
   const [expandedCheckpoint, setExpandedCheckpoint] = useState<string | null>(null)
+  
+  // NEW: Checkpoint configuration state
+  const [checkpointInterval, setCheckpointInterval] = useState(50)
+  const [longRunMode, setLongRunMode] = useState(false)
+  const [showConfigPanel, setShowConfigPanel] = useState(false)
+  const [configLoading, setConfigLoading] = useState(false)
   
   // Ref for the editing input field to ensure proper focus on mobile
   const editingInputRef = useRef<HTMLInputElement>(null)
@@ -182,11 +189,54 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       loadCheckpoints(true)
     }, 10000) // Increased to 10 seconds for better mobile performance
     
+    // NEW: Load checkpoint configuration on component mount
+    loadCheckpointConfig()
+    
     return () => {
       clearInterval(playbackInterval)
       clearInterval(checkpointInterval)
     }
   }, [])
+
+  // NEW: Load checkpoint configuration
+  const loadCheckpointConfig = async () => {
+    try {
+      const res = await fetch(`${config.api.baseUrl}/training/checkpoint/config`)
+      if (res.ok) {
+        const config = await res.json()
+        setCheckpointInterval(config.interval)
+        setLongRunMode(config.long_run_mode)
+      }
+    } catch (err) {
+      console.error('Error loading checkpoint config:', err)
+    }
+  }
+
+  // NEW: Save checkpoint configuration
+  const saveCheckpointConfig = async () => {
+    try {
+      setConfigLoading(true)
+      const res = await fetch(`${config.api.baseUrl}/training/checkpoint/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interval: checkpointInterval,
+          long_run_mode: longRunMode
+        })
+      })
+      
+      if (!res.ok) {
+        throw new Error('Failed to save checkpoint configuration')
+      }
+      
+      setShowConfigPanel(false)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save checkpoint configuration')
+    } finally {
+      setConfigLoading(false)
+    }
+  }
 
   // Filter and search checkpoints
   const filteredCheckpoints = checkpoints.filter(cp => {
@@ -461,8 +511,94 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
           >
             <RefreshCw className="w-4 h-4" />
           </button>
+          {/* NEW: Configuration button */}
+          <button
+            onClick={() => setShowConfigPanel(!showConfigPanel)}
+            className="p-2 bg-gray-700 text-gray-400 rounded-xl hover:bg-gray-600"
+            title="Checkpoint Configuration"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
         </div>
       </motion.div>
+
+      {/* NEW: Configuration Panel */}
+      {showConfigPanel && (
+        <motion.div
+          className="card-glass p-4 rounded-2xl flex-shrink-0"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <h3 className="text-sm font-semibold mb-3 flex items-center">
+            <Edit className="w-4 h-4 mr-2 text-blue-400" />
+            Checkpoint Configuration
+          </h3>
+          
+          <div className="space-y-3">
+            {/* Checkpoint Interval */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">
+                Checkpoint Interval (episodes)
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="1000"
+                value={checkpointInterval}
+                onChange={(e) => setCheckpointInterval(parseInt(e.target.value) || 50)}
+                className="w-full px-3 py-2 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Save a checkpoint every {checkpointInterval} episodes
+              </p>
+            </div>
+            
+            {/* Long Run Mode */}
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs text-gray-400">Long Run Mode</label>
+                <p className="text-xs text-gray-500">
+                  Only keep the latest checkpoint from this training run
+                </p>
+              </div>
+              <button
+                onClick={() => setLongRunMode(!longRunMode)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  longRunMode ? 'bg-blue-500' : 'bg-gray-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    longRunMode ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            
+            {/* Action Buttons */}
+            <div className="flex space-x-2 pt-2">
+              <button
+                onClick={saveCheckpointConfig}
+                disabled={configLoading}
+                className="flex-1 flex items-center justify-center space-x-2 bg-blue-500 text-white rounded-xl py-2 text-sm font-medium disabled:opacity-50"
+              >
+                {configLoading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
+                <span>{configLoading ? 'Saving...' : 'Save Configuration'}</span>
+              </button>
+              <button
+                onClick={() => setShowConfigPanel(false)}
+                className="flex items-center justify-center bg-gray-700 text-gray-400 rounded-xl py-2 px-3 text-sm font-medium"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Checkpoints List */}
       <div className="flex-1 overflow-y-auto space-y-2">

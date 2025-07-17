@@ -100,6 +100,8 @@ class TrainingConfig(BaseModel):
     batch_size: int = 32
     n_experts: int = 6
     n_layers: int = 6
+    d_model: int = 384
+    n_heads: int = 8
 
 class TrainingStatus(BaseModel):
     is_training: bool = False
@@ -258,6 +260,40 @@ async def reset_training():
     except Exception as e:
         print(f"Error resetting training: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error resetting training: {str(e)}")
+
+class CheckpointConfig(BaseModel):
+    interval: int = 50
+    long_run_mode: bool = False
+
+@app.post("/training/checkpoint/config")
+async def update_checkpoint_config(config: CheckpointConfig):
+    """Update checkpoint configuration"""
+    try:
+        training_manager.set_checkpoint_interval(config.interval)
+        training_manager.set_long_run_mode(config.long_run_mode)
+        return {"status": "success", "message": "Checkpoint configuration updated"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/training/checkpoint/config")
+async def get_checkpoint_config():
+    """Get current checkpoint configuration"""
+    try:
+        return training_manager.get_checkpoint_config()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/training/checkpoint/manual")
+async def create_manual_checkpoint():
+    """Manually create a checkpoint from current training state"""
+    try:
+        if not training_manager.is_training:
+            raise HTTPException(status_code=400, detail="Training not active")
+        
+        checkpoint_id = await training_manager.create_manual_checkpoint()
+        return {"status": "success", "checkpoint_id": checkpoint_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/checkpoints")
 async def list_checkpoints():

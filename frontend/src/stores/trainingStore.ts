@@ -174,6 +174,8 @@ export interface TrainingState {
   resumeTraining: () => Promise<void>
   stopTraining: () => Promise<void>
   resetTraining: () => void
+  // NEW: Helper function to get current training data with fallback
+  getCurrentTrainingData: () => TrainingData | null
 }
 
 export const useTrainingStore = create<TrainingState>()(
@@ -246,6 +248,12 @@ export const useTrainingStore = create<TrainingState>()(
       
       setEpisode: (episode) => set({ currentEpisode: episode }),
       
+      // NEW: Helper function to get current training data with fallback
+      getCurrentTrainingData: () => {
+        const state = get()
+        return state.trainingData || state.lastTrainingData
+      },
+
       updateTrainingData: (data) => {
         const state = get()
         set({
@@ -860,6 +868,8 @@ export const useTrainingStore = create<TrainingState>()(
         isPlayingCheckpoint: state.isPlayingCheckpoint,
         lastPolicyLoss: state.lastPolicyLoss,
         lastValueLoss: state.lastValueLoss,
+        // NEW: Persist current training data directly
+        trainingData: state.trainingData,
         // NEW: Persist last training data for reconnection
         lastTrainingData: state.lastTrainingData,
         lastTrainingTimestamp: state.lastTrainingTimestamp,
@@ -874,6 +884,20 @@ export const useTrainingStore = create<TrainingState>()(
           values: state.scoreHistory.values.slice(-100)
         }
       }),
+      // NEW: Add onRehydrateStorage to restore trainingData from lastTrainingData if needed
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          // If trainingData is null but we have lastTrainingData, restore it
+          if (!state.trainingData && state.lastTrainingData) {
+            state.trainingData = state.lastTrainingData
+          }
+          
+          // If we have training data but no episode info, set it from the data
+          if (state.trainingData && state.currentEpisode === 0) {
+            state.currentEpisode = state.trainingData.episode
+          }
+        }
+      },
       // Don't persist connection state and loading states as they should be reset on page load
       skipHydration: false,
     }
