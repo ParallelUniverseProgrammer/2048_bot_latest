@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Line, Doughnut, Bar } from 'react-chartjs-2'
 import { 
@@ -31,6 +31,7 @@ const TrainingDashboard: React.FC = () => {
 
   const { displayMode } = useDeviceDetection()
   const isMobile = displayMode === 'mobile'
+  const [activeTab, setActiveTab] = useState<'core' | 'trends' | 'stats'>('core')
 
   // Training control functions
   const handleTrainingControl = async (action: 'start' | 'pause' | 'resume' | 'stop') => {
@@ -443,6 +444,12 @@ const TrainingDashboard: React.FC = () => {
     },
   ]
 
+  // determine which metrics to show based on selected tab
+  const displayedMetrics = activeTab === 'core'
+    ? metrics
+    : activeTab === 'trends'
+      ? enhancedMetrics.slice(0, 4)
+      : enhancedMetrics.slice(4)
   return (
     <div className="h-full grid grid-rows-[auto_auto_auto_1fr] gap-2 pb-6">
       {/* Training Controls */}
@@ -574,7 +581,7 @@ const TrainingDashboard: React.FC = () => {
 
       {/* Unified Stats Card - Reduced height to 2/3 */}
       <motion.div
-        className="card-glass p-4 rounded-2xl flex flex-col min-h-0"
+        className="card-glass p-4 rounded-2xl"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.2 }}
@@ -586,61 +593,41 @@ const TrainingDashboard: React.FC = () => {
           <Activity className="w-4 h-4 mr-2 text-blue-400" />
           Training Metrics
         </h3>
-        
-        <div className="flex-1 overflow-auto min-h-0">
-          {/* Primary Metrics Section */}
-          <div className="mb-4">
-            <h4 className="text-xs font-medium text-gray-400 mb-2">Core Metrics</h4>
-            <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-3'}`}>
-              {metrics.map((metric, index) => {
-                const IconComponent = metric.icon
-                return (
-                  <motion.div
-                    key={metric.title}
-                    className="flex items-center space-x-2 p-3 bg-gray-800/30 rounded-xl"
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.5, delay: 0.2 + index * 0.05 }}
-                  >
-                    <div className={`p-1.5 rounded ${metric.bgColor}`}>
-                      <IconComponent className={`w-3 h-3 ${metric.color}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-gray-400 font-medium truncate">{metric.title}</div>
-                      <div className={`font-bold ${metric.color} text-sm truncate`}>{metric.value}</div>
-                    </div>
-                    {/* Removed loading indicator dot for isTrainingStarting */}
-                  </motion.div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Enhanced Metrics Section */}
-          <div>
-            <h4 className="text-xs font-medium text-gray-400 mb-2">Advanced Metrics</h4>
-            <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-4 gap-3'}`}>
-              {enhancedMetrics.map((metric, index) => {
-                return (
-                  <motion.div
-                    key={metric.title}
-                    className="flex items-center space-x-2 p-3 bg-gray-800/30 rounded-xl"
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.5, delay: 0.3 + index * 0.05 }}
-                  >
-                    <div className={`p-1.5 rounded ${metric.bgColor}`}>
-                      {metric.icon}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-gray-400 font-medium truncate">{metric.title}</div>
-                      <div className={`font-bold ${metric.color} text-sm truncate`}>{metric.value}</div>
-                    </div>
-                  </motion.div>
-                )
-              })}
-            </div>
-          </div>
+        <div className="flex space-x-2 mb-3">
+          <button
+            onClick={() => setActiveTab('core')}
+            className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'core' ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-400'}`}
+          >Core</button>
+          <button
+            onClick={() => setActiveTab('trends')}
+            className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'trends' ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-400'}`}
+          >Trends</button>
+          <button
+            onClick={() => setActiveTab('stats')}
+            className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'stats' ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-400'}`}
+          >Stats</button>
+        </div>
+        <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-4 gap-3'}`}>  
+          {displayedMetrics.map((metric, index) => (
+            <motion.div
+              key={metric.title}
+              className="flex items-center space-x-2 p-2 bg-gray-800/30 rounded-xl"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.5, delay: 0.2 + index * 0.03 }}
+            >
+              <div className={`p-1 rounded ${metric.bgColor}`}>  
+                {React.isValidElement(metric.icon)
+                  ? metric.icon
+                  : React.createElement(metric.icon as React.ElementType, { className: `w-3 h-3 ${metric.color}` })
+                }
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs text-gray-400 font-medium truncate">{metric.title}</div>
+                <div className={`font-bold ${metric.color} text-sm truncate`}>{metric.value}</div>
+              </div>
+            </motion.div>
+          ))}
         </div>
       </motion.div>
     </div>
