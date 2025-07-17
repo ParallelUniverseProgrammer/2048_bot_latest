@@ -156,20 +156,23 @@ const TrainingMetrics: React.FC = () => {
       )}
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div
+        className="grid gap-4"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}
+      >
         {metrics.map((metric, index) => (
           <motion.div
             key={metric.label}
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: index * 0.1 }}
-            className={`card-glass p-3 rounded-xl border ${metric.bgColor}`}
+            className={`card-glass p-4 rounded-xl bg-gray-800/70 border-l-4 ${metric.color.replace('text-', 'border-')}`}
           >
             <div className="flex items-center space-x-2 mb-2">
               <metric.icon className={`w-4 h-4 ${metric.color}`} />
               <span className="text-xs font-medium text-gray-300">{metric.label}</span>
             </div>
-            <div className={`text-lg font-bold ${metric.color}`}>
+            <div className={`text-xl font-extrabold ${metric.color}`}>
               {metric.value}
             </div>
           </motion.div>

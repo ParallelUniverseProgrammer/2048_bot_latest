@@ -1,460 +1,171 @@
 # 🔢 2048 Bot: Real-Time AI Training & Visualization
 
-> A high-performance, real-time visualization platform for training a Mixture-of-Experts (MoE) Transformer to master the game of 2048.
+> A high-performance, real-time platform for training a Mixture-of-Experts (MoE) Transformer to master the game of 2048.
 
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![Node.js 18+](https://img.shields.io/badge/node.js-18+-green.svg)](https://nodejs.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Status: Active Development](https://img.shields.io/badge/Status-Active%20Development-orange.svg)](https://github.com/krdge/2048_bot)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/) [![Node.js 18+](https://img.shields.io/badge/node.js-18+-green.svg)](https://nodejs.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Status: Active Development](https://img.shields.io/badge/Status-Active%20Development-orange.svg)](https://github.com/krdge/2048_bot)
 
 ![2048 AI Training Dashboard](./screenshots/2048-ai-training-dashboard.png)
 
-This platform provides a transparent, interactive, and deeply analytical view into the reinforcement learning process, built for both power users and enthusiasts. It features a sophisticated backend training engine and a feature-rich Progressive Web App (PWA) for monitoring and control from any device.
+---
 
-## 🎯 What You'll Learn
+## ✨ What’s New?
 
-- **🧠 Deep Learning**: Understand how Mixture-of-Experts Transformers work in practice
-- **🎮 Game AI**: See reinforcement learning train an AI to master 2048 in real-time
-- **📊 Data Visualization**: Learn to build comprehensive ML training dashboards
-- **🔧 Full-Stack Development**: Experience a complete Python backend + React frontend system
-- **📱 Progressive Web Apps**: Build mobile-optimized web applications with native-like features
+• **Unified Metrics & Visuals** – the Training dashboard now concentrates all key analytics; the previous “Network” tab has been removed for clarity.
 
-## ⚡ Quick Start (30 seconds)
+• **Progress-First UX** – global top-bar progress indicators replace floating pop-ups, providing unobtrusive feedback during training, checkpoint loading and playback.
 
-```bash
-# Clone the repository
-git clone https://github.com/krdge/2048_bot.git
-cd 2048_bot
+• **Mobile Polish** – deeper device detection, Safari fallback logic and graceful connection recovery deliver a first-class PWA experience on iOS/Android.
 
-# Run the automated launcher
-python launcher.py
+• **Checkpoint Workflow** – revamped manager with search, inline rename, quick stats and rich loading states.
 
-# Open your browser to http://localhost:3000
-# Scan the QR code for mobile access
-```
-
-That's it! The launcher handles everything else automatically.
 
 ## 📋 Table of Contents
-- [✨ Key Features](#-key-features)
-- [🛠️ Technology Stack](#️-technology-stack)
-- [⚙️ Setup & Installation](#️-setup--installation)
-  - [Prerequisites](#prerequisites)
-  - [🚀 Automated Launch (Recommended)](#-automated-launch-recommended)
-  - [🔧 Manual Setup (Power Users)](#-manual-setup-power-users)
-- [🕹️ Usage Guide](#️-usage-guide)
-  - [Starting a Training Session](#starting-a-training-session)
-  - [Navigating the Interface](#navigating-the-interface)
-  - [Checkpoint Playback](#checkpoint-playback)
-- [🧪 Test Suite & Developer Experience](#-test-suite--developer-experience)
-- [🔌 API Documentation](#-api-documentation)
-- [🏛️ System Architecture](#️-system-architecture)
-- [🤖 Neural Network Deep Dive](#-neural-network-deep-dive)
-- [🆘 Troubleshooting](#-troubleshooting)
-- [❓ FAQ](#-faq)
-- [🤝 Contributing](#-contributing)
-- [📜 License](#-license)
-
-## 🧪 Test Suite & Developer Experience
-
-The `tests/` directory is now fully reorganized for clarity, speed, and maintainability. Tests are grouped by category, with clear naming conventions and subfolders for each type of test. Most integration tests will automatically start a mock backend if the real backend is not running, making it easy to run tests in isolation.
-
-### Directory Structure
-
-```
-tests/
-├── core/          # Core/unit tests (no backend required)
-├── integration/   # Backend API/integration tests (mock backend auto-started if needed)
-├── performance/   # Performance and optimization tests
-├── mobile/        # Mobile/device compatibility tests
-├── playback/      # Game playback and simulation tests
-├── training/      # Training-related tests
-├── frontend/      # Frontend integration/UI tests
-├── utilities/     # Test utilities and mock services
-├── runners/       # Test runners and orchestration scripts
-├── checkpoints/   # Test checkpoint data
-├── README.md
-└── ..._test_results.json
-```
-
-### Running Tests
-
-- **Core/unit tests:**
-  ```bash
-  python tests/core/test_checkpoint_loading.py
-  ```
-- **Integration/API tests:**
-  ```bash
-  python tests/integration/test_complete_games.py
-  # Most will auto-start a mock backend if needed
-  ```
-- **Performance tests:**
-  ```bash
-  python tests/performance/test_performance.py
-  ```
-- **Mobile/device tests:**
-  ```bash
-  python tests/mobile/test_connection_issues.py
-  ```
-- **Playback tests:**
-  ```bash
-  python tests/playback/test_freeze_detection.py
-  ```
-- **Training tests:**
-  ```bash
-  python tests/training/test_status_sync.py
-  ```
-- **Frontend tests:**
-  ```bash
-  python tests/frontend/test_automation.py
-  ```
-- **All tests (comprehensive):**
-  ```bash
-  python tests/runners/master_test_runner.py --level comprehensive
-  ```
-
-### Backend Dependency Handling
-- **Mock backend auto-start:** Most integration tests use a utility to start a mock backend if the real one is not running. No manual backend launch is needed for these tests.
-- **Real backend required:** Some advanced or real-system tests may require the backend running manually. This will be clearly documented in the test or runner script.
-
-### Best Practices for Contributing Tests
-- Place new tests in the correct subfolder by category
-- Use the shared utilities in `tests/utilities/test_utils.py` for logging, backend helpers, etc.
-- Prefer descriptive, consistent file names (e.g., `test_feature_behavior.py`)
-- Document backend dependencies in the test docstring
-- Add edge cases and error handling scenarios
-- Update this README and `tests/README.md` if you add new categories or major tests
-
-### Example: Adding a New Test
-1. Place your script in the appropriate folder (e.g., `tests/playback/test_new_playback_feature.py`)
-2. Use imports like:
-   ```python
-   from tests.utilities.test_utils import TestLogger, BackendTester
-   ```
-3. Run your test directly:
-   ```bash
-   python tests/playback/test_new_playback_feature.py
-   ```
-
-For more details, see `tests/README.md` and `tests/organization_plan.md`.
-
-## 🕹️ Usage Guide
-
-### Starting a Training Session
-1.  **Access the UI**: Open your browser to the URL provided by your setup method (typically `http://localhost:3000`).
-2.  **Connect**: The frontend will automatically establish a WebSocket connection to the backend. The connection status is displayed in the header.
-3.  **Initiate Training**: Click the **Start** button. This initializes the model with a dynamically selected configuration based on your hardware and begins the training process.
-4.  **Monitor**: Real-time metrics, game states, and network visualizations will immediately begin streaming to the dashboard.
-
-### Navigating the Interface
-The application is organized into four main tabs:
-- **📊 Training**: The main dashboard. View real-time charts for loss, score, action distributions, and expert usage. Key performance indicators (KPIs) like training speed and GPU memory are also displayed here.
-- **🎮 Game**: Watch the AI play the game in real-time. This view includes the game board, the AI's chosen action, and an optional attention overlay to see what the model is "focusing" on.
-- **🧠 Network**: A visual deep-dive into the transformer architecture. See the model's layers, inspect expert routing patterns, and analyze the load-balancing score.
-- **💾 Checkpoints**: Manage, review, and test saved model checkpoints.
-
-### Checkpoint Playback
-From the **Checkpoints** tab, you can load a previously saved model for analysis.
-- **Load a Checkpoint**: Select a checkpoint from the list.
-- **Start Playback**: Click the "Play" icon to initiate a game simulation using the selected model's weights.
-- **Analyze**: Navigate to the **Game** tab to watch the checkpoint play. You can control the playback speed, pause, and stop the simulation.
-
-## 🔌 API Documentation
-
-### REST Endpoints
-
-#### Training Control
-- `POST /api/training/start` - Start training session
-- `POST /api/training/stop` - Stop training session
-- `POST /api/training/pause` - Pause training session
-- `GET /api/training/status` - Get current training status
-
-#### Checkpoint Management
-- `GET /api/checkpoints` - List all available checkpoints
-- `POST /api/checkpoints/save` - Save current model state
-- `POST /api/checkpoints/load/{checkpoint_id}` - Load specific checkpoint
-- `DELETE /api/checkpoints/{checkpoint_id}` - Delete checkpoint
-
-#### Model Configuration
-- `GET /api/config` - Get current model configuration
-- `POST /api/config` - Update model configuration
-
-### WebSocket Events
-
-The frontend connects to `ws://localhost:8000/ws` and receives the following events:
-
-```typescript
-// Training metrics update
-{
-  "type": "training_metrics",
-  "data": {
-    "episode": 1234,
-    "score": 2048,
-    "loss": 0.045,
-    "expert_usage": [0.2, 0.3, 0.1, 0.4],
-    "gpu_memory": 4.2
-  }
-}
-
-// Game state update
-{
-  "type": "game_state",
-  "data": {
-    "board": [[2,4,8,16], [0,2,0,0], [0,0,4,0], [0,0,0,0]],
-    "action": "right",
-    "attention_weights": [...]
-  }
-}
-
-// System status
-{
-  "type": "system_status",
-  "data": {
-    "training_active": true,
-    "episodes_per_minute": 85,
-    "connection_status": "connected"
-  }
-}
-```
-
-## 🏛️ System Architecture
-
-The project is a decoupled, two-part system: a Python backend and a React frontend.
-
-- **Backend**: A FastAPI server manages the entire training pipeline. It uses PyTorch for the neural network, Gymnasium for the game environment, and a custom PPO trainer. A `TrainingManager` runs the main loop in a separate thread, allowing for non-blocking control via REST and WebSocket endpoints. All operations are designed to be thread-safe.
-
-- **Frontend**: A responsive React application built with Vite and TypeScript. It uses Zustand for efficient state management, Chart.js for visualizations, and Framer Motion for smooth animations. A sophisticated `WebSocket` utility handles real-time data streaming with adaptive timeouts, exponential backoff, circuit breaker patterns, and polling fallback to ensure a stable experience, especially on mobile networks. Enhanced loading states provide comprehensive progress tracking with step-by-step feedback and estimated completion times.
-
-## 🤖 Neural Network Deep Dive
-
-The core of this project is a purpose-built Mixture-of-Experts (MoE) Transformer. This architecture was chosen over a standard transformer for its ability to develop specialized sub-networks (experts) that can handle distinct patterns and phases of the 2048 game, leading to more nuanced and effective decision-making.
-
-Here's a breakdown of how the network processes the game state.
-
-### 1. Input Processing: From Board to Language
-
-The model doesn't "see" the board as pixels; it interprets it as a sequence of tokens, much like words in a sentence.
-
--   **Tokenization**: The 4x4 grid is flattened into a 16-token sequence. Each tile's value (e.g., 2, 4, 8, 1024) is transformed by taking its `log2` (e.g., 1, 2, 3, 10). This normalizes the values and creates a linear relationship that's easier for the network to learn. Empty tiles are represented by a zero token.
--   **2D Positional Encoding**: A standard transformer only knows the order of tokens, not their spatial relationship. For a grid game like 2048, knowing that one tile is "above" or "to the left of" another is critical. We inject this knowledge using a custom **2D positional encoding**, which encodes both row and column information for each of the 16 positions. This gives the model a native understanding of the board's geometry.
-
-### 2. The Core: Mixture-of-Experts (MoE) Transformer
-
-This is where the model's intelligence lies. Instead of a single, monolithic network processing every game state, the MoE architecture uses a collection of smaller, specialized networks.
-
--   **The Router**: At the heart of each MoE layer is a small "gating" network, or router. When a board state (represented as 16 tokens) arrives, the router analyzes it and decides which of the available "experts" are best suited to handle it. It's a "soft" decision—it assigns probabilities and routes the information to a small subset (e.g., the top 2) of the most relevant experts.
-
--   **The Experts**: Each expert is a standard feed-forward neural network. While they all start with the same architecture, training causes them to specialize. For example:
-    -   *Expert 1* might become adept at identifying immediate merge opportunities in the early game.
-    -   *Expert 4* could specialize in the complex patterns required to maintain an open board in the late game.
-    -   *Expert 7* might learn to recognize defensive positions for survival when the board is cluttered.
-    You can see this specialization emerge in real-time in the **Network Visualizer**.
-
--   **Load Balancing**: A key challenge with MoE is preventing the router from over-relying on a few "superstar" experts. To combat this, the training process includes an auxiliary **load-balancing loss**. This loss function penalizes the model if it doesn't spread the workload evenly, encouraging it to utilize all experts and fostering greater specialization.
-
-### 3. Self-Attention: Discovering Relationships
-
-Within each transformer block, the self-attention mechanism allows the model to weigh the importance of every tile relative to every other tile.
-
-For each of the 16 positions, attention calculates a set of scores that determine how much "focus" to place on the other 15 positions. For example, a `512` tile in the corner might learn to pay high attention to an adjacent `512` tile (a merge opportunity) and to nearby empty cells (potential escape routes). This is the data visualized in the **Attention Heatmaps** tab, providing a direct look into the model's reasoning process.
-
-### 4. Output Heads: The Final Decision
-
-After the board state has been processed through multiple layers of attention and MoE blocks, the resulting high-level representation is passed to two final, separate networks:
-
-1.  **Policy Head**: This head outputs a probability distribution over the four possible moves (Up, Down, Left, Right). It represents the model's final decision on which move is most likely to lead to a better outcome.
-2.  **Value Head**: This head outputs a single scalar number, which is the model's assessment of the current board's quality. A high value signifies a strong, promising position, while a low value indicates a weak or dangerous one. This value is critical for the PPO algorithm to learn and improve its policy over time.
-
-## 🆘 Troubleshooting
-
-If you encounter issues, refer to the following comprehensive guide.
-
-### Common Issues
-
-| Issue | Error Message | Solution |
-|-------|---------------|----------|
-| **GPU Out of Memory** | `CUDA out of memory` | The system automatically falls back to CPU mode. Monitor VRAM usage in the dashboard. For manual control, modify `DynamicModelConfig` in backend code. |
-| **WebSocket Connection Fails** | `WebSocket connection failed` | Ensure backend server is running on port 8000. Check firewall settings. Verify network connectivity. |
-| **Mobile Access Issues** | `Connection refused` | Confirm device is on same Wi-Fi network. Use QR code from launcher for correct IP address. |
-| **Dependencies Fail to Install** | `poetry install failed` | Ensure Python 3.9+ and Node.js 18+ are installed. Try running launcher with `--force` flag. |
-| **Port Already in Use** | `Address already in use` | Kill processes on ports 3000/8000: `lsof -ti:3000 | xargs kill -9` |
-| **Permission Denied** | `Permission denied` | Run with appropriate permissions. On Windows, run PowerShell as Administrator. |
-
-### Platform-Specific Issues
-
-#### Windows
-- **PowerShell Execution Policy**: Run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
-- **Firewall**: Allow Python and Node.js through Windows Firewall
-- **Path Issues**: Ensure Python and Node.js are in system PATH
-
-#### macOS
-- **Xcode Tools**: Install with `xcode-select --install`
-- **Permission Issues**: Grant terminal full disk access in System Preferences
-- **Homebrew**: Install dependencies via `brew install python node`
-
-#### Linux
-- **Build Tools**: Install with `sudo apt-get install build-essential`
-- **Python Dev**: Install with `sudo apt-get install python3-dev`
-- **Node.js**: Use NodeSource repository for latest version
-
-### Debug Mode
-
-Enable debug logging by setting environment variables:
-```bash
-export DEBUG=true
-export LOG_LEVEL=DEBUG
-python launcher.py
-```
-
-### Getting Help
-
-1. Check the browser console for JavaScript errors
-2. Review backend logs in the terminal
-3. Verify all prerequisites are installed correctly
-4. Try the manual setup process
-5. Open an issue on GitHub with detailed error information
-
-## ❓ FAQ
-
-### General Questions
-
-**Q: How long does it take to train a good model?**
-A: Initial training takes 2-4 hours to reach 2048 tile consistently. Full optimization takes 8-12 hours.
-
-**Q: Can I use this without a GPU?**
-A: Yes! The system automatically falls back to CPU mode, though training will be slower than with GPU acceleration.
-
-**Q: What's the highest score achieved?**
-A: The current best model consistently reaches 4096+ tiles, with occasional 8192 tiles.
-
-**Q: Can I modify the game rules?**
-A: Yes, the game environment is configurable. See `backend/app/environment/game_2048.py` for customization options.
-
-### Technical Questions
-
-**Q: How does the MoE architecture help with 2048?**
-A: Different experts specialize in different game phases - early game merging, mid-game strategy, and late-game survival patterns.
-
-**Q: What's the model size?**
-A: Dynamic based on available VRAM. Typically 50-200M parameters, automatically scaled to fit your hardware.
-
-**Q: Can I export the trained model?**
-A: Yes, checkpoints can be exported and used in other applications. See the checkpoint management section.
-
-**Q: How do I interpret the attention heatmaps?**
-A: Brighter colors indicate higher attention. The model "focuses" on tiles that are most relevant for the current move decision.
-
-### Mobile Questions
-
-**Q: Does the mobile app work offline?**
-A: The PWA caches resources for offline viewing, but training requires an active connection to the backend.
-
-**Q: Can I control training from my phone?**
-A: Yes! Start/stop/pause training, view real-time metrics, and manage checkpoints from the mobile interface.
-
-**Q: What browsers are supported?**
-A: Chrome, Safari, Firefox, and Edge on iOS/Android. Chrome is recommended for best performance.
-
-## 🤝 Contributing
-
-Contributions are welcome! This project thrives on community input and improvements.
-
-### How to Contribute
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
-3. **Make your changes**: Ensure code is well-documented and tested
-4. **Test thoroughly**: Verify changes work on desktop and mobile
-5. **Submit a pull request**: Include clear description of changes and their purpose
-
-### Development Guidelines
-
-- **Code Style**: Follow existing patterns. Use Black for Python, Prettier for JavaScript
-- **Testing**: Add tests for new features
-- **Documentation**: Update README and add inline comments
-- **Mobile-First**: Ensure all changes are responsive and mobile-friendly
-- **Performance**: Monitor impact on training speed and UI responsiveness
-
-### Areas for Contribution
-
-- **UI/UX Improvements**: Better visualizations, mobile optimizations
-- **Model Enhancements**: New architectures, hyperparameter optimization
-- **Performance**: Training speed improvements, memory optimization
-- **Documentation**: Tutorials, examples, API documentation
-- **Testing**: Unit tests, integration tests, performance benchmarks
-
-### Getting Help
-
-- **Issues**: Use GitHub issues for bugs and feature requests
-- **Discussions**: Use GitHub Discussions for questions and ideas
-- **Code Review**: All PRs require review before merging
-
-## 📜 License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-### License Summary
-
-- ✅ **Commercial Use**: Allowed
-- ✅ **Modification**: Allowed  
-- ✅ **Distribution**: Allowed
-- ✅ **Private Use**: Allowed
-- ❌ **Liability**: Limited
-- ❌ **Warranty**: None
-
-## 🗺️ Roadmap
-
-### 🚀 High Priority (Immediate Impact)
-- [ ] **📸 Documentation & Screenshots**: Add actual screenshots, demo videos, and visual documentation
-- [ ] **🎯 Sample Checkpoints**: Create pre-trained models for immediate demonstration
-- [ ] **📱 Enhanced Mobile Experience**: Touch gestures, offline improvements, mobile-specific UI optimizations
-- [ ] **⚡ Performance Benchmarks**: Add system requirements and actual training speed metrics
-- [ ] **🎓 Interactive Tutorial**: Guided onboarding experience for new users
-- [ ] **🔧 Enhanced MoE Architecture**: Deeper integration of expert routing, improved load balancing, and dynamic expert allocation
-
-### 📊 Medium Priority (User Experience)
-- [ ] **📈 Advanced Analytics**: Training efficiency metrics, model behavior analysis, performance comparison tools
-- [ ] **🎮 Enhanced Visualizations**: 3D network visualizations, animated transitions, custom themes
-- [ ] **📱 Mobile Touch Interactions**: Swipe gestures for game board, haptic feedback, customizable game speed
-- [ ] **💾 Export Capabilities**: Model export (ONNX, TorchScript), integration with ML platforms (Weights & Biases)
-- [ ] **🔍 Real-time Feedback**: Progress indicators, performance warnings, success notifications
-- [ ] **📚 Educational Features**: Interactive explanations, step-by-step AI decision breakdown, learning resources
-
-### 🛠️ Technical Enhancements
-- [ ] **⚡ Performance Optimizations**: WebSocket connection pooling, data compression, background processing
-- [ ] **🔧 Developer Experience**: Docker support, CI/CD pipeline, performance profiling tools, debug mode
-- [ ] **🌐 Deployment Improvements**: Cloud deployment guides, pre-built Docker images, Heroku/Vercel deployment
-- [ ] **🔒 Quality & Testing**: Comprehensive test suite, cross-browser compatibility, mobile device testing
-- [ ] **📊 Monitoring & Observability**: Health check endpoints, error tracking, performance monitoring dashboard
-
-### 🌟 Advanced Features
-- [ ] **🎯 A/B Testing Framework**: Compare different model configurations and hyperparameters
-- [ ] **🎮 Multi-Game Support**: Extend to other puzzle games (15-puzzle, sliding tile puzzles)
-- [ ] **🏆 Community Features**: Leaderboard, model sharing, community challenges, discussion forum
-- [ ] **🎨 Enhanced UI/UX**: Sound effects, accessibility improvements, replay highlights
-- [ ] **📱 Advanced PWA**: Better offline capabilities, push notifications, app store optimization
-
-### 🔬 Research & Innovation
-- [ ] **🧠 Advanced Visualization Framework**: More detailed attention heatmaps, expert specialization analysis
-- [ ] **📊 Checkpoint Analysis Tools**: Better tools for comparing model performance and understanding training progression
-- [ ] **🔬 Multi-Architecture Support**: Framework for different transformer variants and attention mechanisms
-- [ ] **🎯 Advanced Training Algorithms**: Integration of different RL algorithms and training strategies
-- [ ] **📈 Performance Optimization**: Deeper optimization of training pipeline and real-time visualization system
-
-### 🌍 Community & Growth
-- [ ] **📢 Marketing & Discovery**: GitHub optimization, demo videos, blog post series, conference presentations
-- [ ] **📚 Documentation for Different Audiences**: Beginner guides, advanced guides, academic papers, video tutorials
-- [ ] **🤝 Community Experimentation**: Platform for community contributions and architectural testing
-- [ ] **🎓 Academic Integration**: Tools for research and publication of findings in game AI and reinforcement learning
-- [ ] **🔬 Novel Architecture Research**: Development and testing of entirely new neural network designs
-
-### 🚀 Future Vision
-- [ ] **🏗️ Abstract Network Framework**: Flexible architecture system for designing and testing new neural network approaches
-- [ ] **🔬 Comprehensive Experimentation Platform**: Complete framework for systematically exploring different approaches to solving 2048
-- [ ] **🌐 Cloud-Native Architecture**: Scalable deployment options, distributed training, multi-user support
-- [ ] **🎯 AI Research Platform**: Tools for advancing the state-of-the-art in game AI and reinforcement learning
-- [ ] **🌟 Industry Integration**: Enterprise features, commercial applications, and industry partnerships
+1. [Key Features](#key-features)
+2. [Technology Stack](#technology-stack)
+3. [Quick Start](#quick-start)
+4. [Usage Guide](#usage-guide)
+5. [Test Suite & Developer Experience](#test-suite--developer-experience)
+6. [API](#api)
+7. [Troubleshooting](#troubleshooting)
+8. [FAQ](#faq)
+9. [Contributing](#contributing)
+10. [License](#license)
 
 ---
 
-**Made with ❤️ by the 2048 Bot community** 
+## Key Features
+
+• **Real-Time Training Dashboard** – loss & score charts, action distributions, expert usage and advanced KPIs, all updating every 1-2 s via WebSocket.
+
+• **Interactive Game Viewer** – watch the agent play with attention overlays and live action probabilities.
+
+• **Comprehensive Checkpoint Manager** – browse, rename, delete and resume checkpoints or start instant playback with animated loading states.
+
+• **Adaptive PWA** – installs to mobile home-screen, works offline for checkpoint replay and includes robust connection fall-backs.
+
+• **GPU-Aware Backend** – FastAPI + PyTorch PPO training engine that auto-scales model size to available VRAM, with CPU fallback.
+
+---
+
+## Technology Stack
+
+| Layer | Tech |
+|-------|------|
+| Backend | **Python 3.9 / FastAPI / PyTorch** |
+| RL | Custom PPO with MoE Transformer |
+| Frontend | **React + TypeScript / Vite / Tailwind CSS / Framer Motion** |
+| State Mgmt | Zustand (with persistence & WebSocket hydration) |
+| Charts | Chart.js (mobile-optimised) |
+| Testing | pytest, Jest & custom runners |
+| Packaging | Poetry (Python) / npm (Node) |
+
+---
+
+## Quick Start
+
+```bash
+# Clone & enter the repo
+$ git clone https://github.com/krdge/2048_bot.git && cd 2048_bot
+
+# Fire up everything via the launcher (backend, frontend & ngrok/QR)
+$ python launcher.py
+
+# Open http://localhost:3000  (QR code printed for mobile)
+```
+
+The launcher installs dependencies, detects hardware (CUDA ↔︎ CPU) and starts both servers with hot-reload.
+
+---
+
+## Usage Guide
+
+### Navigation
+The interface is split into three tabs:
+
+| Tab | Description |
+|-----|-------------|
+| **Training** | Real-time metrics, charts and training controls (start, pause, stop). |
+| **Game** | Live board view for training or checkpoint playback with attention overlay and playback controls. |
+| **Checkpoints** | Library of saved models with rename, search, resume-training and playback. |
+
+### Starting a Training Session
+1. Launch the backend & frontend (see *Quick Start*).
+2. Navigate to **Training** and press **Start**. Select model size if prompted.
+3. Monitor metrics or switch to **Game** to visually inspect gameplay.
+
+### Playing a Checkpoint
+1. Open **Checkpoints** and click *Watch* on any entry.
+2. You’ll be auto-redirected to **Game** while the playback environment starts (progress bar at top).
+3. Pause/resume, change speed or start a new game anytime.
+
+---
+
+## Test Suite & Developer Experience
+
+Tests live under `tests/` and are grouped by domain (core, integration, performance, mobile, frontend…). Most integration tests spin up a mock backend automatically.
+
+Run all tests:
+```bash
+python tests/runners/master_test_runner.py
+```
+
+Hot-reload is enabled out of the box (FastAPI `--reload`, Vite dev server). ESLint / Prettier (frontend) and Black / isort / flake8 (backend) keep the codebase tidy.
+
+---
+
+## API
+
+### REST Endpoints (selection)
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/training/start` | Begin training |
+| `POST` | `/api/training/stop` | Stop training |
+| `POST` | `/api/training/pause` | Pause training |
+| `GET`  | `/api/training/status` | Current status |
+| `GET`  | `/api/checkpoints` | List checkpoints |
+| `POST` | `/api/checkpoints/{id}/load` | Resume training from checkpoint |
+| `POST` | `/checkpoints/{id}/playback/start` | Start playback |
+
+### WebSocket Channels
+* `training_update` – metrics every 1-2 s
+* `game_state` – board + attention weights during training/playback
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| **WebSocket disconnects on mobile Safari** | iOS limitations | Fallback polling activates automatically; try Chrome or ensure same Wi-Fi LAN |
+| **CUDA out-of-memory** | Model too large | The backend auto-switches to CPU; lower model size via dropdown before starting training |
+| **Port already in use** | Previous run crashed | `lsof -ti:3000,8000 | xargs kill -9` (or Windows equivalent) |
+
+More in `docs/TROUBLESHOOTING.md` (coming soon).
+
+---
+
+## FAQ
+
+**Q:** *Do I need a GPU?*  
+**A:** No. Training is slower but fully functional on CPU.
+
+**Q:** *How long until the bot reaches 2048?*  
+**A:** ~2–4 h on RTX 3070, longer on CPU.
+
+**Q:** *Can I export checkpoints?*  
+**A:** Yes – checkpoints are standard PyTorch `.pt` files saved under `backend/checkpoints/`.
+
+---
+
+## Contributing
+
+1. Fork → feature branch → PR.  
+2. Run `python launcher.py --dev` to spin up watch mode for both servers.  
+3. Add/adjust tests.  
+4. Follow the existing code style (Black, ESLint) and ensure the UI remains responsive on mobile.
+
+---
+
+## License
+
+MIT © krdge and contributors 

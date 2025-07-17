@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Brain, Layers, GitBranch, Eye, BarChart3, Network, Activity, Zap } from 'lucide-react'
+import { Brain, Layers, GitBranch, BarChart3, Activity, Zap } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 import { useDeviceDetection } from '../utils/deviceDetection'
 import { AnimatePresence } from 'framer-motion'
@@ -10,8 +10,7 @@ const NetworkVisualizer: React.FC = () => {
   const { displayMode } = useDeviceDetection()
   const isMobile = displayMode === 'mobile'
   
-  const [activeTab, setActiveTab] = useState<'overview' | 'experts' | 'attention' | 'stats'>('overview')
-  const [hoveredExpert, setHoveredExpert] = useState<number | null>(null)
+  const [activeTab, setActiveTab] = useState<'architecture' | 'usage' | 'performance'>('architecture')
 
   // Generate expert nodes with enhanced data
   const expertNodes = useMemo(() => {
@@ -70,51 +69,11 @@ const NetworkVisualizer: React.FC = () => {
     return Math.max(0, 1 - Math.sqrt(variance) * 2)
   }, [expertNodes])
 
-  // Generate connection strengths
-  const connectionStrengths = useMemo(() => {
-    if (!expertNodes.length) return []
-    
-    const connections = []
-    for (let i = 0; i < expertNodes.length; i++) {
-      for (let j = i + 1; j < expertNodes.length; j++) {
-        const source = expertNodes[i]
-        const target = expertNodes[j]
-        const strength = Math.min(1, (source.usage + target.usage) / 2 + 0.1)
-        const opacity = strength * 0.6
-        
-        connections.push({
-          source: i,
-          target: j,
-          strength,
-          opacity,
-          x1: source.x,
-          y1: source.y,
-          x2: target.x,
-          y2: target.y,
-        })
-      }
-    }
-    return connections
-  }, [expertNodes])
+  // Identify starved experts (usage below threshold)
+  const STARVATION_THRESHOLD = 0.05
+  const starvedExperts = useMemo(() => expertNodes.filter((e) => e.usage < STARVATION_THRESHOLD), [expertNodes])
 
-  // Generate attention heatmap data
-  const attentionHeatmap = useMemo(() => {
-    if (!trainingData?.attention_weights) return []
-    
-    const heatmap = []
-    for (let i = 0; i < 4; i++) {
-      for (let j = 0; j < 4; j++) {
-        const weight = trainingData.attention_weights[i]?.[j] || 0
-        heatmap.push({
-          x: j,
-          y: i,
-          weight: weight,
-          intensity: Math.min(weight * 10, 1),
-        })
-      }
-    }
-    return heatmap
-  }, [trainingData?.attention_weights])
+  // Attention visualizer removed – heatmap generation no longer required
 
   // Architecture layers
   const layers = [
@@ -126,10 +85,9 @@ const NetworkVisualizer: React.FC = () => {
   ]
 
   const tabs = [
-    { id: 'overview', label: 'Overview', icon: Network },
-    { id: 'experts', label: 'Experts', icon: GitBranch },
-    { id: 'attention', label: 'Attention', icon: Eye },
-    { id: 'stats', label: 'Stats', icon: BarChart3 },
+    { id: 'architecture', label: 'Architecture', icon: Brain },
+    { id: 'usage', label: 'Usage', icon: GitBranch },
+    { id: 'performance', label: 'Performance', icon: Activity },
   ]
 
   return (
@@ -185,8 +143,8 @@ const NetworkVisualizer: React.FC = () => {
             transition={{ duration: 0.3 }}
             className="h-full"
           >
-            {activeTab === 'overview' && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
+            {activeTab === 'architecture' && (
+              <div className="grid grid-cols-1 gap-4 h-full">
                 {/* Network Architecture */}
                 <motion.div
                   className="card-glass p-4 rounded-xl flex flex-col"
@@ -225,8 +183,32 @@ const NetworkVisualizer: React.FC = () => {
                       </motion.div>
                     ))}
                   </div>
-                </motion.div>
 
+                  {/* Numeric summary of architecture */}
+                  <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                    <div className="flex items-center justify-between bg-gray-800/40 rounded-md p-2">
+                      <span>Layers</span>
+                      <span className="font-semibold text-blue-400">{layers.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between bg-gray-800/40 rounded-md p-2">
+                      <span>Experts</span>
+                      <span className="font-semibold text-purple-400">{expertNodes.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between bg-gray-800/40 rounded-md p-2">
+                      <span>Params</span>
+                      <span className="font-semibold text-green-400">{trainingData?.model_params || '0'}M</span>
+                    </div>
+                    <div className="flex items-center justify-between bg-gray-800/40 rounded-md p-2">
+                      <span>Memory</span>
+                      <span className="font-semibold text-orange-400">{trainingData?.gpu_memory?.toFixed(1) || '0.0'}GB</span>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+
+            {activeTab === 'usage' && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
                 {/* Quick Stats */}
                 <motion.div
                   className="card-glass p-4 rounded-xl flex flex-col"
@@ -238,8 +220,7 @@ const NetworkVisualizer: React.FC = () => {
                     <BarChart3 className="w-4 h-4 mr-2 text-green-400" />
                     Quick Stats
                   </h3>
-                  
-                  <div className="grid grid-cols-2 gap-3 flex-1">
+                  <div className="grid grid-cols-2 gap-3">
                     <div className="bg-gray-800/40 rounded-xl p-3">
                       <div className="text-xs text-gray-400 mb-1">Experts</div>
                       <div className="text-lg font-bold text-blue-400">{expertNodes.length || '0'}</div>
@@ -258,25 +239,21 @@ const NetworkVisualizer: React.FC = () => {
                     </div>
                   </div>
                 </motion.div>
-              </div>
-            )}
 
-            {activeTab === 'experts' && (
-              <div className="h-full flex flex-col">
-                {/* Expert Network Visualization */}
+                {/* Expert Usage */}
                 <motion.div
-                  className="card-glass p-4 rounded-xl flex-1 flex flex-col"
+                  className="card-glass p-4 rounded-xl flex flex-col space-y-4"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5 }}
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-base font-semibold flex items-center">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-semibold mb-3 flex items-center">
                       <GitBranch className="w-4 h-4 mr-2 text-purple-400" />
-                      Expert Network
+                      Expert Usage
                     </h3>
                     <div className="flex items-center space-x-2">
-                      <span className="text-xs text-gray-400">Balance:</span>
+                      <span className="text-xs text-gray-400">Load Bal:</span>
                       <div className={`px-2 py-1 rounded text-xs font-medium ${
                         loadBalancingScore > 0.7 ? 'bg-green-500/20 text-green-400' :
                         loadBalancingScore > 0.4 ? 'bg-yellow-500/20 text-yellow-400' :
@@ -286,180 +263,69 @@ const NetworkVisualizer: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  
-                  <div className="relative flex-1 bg-gray-800/30 rounded-xl overflow-hidden">
-                    {/* Background grid */}
-                    <div className="absolute inset-0 opacity-10">
-                      <svg width="100%" height="100%">
-                        <defs>
-                          <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="currentColor" strokeWidth="1"/>
-                          </pattern>
-                        </defs>
-                        <rect width="100%" height="100%" fill="url(#grid)" />
-                      </svg>
+
+                  {/* Layer overview */}
+                  <div className="flex flex-col items-center space-y-6">
+                    {/* Input → Attention */}
+                    <div className="flex flex-col items-center">
+                      <Layers className="w-8 h-8 text-blue-400 mb-1" />
+                      <span className="text-xs text-gray-300">Input → Attention</span>
                     </div>
 
-                    {/* Connection lines */}
-                    <svg className="absolute inset-0 w-full h-full">
-                      {connectionStrengths.map((connection, index) => (
-                        <motion.line
-                          key={`connection-${connection.source}-${connection.target}`}
-                          x1={`${(connection.x1 / 300) * 100}%`}
-                          y1={`${(connection.y1 / 160) * 100}%`}
-                          x2={`${(connection.x2 / 300) * 100}%`}
-                          y2={`${(connection.y2 / 160) * 100}%`}
-                          stroke="rgba(147, 51, 234, 0.4)"
-                          strokeWidth={connection.strength * 2}
-                          opacity={connection.opacity}
-                          initial={{ pathLength: 0 }}
-                          animate={{ pathLength: 1 }}
-                          transition={{ duration: 1, delay: index * 0.05 }}
-                        />
-                      ))}
-                    </svg>
-
-                    {/* Expert nodes */}
-                    {expertNodes.map((expert, index) => (
-                      <motion.div
-                        key={expert.id}
-                        className="absolute cursor-pointer"
-                        style={{
-                          left: `${(expert.x / 300) * 100}%`,
-                          top: `${(expert.y / 160) * 100}%`,
-                          transform: 'translate(-50%, -50%)',
-                        } as React.CSSProperties}
-                        initial={{ scale: 0, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={{ duration: 0.5, delay: index * 0.1 }}
-                        onMouseEnter={() => setHoveredExpert(expert.id)}
-                        onMouseLeave={() => setHoveredExpert(null)}
-                      >
-                        <motion.div
-                          className="relative rounded-full flex items-center justify-center border-2 border-white/20"
-                          style={{
-                            width: `${expert.size}px`,
-                            height: `${expert.size}px`,
-                            backgroundColor: expert.color,
-                            boxShadow: `0 0 ${expert.health * 20}px ${expert.color}`,
-                          } as React.CSSProperties}
-                          whileHover={{ scale: 1.2 }}
-                          animate={hoveredExpert === expert.id ? { scale: 1.1 } : { scale: 1 }}
-                        >
-                          <div className="text-white text-xs font-bold">
-                            {expert.specialization.icon}
-                          </div>
-                          
-                          <div className="absolute inset-0 rounded-full border-2 border-white/40"
-                               style={{
-                                 background: `conic-gradient(from 0deg, ${expert.color} 0deg, ${expert.color} ${expert.efficiency * 360}deg, transparent ${expert.efficiency * 360}deg, transparent 360deg)`,
-                                 padding: '2px',
-                               } as React.CSSProperties}>
-                          </div>
-                        </motion.div>
-
-                        <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs text-white whitespace-nowrap">
-                          {expert.name}
-                        </div>
-                        
-                        <div className="absolute -bottom-5 left-1/2 transform -translate-x-1/2 text-xs text-gray-400">
-                          {(expert.usage * 100).toFixed(0)}%
-                        </div>
-
-                        {/* Tooltip */}
-                        {hoveredExpert === expert.id && (
+                    {/* MoE Experts */}
+                    <div className="w-full">
+                      <h4 className="text-xs text-gray-400 mb-2">Mixture of Experts Usage</h4>
+                      <div className="space-y-2">
+                        {expertNodes.map((expert, idx) => (
                           <motion.div
-                            className="absolute z-10 bg-gray-900/95 border border-gray-600 rounded-xl p-2 text-xs"
-                            style={{
-                              left: expert.x > 150 ? 'auto' : '100%',
-                              right: expert.x > 150 ? '100%' : 'auto',
-                              top: expert.y > 80 ? 'auto' : '100%',
-                              bottom: expert.y > 80 ? '100%' : 'auto',
-                              transform: expert.y > 80 ? 'translateY(10px)' : 'translateY(-10px)',
-                              minWidth: '160px',
-                              marginLeft: expert.x > 150 ? '-10px' : '10px',
-                              marginTop: expert.y > 80 ? '-10px' : '10px',
-                            } as React.CSSProperties}
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{ duration: 0.2 }}
+                            key={expert.id}
+                            className="flex items-center"
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.3, delay: idx * 0.03 }}
                           >
-                            <div className="font-semibold mb-1 flex items-center">
-                              <span className="mr-1">{expert.specialization.icon}</span>
-                              {expert.name}
+                            <div
+                              className="w-4 h-4 rounded-full mr-2 flex-shrink-0"
+                              style={{ backgroundColor: expert.color }}
+                            />
+                            <span className="text-xs w-10 flex-shrink-0">{expert.name}</span>
+                            <div className="flex-1 h-2 bg-gray-700 rounded overflow-hidden relative">
+                              <motion.div
+                                className="h-full rounded"
+                                style={{
+                                  width: `${(expert.usage * 100).toFixed(1)}%`,
+                                  backgroundColor: expert.usage < STARVATION_THRESHOLD ? '#f87171' : '#4ade80',
+                                }}
+                                initial={{ width: 0 }}
+                                animate={{ width: `${(expert.usage * 100).toFixed(1)}%` }}
+                                transition={{ duration: 0.6, delay: 0.1 }}
+                              />
                             </div>
-                            <div className="space-y-1">
-                              <div className="flex justify-between">
-                                <span className="text-gray-400">Usage:</span>
-                                <span className="text-white">{(expert.usage * 100).toFixed(1)}%</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-400">Efficiency:</span>
-                                <span className={`${expert.efficiency > 0.7 ? 'text-green-400' : expert.efficiency > 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
-                                  {(expert.efficiency * 100).toFixed(1)}%
-                                </span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-400">Specialization:</span>
-                                <span className={expert.specialization.color}>{expert.specialization.name}</span>
-                              </div>
-                            </div>
+                            <span className={`text-xs ml-2 w-12 text-right ${expert.usage < STARVATION_THRESHOLD ? 'text-red-400' : 'text-gray-200'}`}>
+                              {(expert.usage * 100).toFixed(1)}%
+                            </span>
                           </motion.div>
-                        )}
-                      </motion.div>
-                    ))}
-                  </div>
-                </motion.div>
-              </div>
-            )}
-
-            {activeTab === 'attention' && (
-              <div className="h-full flex flex-col">
-                {/* Attention Heatmap */}
-                <motion.div
-                  className="card-glass p-4 rounded-xl flex-1 flex flex-col"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5 }}
-                >
-                  <h3 className="text-base font-semibold mb-3 flex items-center">
-                    <Eye className="w-4 h-4 mr-2 text-green-400" />
-                    Attention Heatmap
-                  </h3>
-                  
-                  <div className="flex-1 flex flex-col items-center justify-center">
-                    <div className="grid grid-cols-4 gap-1 max-w-xs">
-                      {attentionHeatmap.map((cell, index) => (
-                        <motion.div
-                          key={index}
-                          className="aspect-square rounded-sm flex items-center justify-center text-xs font-bold"
-                          style={{
-                            backgroundColor: `rgba(34, 197, 94, ${cell.intensity})`,
-                            color: cell.intensity > 0.5 ? 'white' : 'rgba(34, 197, 94, 0.8)',
-                          }}
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ duration: 0.3, delay: index * 0.02 }}
-                          whileHover={{ scale: 1.1 }}
-                        >
-                          {cell.weight.toFixed(2)}
-                        </motion.div>
-                      ))}
-                    </div>
-                    
-                    <div className="mt-4 flex items-center justify-between text-xs text-gray-400 w-full max-w-xs">
-                      <span>Low</span>
-                      <div className="flex items-center space-x-1">
-                        <div className="w-8 h-2 bg-gradient-to-r from-transparent to-green-400 rounded" />
+                        ))}
                       </div>
-                      <span>High</span>
+
+                      {starvedExperts.length > 0 && (
+                        <div className="mt-3 text-xs text-red-400">
+                          {starvedExperts.length} expert{starvedExperts.length > 1 ? 's are' : ' is'} under-utilized (&lt;5% usage)
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Output Layer */}
+                    <div className="flex flex-col items-center">
+                      <Zap className="w-8 h-8 text-yellow-400 mb-1" />
+                      <span className="text-xs text-gray-300">Output Layer</span>
                     </div>
                   </div>
                 </motion.div>
               </div>
             )}
 
-            {activeTab === 'stats' && (
+            {activeTab === 'performance' && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
                 {/* Performance Metrics */}
                 <motion.div
@@ -472,8 +338,8 @@ const NetworkVisualizer: React.FC = () => {
                     <Activity className="w-4 h-4 mr-2 text-blue-400" />
                     Performance
                   </h3>
-                  
-                  <div className="grid grid-cols-2 gap-3 flex-1">
+
+                  <div className="grid grid-cols-2 gap-3">
                     <div className="bg-gray-800/40 rounded-xl p-3">
                       <div className="text-xs text-gray-400 mb-1">Top Performer</div>
                       <div className="text-sm font-semibold text-green-400">
@@ -481,8 +347,7 @@ const NetworkVisualizer: React.FC = () => {
                           ? expertNodes.reduce((best, expert) => 
                               expert.efficiency > best.efficiency ? expert : best
                             ).name
-                          : 'N/A'
-                        }
+                          : 'N/A'}
                       </div>
                     </div>
                     <div className="bg-gray-800/40 rounded-xl p-3">
@@ -492,8 +357,7 @@ const NetworkVisualizer: React.FC = () => {
                           ? expertNodes.reduce((most, expert) => 
                               expert.usage > most.usage ? expert : most
                             ).name
-                          : 'N/A'
-                        }
+                          : 'N/A'}
                       </div>
                     </div>
                     <div className="bg-gray-800/40 rounded-xl p-3">
@@ -501,15 +365,12 @@ const NetworkVisualizer: React.FC = () => {
                       <div className="text-sm font-semibold text-purple-400">
                         {expertNodes.length > 0
                           ? ((expertNodes.reduce((sum, expert) => sum + expert.efficiency, 0) / expertNodes.length) * 100).toFixed(1)
-                          : '0.0'
-                        }%
+                          : '0.0'}%
                       </div>
                     </div>
                     <div className="bg-gray-800/40 rounded-xl p-3">
                       <div className="text-xs text-gray-400 mb-1">Load Balance</div>
-                      <div className="text-sm font-semibold text-orange-400">
-                        {(loadBalancingScore * 100).toFixed(1)}%
-                      </div>
+                      <div className="text-sm font-semibold text-orange-400">{(loadBalancingScore * 100).toFixed(1)}%</div>
                     </div>
                   </div>
                 </motion.div>
@@ -519,14 +380,14 @@ const NetworkVisualizer: React.FC = () => {
                   className="card-glass p-4 rounded-xl flex flex-col"
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.5, delay: 0.1 }}
+                  transition={{ duration: 0.5, delay: 0.2 }}
                 >
                   <h3 className="text-base font-semibold mb-3 flex items-center">
                     <Zap className="w-4 h-4 mr-2 text-yellow-400" />
                     Model Details
                   </h3>
-                  
-                  <div className="space-y-3 flex-1">
+
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between p-3 bg-gray-800/40 rounded-xl">
                       <span className="text-sm text-gray-400">Parameters:</span>
                       <span className="text-sm font-semibold text-blue-400">{trainingData?.model_params || '0'}M</span>
@@ -547,6 +408,8 @@ const NetworkVisualizer: React.FC = () => {
                 </motion.div>
               </div>
             )}
+
+            {/* Subtabs reorganized into Architecture, Usage, and Performance */}
           </motion.div>
         </AnimatePresence>
       </div>
