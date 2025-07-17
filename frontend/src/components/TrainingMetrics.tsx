@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Clock, Target, TrendingUp, Timer, Zap, Scale, Activity } from 'lucide-react'
+import { Clock, Target, TrendingUp, Timer, Zap, Scale, Activity, GitBranch } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 
 const TrainingMetrics: React.FC = () => {
@@ -121,6 +121,21 @@ const TrainingMetrics: React.FC = () => {
       value: trainingData?.load_balancing_reward ? `${trainingData.load_balancing_reward.toFixed(3)}` : '0.000',
       color: 'text-pink-400',
       bgColor: 'bg-pink-500/20',
+    },
+    // NEW: Enhanced expert starvation metrics
+    {
+      icon: Activity,
+      label: 'Starvation Severity',
+      value: trainingData?.avg_starvation_severity ? `${(trainingData.avg_starvation_severity * 100).toFixed(1)}%` : '0.0%',
+      color: trainingData?.avg_starvation_severity ? (trainingData.avg_starvation_severity > 0.5 ? 'text-red-400' : trainingData.avg_starvation_severity > 0.2 ? 'text-yellow-400' : 'text-green-400') : 'text-gray-400',
+      bgColor: 'bg-red-500/20',
+    },
+    {
+      icon: GitBranch,
+      label: 'Recovery Rate',
+      value: trainingData?.expert_recovery_rates ? `${Object.keys(trainingData.expert_recovery_rates).length} experts` : '0 experts',
+      color: trainingData?.expert_recovery_rates && Object.keys(trainingData.expert_recovery_rates).length > 0 ? 'text-green-400' : 'text-gray-400',
+      bgColor: 'bg-green-500/20',
     },
   ]
 

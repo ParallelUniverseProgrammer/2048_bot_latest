@@ -44,6 +44,10 @@ export interface TrainingData {
   avg_sparsity_score: number
   avg_balance_quality: number
   expert_usage_trend: number
+  // NEW: Enhanced expert starvation tracking
+  starvation_by_model_size: Record<string, number>
+  avg_starvation_severity: number
+  expert_recovery_rates: Record<number, number>
   // Animated progress feedback
   is_training_active?: boolean
   next_episode_estimate?: number
@@ -140,6 +144,11 @@ export interface TrainingState {
   lastPolicyLoss: number | null
   lastValueLoss: number | null
   
+  // NEW: Enhanced persistence for training metrics
+  lastTrainingData: TrainingData | null  // Store last complete training data for persistence
+  lastTrainingTimestamp: number | null   // When the last data was received
+  // NEW: Waiting for first data flag
+  isWaitingForFirstData: boolean
   // Actions
   setConnected: (connected: boolean) => void
   setConnectionError: (error: string | null) => void
@@ -219,6 +228,12 @@ export const useTrainingStore = create<TrainingState>()(
       lastPolicyLoss: null,
       lastValueLoss: null,
       
+      // NEW: Enhanced persistence
+      lastTrainingData: null,
+      lastTrainingTimestamp: null,
+      // NEW: Waiting for first data
+      isWaitingForFirstData: false,
+      
       // Actions
       setConnected: (connected) => set({ isConnected: connected }),
       
@@ -241,12 +256,17 @@ export const useTrainingStore = create<TrainingState>()(
           // Persist policy and value loss values when they're not null
           lastPolicyLoss: data.policy_loss !== null ? data.policy_loss : state.lastPolicyLoss,
           lastValueLoss: data.value_loss !== null ? data.value_loss : state.lastValueLoss,
+          // NEW: Store last complete training data for persistence
+          lastTrainingData: data,
+          lastTrainingTimestamp: Date.now(),
           // Clear training start loading state when first data arrives
           loadingStates: {
             ...state.loadingStates,
             isTrainingStarting: false,
             loadingMessage: null
-          }
+          },
+          // NEW: Mark that we've received the first data
+          isWaitingForFirstData: false
         })
       },
       
@@ -402,8 +422,48 @@ export const useTrainingStore = create<TrainingState>()(
         
         set({ loadingStates: newStates })
         
-        // Start progress simulation for operations that don't have real progress
-        if (operationType === 'training' || operationType === 'playback') {
+        // NEW: More realistic progress simulation for training
+        if (operationType === 'training') {
+          const progressInterval = setInterval(() => {
+            const currentState = get()
+            const elapsed = (Date.now() - (currentState.loadingStates.startTime || startTime)) / 1000
+            
+            // NEW: More realistic progress distribution
+            // First 4 steps complete quickly (0-60%), last step takes most time (60-95%)
+            let progress = 0
+            let estimatedTime = 0
+            
+            if (elapsed < 2) {
+              // Steps 1-4: Complete quickly (0-60% in 2 seconds)
+              progress = Math.min(60, (elapsed / 2) * 60)
+              estimatedTime = Math.max(0, 8 - elapsed) // 8 seconds remaining for last step
+            } else {
+              // Step 5: Waiting for first data (60-95% over 8+ seconds)
+              const step5Elapsed = elapsed - 2
+              progress = Math.min(95, 60 + (step5Elapsed / 8) * 35)
+              estimatedTime = Math.max(0, 10 - elapsed)
+            }
+            
+            if (progress < 95) {
+              set({
+                loadingStates: {
+                  ...currentState.loadingStates,
+                  loadingProgress: progress,
+                  estimatedTimeRemaining: estimatedTime,
+                  // Update step based on progress
+                  currentStepIndex: progress < 60 ? Math.floor(progress / 15) : 4,
+                  loadingStep: progress < 60 ? steps[Math.floor(progress / 15)] : steps[4]
+                }
+              })
+            } else {
+              clearInterval(progressInterval)
+            }
+          }, 200) // Update more frequently for smoother progress
+          
+          // Store interval ID for cleanup
+          newStates.progressInterval = progressInterval
+        } else if (operationType === 'playback') {
+          // Keep existing playback progress simulation
           const progressInterval = setInterval(() => {
             const currentState = get()
             const elapsed = (Date.now() - (currentState.loadingStates.startTime || startTime)) / 1000
@@ -552,7 +612,7 @@ export const useTrainingStore = create<TrainingState>()(
       },
       
       startTraining: async () => {
-        // Start enhanced loading operation
+        // NEW: More realistic training steps with better timing
         const trainingSteps = [
           'Initializing model configuration...',
           'Loading training environment...',
@@ -564,14 +624,9 @@ export const useTrainingStore = create<TrainingState>()(
         get().startLoadingOperation('training', trainingSteps)
         
         // Optimistic update for immediate UI feedback
-        set({ isTraining: true, isPaused: false })
+        set({ isTraining: true, isPaused: false, isWaitingForFirstData: true })
         
         try {
-          // Simulate step progression
-          setTimeout(() => get().updateLoadingProgress(20, trainingSteps[1]), 1000)
-          setTimeout(() => get().updateLoadingProgress(40, trainingSteps[2]), 2000)
-          setTimeout(() => get().updateLoadingProgress(60, trainingSteps[3]), 3000)
-          
           const response = await fetch(`${config.api.baseUrl}${config.api.endpoints.training.start}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -594,15 +649,14 @@ export const useTrainingStore = create<TrainingState>()(
                 currentStepIndex: 0,
                 estimatedTimeRemaining: null,
                 startTime: null
-              } 
+              },
+              isWaitingForFirstData: false
             })
             throw new Error('Failed to start training')
           }
           
-          // Update to final step - waiting for data
-          get().updateLoadingProgress(80, trainingSteps[4], 5)
-          
-          // Keep loading state active until first training data arrives
+          // NEW: Progress simulation is now handled by startLoadingOperation
+          // The last step (waiting for first data) will continue until data arrives
           
         } catch (error) {
           console.error('Error starting training:', error)
@@ -619,7 +673,8 @@ export const useTrainingStore = create<TrainingState>()(
               currentStepIndex: 0,
               estimatedTimeRemaining: null,
               startTime: null
-            }
+            },
+            isWaitingForFirstData: false
           })
         }
       },
@@ -746,6 +801,10 @@ export const useTrainingStore = create<TrainingState>()(
             scoreHistory: {episodes: [], values: []},
             lastPolicyLoss: null,
             lastValueLoss: null,
+            // NEW: Also reset persistence data
+            lastTrainingData: null,
+            lastTrainingTimestamp: null,
+            isWaitingForFirstData: false,
             checkpointPlaybackData: null,
             isPlayingCheckpoint: false,
             loadingStates: {
@@ -782,7 +841,8 @@ export const useTrainingStore = create<TrainingState>()(
               ...state.loadingStates,
               isTrainingResetting: false,
               loadingMessage: null
-            }
+            },
+            isWaitingForFirstData: false
           }))
           throw error
         }
@@ -800,6 +860,10 @@ export const useTrainingStore = create<TrainingState>()(
         isPlayingCheckpoint: state.isPlayingCheckpoint,
         lastPolicyLoss: state.lastPolicyLoss,
         lastValueLoss: state.lastValueLoss,
+        // NEW: Persist last training data for reconnection
+        lastTrainingData: state.lastTrainingData,
+        lastTrainingTimestamp: state.lastTrainingTimestamp,
+        isWaitingForFirstData: state.isWaitingForFirstData,
         // Persist recent history (last 100 points)
         lossHistory: {
           episodes: state.lossHistory.episodes.slice(-100),

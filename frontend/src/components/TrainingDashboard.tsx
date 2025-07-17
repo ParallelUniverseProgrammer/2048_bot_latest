@@ -23,6 +23,7 @@ const TrainingDashboard: React.FC = () => {
     modelSize, 
     setModelSize, 
     loadingStates,
+    isWaitingForFirstData,
     startTraining,
     pauseTraining,
     resumeTraining,
@@ -32,6 +33,9 @@ const TrainingDashboard: React.FC = () => {
   const { displayMode } = useDeviceDetection()
   const isMobile = displayMode === 'mobile'
   const [activeTab, setActiveTab] = useState<'core' | 'trends' | 'stats'>('core')
+
+  // Use isWaitingForFirstData from store
+  const showWaitingForFirstData = isWaitingForFirstData
 
   // Training control functions
   const handleTrainingControl = async (action: 'start' | 'pause' | 'resume' | 'stop') => {
@@ -468,11 +472,12 @@ const TrainingDashboard: React.FC = () => {
             <span className={`font-medium ${isTraining ? 'text-green-400' : 'text-red-400'}`}>
               {isTraining ? 'Training' : 'Paused'}
             </span>
-            {isPaused && (
-              <span className="text-yellow-400"> (Paused)</span>
-            )}
             {!isConnected && (
               <span className="text-red-400"> (Disconnected)</span>
+            )}
+            {/* Show waiting indicator using new flag */}
+            {showWaitingForFirstData && (
+              <span className="text-purple-400"> (Waiting for data...)</span>
             )}
           </div>
         </div>
@@ -495,7 +500,7 @@ const TrainingDashboard: React.FC = () => {
               <option value="large">Large</option>
             </select>
           )}
-          {isTraining && (
+          {isTraining && !isPaused && (
             <button
               onClick={() => handleTrainingControl('pause')}
               className="flex items-center px-3 py-1.5 rounded-xl text-xs font-medium text-white bg-yellow-500 hover:bg-yellow-600 transition-colors"
@@ -503,6 +508,16 @@ const TrainingDashboard: React.FC = () => {
             >
               <Pause className="w-3 h-3 mr-1" />
               Pause
+            </button>
+          )}
+          {isTraining && isPaused && (
+            <button
+              onClick={() => handleTrainingControl('resume')}
+              className="flex items-center px-3 py-1.5 rounded-xl text-xs font-medium text-white bg-green-500 hover:bg-green-600 transition-colors"
+              disabled={loadingStates.isTrainingStarting || !isConnected}
+            >
+              <Play className="w-3 h-3 mr-1" />
+              Resume
             </button>
           )}
           {!isTraining && (
@@ -527,6 +542,33 @@ const TrainingDashboard: React.FC = () => {
           )}
         </div>
       </motion.div>
+
+      {/* Waiting for First Data Indicator */}
+      {showWaitingForFirstData && (
+        <motion.div
+          className="card-glass p-4 rounded-2xl border border-purple-500/30 bg-purple-500/10"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+        >
+          <div className="flex items-center space-x-3">
+            <Brain className="w-5 h-5 text-purple-400 animate-pulse" />
+            <div className="flex-1">
+              <div className="text-sm font-medium text-purple-300">Waiting for First Training Data</div>
+              <div className="text-xs text-purple-400/80">
+                The model is initializing and will start sending training metrics shortly. 
+                This typically takes 10-30 seconds for the first episode to complete.
+              </div>
+            </div>
+            <div className="text-xs text-purple-400">
+              {loadingStates.estimatedTimeRemaining !== null 
+                ? `${Math.ceil(loadingStates.estimatedTimeRemaining)}s`
+                : '...'
+              }
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Enhanced Charts Section - Moved to top with more space */}
       <motion.div
@@ -573,11 +615,7 @@ const TrainingDashboard: React.FC = () => {
             </div>
           </div>
         </div>
-
-
       </motion.div>
-
-
 
       {/* Unified Stats Card - Reduced height to 2/3 */}
       <motion.div

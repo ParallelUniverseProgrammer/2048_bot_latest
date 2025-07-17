@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Eye, EyeOff, PlayCircle, PauseCircle, StopCircle, Loader2, RefreshCw } from 'lucide-react'
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Eye, EyeOff, PlayCircle, PauseCircle, StopCircle, RefreshCw } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 import { useDeviceDetection } from '../utils/deviceDetection'
 import config from '../utils/config'
@@ -12,7 +12,6 @@ const GameBoard: React.FC = () => {
     lastValueLoss, 
     checkpointPlaybackData, 
     isPlayingCheckpoint,
-    loadingStates,
     gameCompletionData,
     isShowingGameOver
   } = useTrainingStore()
@@ -102,12 +101,12 @@ const GameBoard: React.FC = () => {
         useTrainingStore.getState().setGameCompletionData(null)
       }
       
-      // Start enhanced loading operation
+      // Start enhanced loading operation using the global progress bar
       const loadingSteps = [
         'Resetting game state...',
         'Initializing new game...',
         'Starting game simulation...',
-        'Waiting for first move...'
+        'Waiting for first game data...'
       ]
       
       useTrainingStore.getState().startLoadingOperation('newGame', loadingSteps)
@@ -132,10 +131,10 @@ const GameBoard: React.FC = () => {
         throw new Error('Failed to start new game')
       }
       
-      // Update to final step
-      useTrainingStore.getState().updateLoadingProgress(75, loadingSteps[3], 2)
+      // Update to final step - waiting for first game data
+      useTrainingStore.getState().updateLoadingProgress(75, loadingSteps[3], 5)
       
-      // Loading state will be cleared when first game data arrives
+      // Loading state will be cleared when first game data arrives via WebSocket
       
     } catch (err) {
       console.error('Error starting new game:', err)
@@ -221,9 +220,9 @@ const GameBoard: React.FC = () => {
     if (value <= 64) return 'bg-game-32'
     if (value <= 128) return 'bg-game-64'
     if (value <= 256) return 'bg-game-128'
-    if (value <= 512) return 'bg-game-256'
-    if (value <= 1024) return 'bg-game-512'
-    if (value <= 2048) return 'bg-game-1024'
+    if (value <= 512) return 'bg-game-512'
+    if (value <= 1024) return 'bg-game-1024'
+    if (value <= 2048) return 'bg-game-2048'
     return 'bg-game-2048'
   }
 
@@ -260,67 +259,6 @@ const GameBoard: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col space-y-2 pb-6">
-      {/* Loading State - Sticky positioned at top of content */}
-      {(loadingStates.isPlaybackStarting || loadingStates.isNewGameStarting) && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="sticky top-0 z-40 card-glass p-4 rounded-2xl border border-blue-500/30 bg-blue-500/5 shadow-lg mb-2"
-        >
-          <div className="space-y-3">
-            {/* Header */}
-            <div className="flex items-center space-x-3">
-              <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-blue-300 truncate">
-                  {loadingStates.isPlaybackStarting ? 'Loading Playback' : 'Starting Game'}
-                </div>
-                <div className="text-xs text-blue-400/80 truncate">
-                  {loadingStates.loadingStep || loadingStates.loadingMessage || 'Please wait...'}
-                </div>
-              </div>
-              <div className="text-xs text-blue-400">
-                {loadingStates.estimatedTimeRemaining !== null 
-                  ? `${Math.ceil(loadingStates.estimatedTimeRemaining)}s`
-                  : ''
-                }
-              </div>
-            </div>
-            
-            {/* Progress Bar */}
-            <div className="w-full bg-gray-700 rounded-full h-2">
-              <motion.div
-                className="bg-blue-400 h-2 rounded-full"
-                initial={{ width: 0 }}
-                animate={{ width: `${loadingStates.loadingProgress}%` }}
-                transition={{ duration: 0.3 }}
-              />
-            </div>
-            
-            {/* Step Progress */}
-            {loadingStates.loadingSteps.length > 0 && (
-              <div className="flex items-center space-x-2">
-                <div className="text-xs text-gray-400">
-                  Step {loadingStates.currentStepIndex + 1} of {loadingStates.loadingSteps.length}
-                </div>
-                <div className="flex-1 flex space-x-1">
-                  {loadingStates.loadingSteps.map((_, index) => (
-                    <div
-                      key={index}
-                      className={`flex-1 h-1 rounded-full ${
-                        index <= loadingStates.currentStepIndex 
-                          ? 'bg-blue-400' 
-                          : 'bg-gray-600'
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </motion.div>
-      )}
-
       {/* Game Over Screen */}
       {isShowingGameOver && gameCompletionData && (
         <motion.div
@@ -392,9 +330,6 @@ const GameBoard: React.FC = () => {
           </div>
         </motion.div>
       )}
-
-      {/* Header with Status */}
-      {/* (Removed the status header with colored dot and text) */}
 
       {/* Game Stats */}
       <motion.div

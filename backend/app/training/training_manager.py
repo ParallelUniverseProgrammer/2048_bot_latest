@@ -87,6 +87,16 @@ class TrainingManager:
         self._sparsity_scores: List[float] = []  # Track sparsity promotion scores
         self._load_balance_quality: List[float] = []  # Track load balance quality
         
+        # ENHANCED: Expert starvation tracking with model-size awareness
+        self._expert_starvation_by_model_size: Dict[str, int] = {
+            'tiny': 0,
+            'small': 0, 
+            'medium': 0,
+            'large': 0
+        }
+        self._expert_recovery_tracking: Dict[int, List[float]] = {}  # Track recovery of specific experts
+        self._starvation_severity_tracking: List[float] = []  # Track how severe starvation is
+        
         # Optimization: Batch metrics for reduced WebSocket overhead
         self._metrics_batch: List[Dict[str, Any]] = []
         self._batch_size = 4  # Send metrics in batches of 4
@@ -297,6 +307,13 @@ class TrainingManager:
         self._game_lengths = []
         self._episode_start_times = []
         
+        # Clear all history lists to prevent data inconsistency between sessions
+        self._recent_scores = []
+        self._recent_losses = []
+        self._max_tiles_achieved = []
+        self._load_balancing_metrics = []
+        self._expert_usage_history = []
+        
         # Create a fresh trainer with the current config (or default if none set)
         if self.current_config is None:
             # Use default config if none is set
@@ -494,12 +511,44 @@ class TrainingManager:
                                 usage_list = expert_usage.tolist() if hasattr(expert_usage, 'tolist') else list(expert_usage)
                                 self._expert_usage_history.append([float(u) for u in usage_list])
                                 
-                                # Check for expert starvation
+                                # ENHANCED: Check for expert starvation with model-size awareness
                                 n_experts = len(usage_list)
                                 ideal_usage = 1.0 / n_experts
-                                starved_experts = sum(1 for usage in usage_list if usage < ideal_usage * 0.25)
+                                
+                                # Determine model size for tracking
+                                model_size = 'medium'  # default
+                                if n_experts <= 4:
+                                    model_size = 'small' if (self.current_config and self.current_config.d_model > 60) else 'tiny'
+                                elif n_experts <= 6:
+                                    model_size = 'medium'
+                                else:
+                                    model_size = 'large'
+                                
+                                # ENHANCED: Track starvation with severity
+                                starved_experts = 0
+                                total_starvation_severity = 0.0
+                                
+                                for i, usage in enumerate(usage_list):
+                                    if usage < ideal_usage * 0.25:  # Starved expert
+                                        starved_experts += 1
+                                        # Calculate severity (how far below threshold)
+                                        severity = (ideal_usage * 0.25 - usage) / (ideal_usage * 0.25)
+                                        total_starvation_severity += severity
+                                        
+                                        # Track recovery for this expert
+                                        if i not in self._expert_recovery_tracking:
+                                            self._expert_recovery_tracking[i] = []
+                                        self._expert_recovery_tracking[i].append(float(usage))
+                                        
+                                        # Keep only recent history
+                                        if len(self._expert_recovery_tracking[i]) > 20:
+                                            self._expert_recovery_tracking[i] = self._expert_recovery_tracking[i][-20:]
+                                
                                 if starved_experts > 0:
                                     self._expert_starvation_count += 1
+                                    self._expert_starvation_by_model_size[model_size] += 1
+                                    avg_severity = total_starvation_severity / starved_experts
+                                    self._starvation_severity_tracking.append(float(avg_severity))
                                 
                                 # Calculate sparsity score (how many experts are actively used)
                                 active_experts = sum(1 for usage in usage_list if usage > ideal_usage * 0.1)
@@ -783,14 +832,46 @@ class TrainingManager:
         if self._load_balance_quality:
             avg_balance_quality = sum(self._load_balance_quality) / len(self._load_balance_quality)
         
+        # ENHANCED: Expert starvation metrics by model size
+        starvation_by_model_size = {}
+        for model_size, count in self._expert_starvation_by_model_size.items():
+            if self.current_episode > 0:
+                starvation_by_model_size[model_size] = count / self.current_episode
+            else:
+                starvation_by_model_size[model_size] = 0.0
+        
+        # NEW: Average starvation severity
+        avg_starvation_severity = 0.0
+        if self._starvation_severity_tracking:
+            avg_starvation_severity = sum(self._starvation_severity_tracking) / len(self._starvation_severity_tracking)
+        
+        # NEW: Expert recovery tracking
+        expert_recovery_rates = {}
+        for expert_idx, usage_history in self._expert_recovery_tracking.items():
+            if len(usage_history) >= 5:
+                # Calculate if usage is trending upward
+                recent_avg = sum(usage_history[-5:]) / 5
+                older_avg = sum(usage_history[:-5]) / max(1, len(usage_history) - 5)
+                recovery_rate = (recent_avg - older_avg) / max(older_avg, 1e-8)
+                expert_recovery_rates[expert_idx] = recovery_rate
+        
         # Expert usage trend analysis
         expert_usage_trend = 0.0
         if len(self._expert_usage_history) >= 10:
             recent_usage = self._expert_usage_history[-10:]
-            avg_recent = [sum(usage[i] for usage in recent_usage) / len(recent_usage) 
-                         for i in range(len(recent_usage[0]))]
-            ideal_usage = 1.0 / len(avg_recent)
-            expert_usage_trend = 1.0 - np.mean(np.abs(np.array(avg_recent) - ideal_usage)) / ideal_usage
+            # Safety check: ensure all usage entries have the same length
+            if recent_usage and all(len(usage) == len(recent_usage[0]) for usage in recent_usage):
+                try:
+                    avg_recent = [sum(usage[i] for usage in recent_usage) / len(recent_usage) 
+                                 for i in range(len(recent_usage[0]))]
+                    ideal_usage = 1.0 / len(avg_recent)
+                    expert_usage_trend = 1.0 - np.mean(np.abs(np.array(avg_recent) - ideal_usage)) / ideal_usage
+                except (IndexError, ZeroDivisionError) as e:
+                    print(f"Warning: Error calculating expert usage trend: {e}")
+                    expert_usage_trend = 0.0
+            else:
+                print(f"Warning: Inconsistent expert usage data lengths, skipping trend calculation")
+                expert_usage_trend = 0.0
         
         metrics = {
             "type": "training_update",
@@ -827,6 +908,9 @@ class TrainingManager:
             "avg_sparsity_score": avg_sparsity_score,
             "avg_balance_quality": avg_balance_quality,
             "expert_usage_trend": expert_usage_trend,
+            "starvation_by_model_size": starvation_by_model_size,
+            "avg_starvation_severity": avg_starvation_severity,
+            "expert_recovery_rates": expert_recovery_rates,
         }
         
         self.timing_logger.end_operation("build_metrics", "processing")

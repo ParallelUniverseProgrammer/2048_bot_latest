@@ -157,14 +157,49 @@ class PPOTrainer:
         self.lb_loss_coef = 0.05  # Increased from 0.01 to 0.05 for stronger load balancing
         self.max_grad_norm = 0.5
         
-        # Load balancing reward parameters - ENHANCED for tiny models
-        self.lb_reward_coef = 0.3  # Increased from 0.1 to 0.3 for stronger rewards
-        # Adaptive critical threshold based on number of experts
-        self.lb_critical_threshold = max(0.15, 1.0 / (self.config.n_experts * 2))  # Adaptive threshold
-        self.lb_early_training_boost = 1.0  # Increased from 0.5 to 1.0 for stronger early training
-        self.lb_episode_threshold = 2000  # Increased from 1000 to 2000 for longer early training
-        # New: Adaptive load balancing based on model size
-        self.lb_adaptive_factor = max(1.0, 8.0 / self.config.n_experts)  # Stronger for smaller models
+        # Load balancing reward parameters - ENHANCED for all model sizes
+        self.lb_reward_coef = 0.3  # Keep current strength
+        # ENHANCED: Scale critical threshold by model size to prevent starvation
+        base_threshold = 0.15
+        if self.config.n_experts <= 4:
+            # Tiny/small models: use current threshold
+            self.lb_critical_threshold = max(base_threshold, 1.0 / (self.config.n_experts * 2))
+        elif self.config.n_experts <= 6:
+            # Medium models: higher threshold to prevent starvation
+            self.lb_critical_threshold = max(base_threshold, 1.0 / (self.config.n_experts * 1.5))
+        else:
+            # Large models: even higher threshold
+            self.lb_critical_threshold = max(base_threshold, 1.0 / (self.config.n_experts * 1.2))
+        
+        # ENHANCED: Scale early training boost by model size
+        if self.config.n_experts <= 4:
+            self.lb_early_training_boost = 1.0  # Current value for tiny/small
+            self.lb_episode_threshold = 2000
+        elif self.config.n_experts <= 6:
+            self.lb_early_training_boost = 1.5  # Stronger boost for medium
+            self.lb_episode_threshold = 3000
+        else:
+            self.lb_early_training_boost = 2.0  # Strongest boost for large
+            self.lb_episode_threshold = 4000
+        
+        # ENHANCED: Improved adaptive factor that scales properly with model size
+        # Instead of reducing strength for larger models, maintain or increase it
+        if self.config.n_experts <= 4:
+            self.lb_adaptive_factor = 1.5  # Strong for tiny/small
+        elif self.config.n_experts <= 6:
+            self.lb_adaptive_factor = 1.8  # Stronger for medium
+        else:
+            self.lb_adaptive_factor = 2.0  # Strongest for large
+        
+        # NEW: Progressive load balancing intensity
+        # Increase load balancing strength over time for larger models
+        self.lb_progressive_factor = 1.0
+        self.lb_progressive_episodes = 1000  # Start progressive scaling after 1000 episodes
+        
+        # NEW: Expert recovery tracking
+        self.expert_recovery_history = deque(maxlen=50)  # Track expert recovery patterns
+        self.starved_experts_tracker = {}  # Track which experts are consistently starved
+        
         # New: Expert diversity tracking
         self.expert_usage_history = deque(maxlen=100)  # Track recent usage patterns
         self.lb_diversity_penalty = 0.2  # Penalty for low diversity
@@ -246,48 +281,86 @@ class PPOTrainer:
         variance = np.var(usage_np)
         max_variance = (1.0 - ideal_usage) ** 2
         normalized_variance = variance / max_variance if max_variance > 0 else 0.0
-        variance_penalty = normalized_variance * 2.0  # Increased penalty
+        variance_penalty = normalized_variance * 2.0  # Keep current penalty
         
-        # 2. Expert starvation penalty (enhanced)
+        # 2. ENHANCED: Expert starvation penalty with progressive scaling
         starvation_penalty = 0.0
         starved_experts = 0
+        starved_expert_indices = []
+        
         for i, usage in enumerate(usage_np):
             if float(usage) < self.lb_critical_threshold:
-                starvation_penalty += (self.lb_critical_threshold - float(usage)) / self.lb_critical_threshold
+                # ENHANCED: Progressive penalty based on how far below threshold
+                penalty_factor = (self.lb_critical_threshold - float(usage)) / self.lb_critical_threshold
+                # Additional penalty for experts that are severely starved
+                if float(usage) < self.lb_critical_threshold * 0.5:
+                    penalty_factor *= 2.0  # Double penalty for severely starved experts
+                
+                starvation_penalty += penalty_factor
                 starved_experts += 1
+                starved_expert_indices.append(i)
+        
+        # ENHANCED: Track starved experts for recovery analysis
+        starved_expert_indices_list = list(starved_expert_indices)
+        for idx in starved_expert_indices_list:
+            if idx not in self.starved_experts_tracker:
+                self.starved_experts_tracker[idx] = 0
+            self.starved_experts_tracker[idx] += 1
+        
+        # Clean up tracker (remove experts that haven't been starved recently)
+        for idx in list(self.starved_experts_tracker.keys()):
+            if idx not in starved_expert_indices_list:
+                current_count = int(self.starved_experts_tracker[idx])
+                new_count = max(0, current_count - 1)
+                self.starved_experts_tracker[idx] = new_count
+                if new_count <= 0:
+                    del self.starved_experts_tracker[idx]
         
         # Additional penalty for multiple starved experts
         if starved_experts > 1:
             starvation_penalty *= (1.0 + starved_experts * 0.5)
         
-        # 3. Entropy bonus (higher entropy = better diversity)
+        # 3. Entropy bonus (higher entropy = better diversity) - PRESERVE SPARSITY
         epsilon = 1e-8
         log_usage = np.log(usage_np + epsilon)
-        entropy = float(-np.sum(usage_np * log_usage))
+        entropy = float(-np.sum(usage_np.astype(np.float64) * log_usage))
         max_entropy = float(np.log(n_experts))
         normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0.0
-        entropy_bonus = normalized_entropy * 1.5  # Increased bonus
+        entropy_bonus = normalized_entropy * 1.5  # Keep current bonus
         
-        # 4. NEW: Diversity tracking penalty
+        # 4. ENHANCED: Diversity tracking penalty with recovery incentives
         diversity_penalty = 0.0
         if len(self.expert_usage_history) >= 10:
             # Calculate diversity over recent history
             recent_usage = np.array(list(self.expert_usage_history)[-10:])
             avg_usage = np.mean(recent_usage, axis=0)
             
-            # Penalty for experts that are consistently underused
+            # ENHANCED: Penalty for experts that are consistently underused
             for i, avg_usage_val in enumerate(avg_usage):
                 if avg_usage_val < ideal_usage * 0.5:  # Consistently underused
                     diversity_penalty += (ideal_usage * 0.5 - avg_usage_val) / ideal_usage
+                    
+                    # NEW: Recovery bonus for experts that were starved but are improving
+                    if i in self.starved_experts_tracker and self.starved_experts_tracker[i] > 0:
+                        # If this expert was starved but current usage is improving, reduce penalty
+                        current_usage = usage_np[i]
+                        if current_usage > avg_usage_val * 1.2:  # 20% improvement
+                            diversity_penalty *= 0.8  # Reduce penalty for recovering experts
         
-        # 5. NEW: Sparsity promotion (encourage using more experts)
+        # 5. PRESERVE: Sparsity promotion (encourage using more experts)
         active_experts = float(np.sum((usage_np > ideal_usage * 0.1).astype(np.float64)))  # Experts with >10% of ideal usage
-        sparsity_bonus = (active_experts / n_experts) * 0.5  # Bonus for using more experts
+        sparsity_bonus = (active_experts / n_experts) * 0.5  # Keep current bonus
         
-        # 6. NEW: Balance quality metric
+        # 6. Balance quality metric
         # Reward for having usage close to uniform distribution
         balance_quality = 1.0 - np.mean(np.abs(usage_np - ideal_usage)) / ideal_usage
         balance_bonus = balance_quality * 0.3
+        
+        # ENHANCED: Progressive load balancing scaling
+        if self.episode_count > self.lb_progressive_episodes:
+            # Gradually increase load balancing strength for larger models
+            progress_factor = min(2.0, 1.0 + (self.episode_count - self.lb_progressive_episodes) / 5000)
+            self.lb_progressive_factor = progress_factor
         
         # Combine all components
         lb_reward = (entropy_bonus + 
@@ -299,6 +372,9 @@ class PPOTrainer:
         
         # Apply adaptive factor based on model size
         lb_reward *= self.lb_adaptive_factor
+        
+        # Apply progressive scaling for larger models
+        lb_reward *= self.lb_progressive_factor
         
         # Apply early training boost
         if self.episode_count < self.lb_episode_threshold:
@@ -312,7 +388,8 @@ class PPOTrainer:
                                        f"reward={final_reward:.4f}, variance={normalized_variance:.4f}, "
                                        f"entropy={normalized_entropy:.4f}, starvation={starvation_penalty:.4f}, "
                                        f"diversity={diversity_penalty:.4f}, sparsity={sparsity_bonus:.4f}, "
-                                       f"balance={balance_bonus:.4f}, active_experts={active_experts}/{n_experts}")
+                                       f"balance={balance_bonus:.4f}, active_experts={active_experts}/{n_experts}, "
+                                       f"progressive_factor={self.lb_progressive_factor:.2f}")
         
         return final_reward
     

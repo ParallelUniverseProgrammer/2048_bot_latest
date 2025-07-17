@@ -124,14 +124,17 @@ class MoELayer(nn.Module):
         self.top_k = top_k
         self.d_model = d_model
 
-        # ENHANCED: Adaptive routing hyper-parameters for tiny models
-        # Adjust capacity factor based on number of experts
+        # ENHANCED: Adaptive routing hyper-parameters for all model sizes
+        # Scale capacity factor by model size to prevent starvation
         if n_experts <= 4:
             self.capacity_factor = 2.0  # More capacity for tiny models to prevent starvation
             self.noise_std = 0.05  # Higher noise for better exploration in tiny models
+        elif n_experts <= 6:
+            self.capacity_factor = 1.8  # Enhanced capacity for medium models
+            self.noise_std = 0.03  # Moderate noise for medium models
         else:
-            self.capacity_factor = capacity_factor
-            self.noise_std = noise_std
+            self.capacity_factor = 1.6  # Enhanced capacity for large models
+            self.noise_std = 0.02  # Lower noise for large models but still present
 
         # Router network
         self.router = nn.Linear(d_model, n_experts)
@@ -199,44 +202,67 @@ class MoELayer(nn.Module):
             # Simple assignment (weight ≈1) – keep implementation lightweight for 16-token boards
             output[token_indices] = expert_output
         
-        # ---- ENHANCED: Load-balancing auxiliary loss for tiny models ----
+        # ---- ENHANCED: Load-balancing auxiliary loss for all model sizes ----
         # Use more sophisticated loss function for better expert utilization
         
         # 1. Switch-style importance loss (original)
         importance = router_probs.mean(dim=0)  # (n_experts,)
         switch_loss = (importance * importance).sum() * self.n_experts
         
-        # 2. NEW: Entropy-based diversity loss
+        # 2. ENHANCED: Entropy-based diversity loss
         # Encourage higher entropy in expert selection
         expert_entropy = -torch.sum(importance * torch.log(importance + 1e-8))
         max_entropy = torch.log(torch.tensor(float(self.n_experts), device=x.device))
         normalized_entropy = expert_entropy / max_entropy
         diversity_loss = 1.0 - normalized_entropy
         
-        # 3. NEW: Starvation penalty
-        # Penalize experts that get very low usage
-        min_usage_threshold = 1.0 / (self.n_experts * 4)  # 25% of uniform distribution
-        starvation_mask = importance < min_usage_threshold
-        starvation_penalty = torch.sum(starvation_mask.float()) * 0.5
+        # 3. ENHANCED: Starvation penalty with model-size scaling
+        # Scale starvation threshold by model size
+        if self.n_experts <= 4:
+            min_usage_threshold = 1.0 / (self.n_experts * 4)  # 25% of uniform distribution
+            starvation_weight = 0.5
+        elif self.n_experts <= 6:
+            min_usage_threshold = 1.0 / (self.n_experts * 3)  # 33% of uniform distribution
+            starvation_weight = 0.7
+        else:
+            min_usage_threshold = 1.0 / (self.n_experts * 2.5)  # 40% of uniform distribution
+            starvation_weight = 0.9
         
-        # 4. NEW: Balance quality loss
+        starvation_mask = importance < min_usage_threshold
+        starvation_penalty = torch.sum(starvation_mask.float()) * starvation_weight
+        
+        # 4. ENHANCED: Balance quality loss with progressive scaling
         # Penalize deviation from uniform distribution
         uniform_target = 1.0 / self.n_experts
         balance_loss = torch.mean(torch.abs(importance - uniform_target)) / uniform_target
         
-        # Combine losses with adaptive weights for tiny models
+        # 5. NEW: Expert diversity enforcement
+        # Ensure at least a minimum number of experts are actively used
+        active_experts = torch.sum((importance > uniform_target * 0.1).float())
+        min_active_experts = max(2, self.n_experts // 2)  # At least half the experts should be active
+        diversity_enforcement = torch.relu(min_active_experts - active_experts) * 0.3
+        
+        # Combine losses with adaptive weights for all model sizes
         if self.n_experts <= 4:
-            # Stronger load balancing for tiny models
+            # Strong load balancing for tiny models
             self.lb_loss = (switch_loss * 0.3 + 
                            diversity_loss * 0.4 + 
                            starvation_penalty * 0.2 + 
                            balance_loss * 0.1)
+        elif self.n_experts <= 6:
+            # Enhanced load balancing for medium models
+            self.lb_loss = (switch_loss * 0.25 + 
+                           diversity_loss * 0.35 + 
+                           starvation_penalty * 0.25 + 
+                           balance_loss * 0.1 + 
+                           diversity_enforcement * 0.05)
         else:
-            # Standard load balancing for larger models
-            self.lb_loss = (switch_loss * 0.5 + 
+            # Strongest load balancing for large models
+            self.lb_loss = (switch_loss * 0.2 + 
                            diversity_loss * 0.3 + 
-                           starvation_penalty * 0.1 + 
-                           balance_loss * 0.1)
+                           starvation_penalty * 0.3 + 
+                           balance_loss * 0.1 + 
+                           diversity_enforcement * 0.1)
 
         return output.view(batch_size, seq_len, d_model)
 
