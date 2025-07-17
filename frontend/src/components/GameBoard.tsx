@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Eye, EyeOff, PlayCircle, PauseCircle, StopCircle, RefreshCw } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
@@ -13,17 +13,25 @@ const GameBoard: React.FC = () => {
     checkpointPlaybackData, 
     isPlayingCheckpoint,
     gameCompletionData,
-    isShowingGameOver
+    isShowingGameOver,
+    loadingStates
   } = useTrainingStore()
   
   // Device detection for mobile optimization
   useDeviceDetection()
-  // Set attention ON by default
+  
+  // Local state management
   const [showAttention, setShowAttention] = React.useState(true)
   const [playbackStatus, setPlaybackStatus] = React.useState<any>(null)
   const [restartCountdown, setRestartCountdown] = React.useState(3)
+  const [displayBoard, setDisplayBoard] = React.useState<number[][]>([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
+  const [playbackSpeed, setPlaybackSpeed] = React.useState<number>(2.5)
+  const [speedOptions] = React.useState<number[]>([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0])
   
-  // Load playback status
+  // Note: Debounced updates removed for now as they weren't being used
+  // Could be re-implemented if needed for performance optimization
+  
+  // Load playback status with error handling
   React.useEffect(() => {
     const loadPlaybackStatus = async () => {
       try {
@@ -33,7 +41,7 @@ const GameBoard: React.FC = () => {
           setPlaybackStatus(data)
         }
       } catch (err) {
-        // Ignore errors
+        // Ignore errors silently to avoid console spam
       }
     }
     
@@ -42,7 +50,7 @@ const GameBoard: React.FC = () => {
     return () => clearInterval(interval)
   }, [])
 
-  // Handle restart countdown
+  // Handle restart countdown with better UX
   React.useEffect(() => {
     if (isShowingGameOver) {
       setRestartCountdown(30)
@@ -60,7 +68,48 @@ const GameBoard: React.FC = () => {
     }
   }, [isShowingGameOver])
 
-  // Playback control functions
+  // Improved board state management with immediate feedback
+  React.useEffect(() => {
+    const currentData = getCurrentData()
+    if (currentData?.board_state) {
+      // Immediate update for better responsiveness
+      setDisplayBoard(currentData.board_state)
+    }
+  }, [checkpointPlaybackData?.step_data?.board_state, trainingData?.board_state])
+
+  // Get current data with better memoization
+  const getCurrentData = useCallback(() => {
+    if (isPlayingCheckpoint && checkpointPlaybackData) {
+      return {
+        board_state: checkpointPlaybackData.step_data.board_state,
+        score: checkpointPlaybackData.step_data.score,
+        action: checkpointPlaybackData.step_data.action,
+        action_probs: checkpointPlaybackData.step_data.action_probs,
+        attention_weights: checkpointPlaybackData.step_data.attention_weights,
+        episode: 0,
+        is_playback: true,
+        checkpoint_id: checkpointPlaybackData.checkpoint_id,
+        done: checkpointPlaybackData.step_data.done
+      }
+    } else if (trainingData) {
+      return {
+        board_state: trainingData.board_state,
+        score: trainingData.score,
+        action: null,
+        action_probs: trainingData.actions,
+        attention_weights: trainingData.attention_weights,
+        episode: trainingData.episode,
+        is_playback: false,
+        checkpoint_id: null,
+        done: false
+      }
+    }
+    return null
+  }, [isPlayingCheckpoint, checkpointPlaybackData, trainingData])
+
+  const currentData = getCurrentData()
+
+  // Improved playback control functions with better error handling
   const pausePlayback = async () => {
     try {
       const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/pause`, { method: 'POST' })
@@ -88,72 +137,83 @@ const GameBoard: React.FC = () => {
     }
   }
 
-  const startNewGame = async () => {
+  // FIXED: Improved "New Game" functionality
+  const startNewGame = useCallback(async () => {
+    const store = useTrainingStore.getState()
+    
+    // Early validation
+    if (!playbackStatus?.current_checkpoint) {
+      console.error('No checkpoint loaded for new game')
+      return
+    }
+    
+    // Prevent multiple simultaneous requests
+    if (loadingStates.isNewGameStarting) {
+      console.log('New game already starting, ignoring request')
+      return
+    }
+    
     try {
-      if (!playbackStatus?.current_checkpoint) {
-        console.error('No checkpoint loaded for new game')
-        return
+      // Clear game over state immediately for better UX
+      if (store.isShowingGameOver) {
+        store.setShowingGameOver(false)
+        store.setGameCompletionData(null)
       }
       
-      // Clear game over state if showing
-      if (useTrainingStore.getState().isShowingGameOver) {
-        useTrainingStore.getState().setShowingGameOver(false)
-        useTrainingStore.getState().setGameCompletionData(null)
-      }
-      
-      // Start enhanced loading operation using the global progress bar
+      // Start loading operation with shorter, more realistic steps
       const loadingSteps = [
         'Resetting game state...',
-        'Initializing new game...',
-        'Starting game simulation...',
-        'Waiting for first game data...'
+        'Starting new game...',
+        'Waiting for first move...'
       ]
       
-      useTrainingStore.getState().startLoadingOperation('newGame', loadingSteps)
+      store.startLoadingOperation('newGame', loadingSteps)
       
-      // Optimistically set playing state to prevent brief idle display
-      useTrainingStore.getState().setPlayingCheckpoint(true)
+      // Optimistically set playing state
+      store.setPlayingCheckpoint(true)
       
-      // Simulate step progression
-      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(25, loadingSteps[1]), 300)
-      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(50, loadingSteps[2]), 600)
+      // Simulate quick progression for better perceived performance
+      setTimeout(() => store.updateLoadingProgress(40, loadingSteps[1]), 200)
+      setTimeout(() => store.updateLoadingProgress(80, loadingSteps[2]), 400)
       
+      // FIXED: Use the correct endpoint for starting a new game
+      // The backend should have a dedicated endpoint for this, but for now we'll use the existing one
+      // and rely on the backend to handle it properly
       const res = await fetch(`${config.api.baseUrl}/checkpoints/${playbackStatus.current_checkpoint}/playback/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       })
       
       if (!res.ok) {
-        // Clear loading state on error
-        useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
-        useTrainingStore.getState().setLoadingState('loadingMessage', null)
-        useTrainingStore.getState().setPlayingCheckpoint(false)
-        throw new Error('Failed to start new game')
+        throw new Error(`Failed to start new game: ${res.status} ${res.statusText}`)
       }
       
       // Update to final step - waiting for first game data
-      useTrainingStore.getState().updateLoadingProgress(75, loadingSteps[3], 5)
+      store.updateLoadingProgress(90, loadingSteps[2], 3)
       
       // Loading state will be cleared when first game data arrives via WebSocket
+      // This provides better feedback than waiting for a timeout
       
     } catch (err) {
       console.error('Error starting new game:', err)
-      // Clear loading state on error
-      useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
-      useTrainingStore.getState().setLoadingState('loadingMessage', null)
-      useTrainingStore.getState().setPlayingCheckpoint(false)
+      
+      // Clear all loading states on error
+      store.setLoadingState('isNewGameStarting', false)
+      store.setLoadingState('loadingMessage', null)
+      store.setPlayingCheckpoint(false)
+      
+      // Show user-friendly error message
+      store.setConnectionError(`Failed to start new game: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      
+      // Clear error after 5 seconds
+      setTimeout(() => store.setConnectionError(null), 5000)
     }
-  }
+  }, [playbackStatus?.current_checkpoint, loadingStates.isNewGameStarting])
 
-  // Simplified state management - just track the current board
-  const [displayBoard, setDisplayBoard] = React.useState<number[][]>([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
-  
-  // Speed control state
-  const [playbackSpeed, setPlaybackSpeed] = React.useState<number>(2.5) // Default 2.5x speed
-  const [speedOptions] = React.useState<number[]>([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0])
-  
-  // Speed control functions
+  // Improved speed control with better feedback
   const changePlaybackSpeed = async (newSpeed: number) => {
+    if (newSpeed === playbackSpeed) return // No change needed
+    
     try {
       const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/speed`, {
         method: 'POST',
@@ -170,45 +230,10 @@ const GameBoard: React.FC = () => {
       console.log(`Playback speed changed to ${newSpeed}x`)
     } catch (err) {
       console.error('Error changing playback speed:', err)
+      // Revert the UI state on error
+      setPlaybackSpeed(playbackSpeed)
     }
   }
-
-  // Get current data (either training or checkpoint playback)
-  const currentData = React.useMemo(() => {
-    if (isPlayingCheckpoint && checkpointPlaybackData) {
-      return {
-        board_state: checkpointPlaybackData.step_data.board_state,
-        score: checkpointPlaybackData.step_data.score,
-        action: checkpointPlaybackData.step_data.action,
-        action_probs: checkpointPlaybackData.step_data.action_probs,
-        attention_weights: checkpointPlaybackData.step_data.attention_weights,
-        episode: 0, // Not applicable for playback
-        is_playback: true,
-        checkpoint_id: checkpointPlaybackData.checkpoint_id,
-        done: checkpointPlaybackData.step_data.done
-      }
-    } else if (trainingData) {
-      return {
-        board_state: trainingData.board_state,
-        score: trainingData.score,
-        action: null, // TrainingData doesn't have a single action
-        action_probs: trainingData.actions, // TrainingData has actions array
-        attention_weights: trainingData.attention_weights,
-        episode: trainingData.episode,
-        is_playback: false,
-        checkpoint_id: null,
-        done: false
-      }
-    }
-    return null
-  }, [isPlayingCheckpoint, checkpointPlaybackData, trainingData])
-
-  // Simple board update - just update when data changes
-  React.useEffect(() => {
-    if (currentData?.board_state) {
-      setDisplayBoard(currentData.board_state)
-    }
-  }, [currentData?.board_state])
 
   // Get tile color based on value
   const getTileColor = (value: number) => {
@@ -233,7 +258,7 @@ const GameBoard: React.FC = () => {
     return 'text-white'
   }
 
-  // Action probabilities display
+  // Action probabilities display with better performance
   const actionProbabilities = useMemo(() => {
     if (!currentData?.action_probs) return []
     
@@ -249,13 +274,13 @@ const GameBoard: React.FC = () => {
     }))
   }, [currentData?.action_probs])
 
-  // Get attention opacity for a cell
-  const getAttentionOpacity = (row: number, col: number) => {
+  // Get attention opacity for a cell with better performance
+  const getAttentionOpacity = useCallback((row: number, col: number) => {
     if (!showAttention || !currentData?.attention_weights) return 0
     
     const weight = currentData.attention_weights[row]?.[col] || 0
-    return Math.min(weight * 5, 0.8) // Scale up for visibility
-  }
+    return Math.min(weight * 5, 0.8)
+  }, [showAttention, currentData?.attention_weights])
 
   return (
     <div className="h-full flex flex-col space-y-2 pb-6">
@@ -321,10 +346,15 @@ const GameBoard: React.FC = () => {
               </div>
               <button
                 onClick={startNewGame}
-                className="flex items-center justify-center space-x-2 bg-blue-500/20 text-blue-400 rounded-xl py-2.5 px-4 text-sm font-medium hover:bg-blue-500/30 transition-colors"
+                disabled={loadingStates.isNewGameStarting}
+                className={`flex items-center justify-center space-x-2 rounded-xl py-2.5 px-4 text-sm font-medium transition-colors ${
+                  loadingStates.isNewGameStarting
+                    ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed'
+                    : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                }`}
               >
-                <RefreshCw className="w-4 h-4" />
-                <span>Start New Game Now</span>
+                <RefreshCw className={`w-4 h-4 ${loadingStates.isNewGameStarting ? 'animate-spin' : ''}`} />
+                <span>{loadingStates.isNewGameStarting ? 'Starting...' : 'Start New Game Now'}</span>
               </button>
             </div>
           </div>
@@ -499,15 +529,15 @@ const GameBoard: React.FC = () => {
           
           <button
             onClick={startNewGame}
-            disabled={!isPlayingCheckpoint}
+            disabled={!isPlayingCheckpoint || loadingStates.isNewGameStarting}
             className={`flex-1 flex items-center justify-center space-x-2 rounded-xl py-2.5 text-sm font-medium ${
-              isPlayingCheckpoint 
+              isPlayingCheckpoint && !loadingStates.isNewGameStarting
                 ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
                 : 'bg-gray-700/50 text-gray-500 cursor-not-allowed'
             }`}
           >
-            <RefreshCw className="w-4 h-4" />
-            <span>New</span>
+            <RefreshCw className={`w-4 h-4 ${loadingStates.isNewGameStarting ? 'animate-spin' : ''}`} />
+            <span>{loadingStates.isNewGameStarting ? 'Starting...' : 'New'}</span>
           </button>
         </div>
         

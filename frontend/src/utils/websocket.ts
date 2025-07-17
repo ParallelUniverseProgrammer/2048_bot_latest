@@ -301,6 +301,18 @@ export const useWebSocket = () => {
       } else if (data.type === 'new_game_started') {
         useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
         useTrainingStore.getState().setLoadingState('loadingMessage', null)
+      } else if (data.type === 'game_completed') {
+        console.log('Received game completion:', data)
+        // Handle game completion and show game over screen
+        useTrainingStore.getState().setGameCompletionData({
+          final_score: data.final_score,
+          total_steps: data.total_steps,
+          max_tile: data.max_tile,
+          final_board_state: [], // Will be populated from last step data
+          checkpoint_id: data.checkpoint_id,
+          game_number: data.game_number
+        })
+        useTrainingStore.getState().setShowingGameOver(true)
       } else if (data.type === 'new_episode_started') {
         console.log('Received new episode started:', data)
         if (data.episode !== undefined) {
