@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Line, Doughnut, Bar } from 'react-chartjs-2'
 import { 
   TrendingDown, Brain, Zap, Target, Activity,
   Clock, Gauge, BarChart3, TrendingUpIcon, TrendingDownIcon, 
   CheckCircle, AlertTriangle, Info, Star, Scale, GitBranch,
-  Play, Pause, AlertTriangle as StopIcon, Save
+  Play, Pause, AlertTriangle as StopIcon, Save, X, Maximize2
 } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 import { useDeviceDetection } from '../utils/deviceDetection'
@@ -38,11 +38,36 @@ const TrainingDashboard: React.FC = () => {
   // NEW: Manual checkpoint state
   const [isCreatingCheckpoint, setIsCreatingCheckpoint] = useState(false)
 
+  // NEW: Chart expansion state
+  const [expandedChart, setExpandedChart] = useState<{
+    type: 'loss' | 'score' | 'actions' | 'experts'
+    title: string
+  } | null>(null)
+
   // Use isWaitingForFirstData from store
   const showWaitingForFirstData = isWaitingForFirstData
 
   // Get current training data with fallback
   const currentTrainingData = getCurrentTrainingData()
+
+  // NEW: Chart expansion handlers
+  const handleChartDoubleTap = (chartType: 'loss' | 'score' | 'actions' | 'experts', title: string) => {
+    setExpandedChart({ type: chartType, title })
+  }
+
+  const handleCloseExpandedChart = () => {
+    setExpandedChart(null)
+  }
+
+  // NEW: Touch-aware close handler for mobile - only close when tapping the backdrop
+  const handleTouchClose = (e: React.TouchEvent) => {
+    // Only close if tapping the backdrop (not the panel itself)
+    if (e.currentTarget === e.target) {
+      e.preventDefault()
+      e.stopPropagation()
+      handleCloseExpandedChart()
+    }
+  }
 
   // Training control functions
   const handleTrainingControl = async (action: 'start' | 'pause' | 'resume' | 'stop') => {
@@ -272,6 +297,75 @@ const TrainingDashboard: React.FC = () => {
     },
   }
 
+  // NEW: Enhanced chart options for expanded view
+  const expandedChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      mode: 'nearest' as const,
+      intersect: false,
+    },
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top' as const,
+        labels: {
+          color: '#ffffff',
+          font: { size: 14 },
+          padding: 20,
+        },
+      },
+      tooltip: {
+        enabled: true,
+        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        titleColor: '#ffffff',
+        bodyColor: '#ffffff',
+        borderColor: '#374151',
+        borderWidth: 1,
+        cornerRadius: 12,
+        displayColors: true,
+        padding: 12,
+        titleFont: { size: 14 },
+        bodyFont: { size: 13 },
+      },
+    },
+    scales: {
+      x: {
+        display: true,
+        grid: {
+          display: true,
+          color: 'rgba(255, 255, 255, 0.1)',
+        },
+        ticks: {
+          color: '#9ca3af',
+          font: { size: 12 },
+        },
+      },
+      y: {
+        display: true,
+        grid: {
+          display: true,
+          color: 'rgba(255, 255, 255, 0.1)',
+        },
+        ticks: {
+          color: '#9ca3af',
+          font: { size: 12 },
+        },
+      },
+    },
+    elements: {
+      point: {
+        radius: 2,
+        hoverRadius: 6,
+      },
+      line: {
+        borderJoinStyle: 'round' as const,
+        borderCapStyle: 'round' as const,
+        borderWidth: 3,
+      },
+    },
+  }
+
   const enhancedDoughnutOptions = {
     responsive: true,
     maintainAspectRatio: false,
@@ -299,6 +393,42 @@ const TrainingDashboard: React.FC = () => {
       },
     },
     cutout: '60%',
+  }
+
+  // NEW: Enhanced doughnut options for expanded view
+  const expandedDoughnutOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'right' as const,
+        labels: {
+          color: '#ffffff',
+          font: { size: 14 },
+          padding: 20,
+        },
+      },
+      tooltip: {
+        enabled: true,
+        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        titleColor: '#ffffff',
+        bodyColor: '#ffffff',
+        borderColor: '#374151',
+        borderWidth: 1,
+        cornerRadius: 12,
+        displayColors: true,
+        padding: 12,
+        titleFont: { size: 14 },
+        bodyFont: { size: 13 },
+        callbacks: {
+          label: function(context: any) {
+            return `${context.label}: ${context.parsed.toFixed(1)}%`;
+          }
+        }
+      },
+    },
+    cutout: '50%',
   }
 
   const enhancedBarOptions = {
@@ -338,6 +468,65 @@ const TrainingDashboard: React.FC = () => {
         display: false,
         grid: {
           display: false,
+        },
+      },
+    },
+  }
+
+  // NEW: Enhanced bar options for expanded view
+  const expandedBarOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top' as const,
+        labels: {
+          color: '#ffffff',
+          font: { size: 14 },
+          padding: 20,
+        },
+      },
+      tooltip: {
+        enabled: true,
+        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        titleColor: '#ffffff',
+        bodyColor: '#ffffff',
+        borderColor: '#374151',
+        borderWidth: 1,
+        cornerRadius: 12,
+        displayColors: true,
+        padding: 12,
+        titleFont: { size: 14 },
+        bodyFont: { size: 13 },
+        callbacks: {
+          label: function(context: any) {
+            return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}%`;
+          }
+        }
+      },
+    },
+    scales: {
+      x: {
+        display: true,
+        grid: {
+          display: true,
+          color: 'rgba(255, 255, 255, 0.1)',
+        },
+        ticks: {
+          color: '#9ca3af',
+          font: { size: 12 },
+        },
+      },
+      y: {
+        display: true,
+        grid: {
+          display: true,
+          color: 'rgba(255, 255, 255, 0.1)',
+        },
+        ticks: {
+          color: '#9ca3af',
+          font: { size: 12 },
         },
       },
     },
@@ -493,6 +682,70 @@ const TrainingDashboard: React.FC = () => {
     : activeTab === 'trends'
       ? enhancedMetrics.slice(0, 4)
       : enhancedMetrics.slice(4)
+
+  // NEW: Render expanded chart overlay
+  const renderExpandedChart = () => {
+    if (!expandedChart) return null
+
+    return (
+      <AnimatePresence>
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+          onTouchEnd={handleTouchClose}
+          onClick={handleCloseExpandedChart}
+        >
+          <motion.div
+            className="relative w-full h-full max-w-2xl max-h-[60vh] m-4 card-glass rounded-3xl overflow-hidden"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            transition={{ duration: 0.3, type: "spring", damping: 25, stiffness: 300 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-700/50">
+              <div className="flex items-center space-x-3">
+                <Maximize2 className="w-5 h-5 text-blue-400" />
+                <h2 className="text-lg font-semibold text-white">{expandedChart.title}</h2>
+              </div>
+              <button
+                onClick={handleCloseExpandedChart}
+                className="p-2 rounded-xl bg-gray-700/50 hover:bg-gray-600/50 transition-colors group"
+                aria-label="Close expanded chart"
+              >
+                <X className="w-5 h-5 text-gray-400 group-hover:text-white transition-colors" />
+              </button>
+            </div>
+
+            {/* Chart Container */}
+            <div className="flex-1 p-6">
+              <div className="w-full h-full min-h-[40vh]">
+                {expandedChart.type === 'loss' && (
+                  <Line data={lossChartData} options={expandedChartOptions} />
+                )}
+                {expandedChart.type === 'score' && (
+                  <Line data={scoreChartData} options={expandedChartOptions} />
+                )}
+                {expandedChart.type === 'actions' && (
+                  <Doughnut data={actionDistributionData} options={expandedDoughnutOptions} />
+                )}
+                {expandedChart.type === 'experts' && (
+                  <Bar data={expertUsageData} options={expandedBarOptions} />
+                )}
+              </div>
+            </div>
+
+
+          </motion.div>
+        </motion.div>
+      </AnimatePresence>
+    )
+  }
+
   return (
     <div className="h-full grid grid-rows-[auto_auto_auto_1fr] gap-2 pb-6">
       {/* Training Controls */}
@@ -635,32 +888,105 @@ const TrainingDashboard: React.FC = () => {
           {/* Training Loss Chart - Larger */}
           <div className="flex flex-col items-center space-y-2">
             <div className="text-sm text-gray-400 font-medium text-center">Training Loss</div>
-            <div className="w-full h-20 bg-gray-800/50 rounded-xl p-2">
+            <div 
+              className="w-full h-20 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
+              onDoubleClick={() => handleChartDoubleTap('loss', 'Training Loss')}
+              onTouchEnd={(e) => {
+                // Simple double-tap detection for mobile
+                const now = Date.now()
+                const lastTap = (e.currentTarget as any).lastTap || 0
+                if (now - lastTap < 300) {
+                  handleChartDoubleTap('loss', 'Training Loss')
+                }
+                (e.currentTarget as any).lastTap = now
+              }}
+            >
               <Line data={lossChartData} options={enhancedChartOptions} />
+              {isMobile && (
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="text-xs text-gray-300 bg-black/70 px-2 py-1 rounded-lg text-center">
+                    Double-tap to expand
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Game Score Chart - Larger */}
           <div className="flex flex-col items-center space-y-2">
             <div className="text-sm text-gray-400 font-medium text-center">Game Score</div>
-            <div className="w-full h-20 bg-gray-800/50 rounded-xl p-2">
+            <div 
+              className="w-full h-20 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
+              onDoubleClick={() => handleChartDoubleTap('score', 'Game Score')}
+              onTouchEnd={(e) => {
+                const now = Date.now()
+                const lastTap = (e.currentTarget as any).lastTap || 0
+                if (now - lastTap < 300) {
+                  handleChartDoubleTap('score', 'Game Score')
+                }
+                (e.currentTarget as any).lastTap = now
+              }}
+            >
               <Line data={scoreChartData} options={enhancedChartOptions} />
+              {isMobile && (
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="text-xs text-gray-300 bg-black/70 px-2 py-1 rounded-lg text-center">
+                    Double-tap to expand
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Action Distribution Chart - Larger */}
           <div className="flex flex-col items-center space-y-2">
             <div className="text-sm text-gray-400 font-medium text-center">Action Distribution</div>
-            <div className="w-full h-20 bg-gray-800/50 rounded-xl p-2 flex items-center justify-center">
+            <div 
+              className="w-full h-20 bg-gray-800/50 rounded-xl p-2 flex items-center justify-center cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
+              onDoubleClick={() => handleChartDoubleTap('actions', 'Action Distribution')}
+              onTouchEnd={(e) => {
+                const now = Date.now()
+                const lastTap = (e.currentTarget as any).lastTap || 0
+                if (now - lastTap < 300) {
+                  handleChartDoubleTap('actions', 'Action Distribution')
+                }
+                (e.currentTarget as any).lastTap = now
+              }}
+            >
               <Doughnut data={actionDistributionData} options={enhancedDoughnutOptions} />
+              {isMobile && (
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="text-xs text-gray-300 bg-black/70 px-2 py-1 rounded-lg text-center">
+                    Double-tap to expand
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Expert Usage Chart - Larger */}
           <div className="flex flex-col items-center space-y-2">
             <div className="text-sm text-gray-400 font-medium text-center">Expert Usage</div>
-            <div className="w-full h-20 bg-gray-800/50 rounded-xl p-2">
+            <div 
+              className="w-full h-20 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
+              onDoubleClick={() => handleChartDoubleTap('experts', 'Expert Usage')}
+              onTouchEnd={(e) => {
+                const now = Date.now()
+                const lastTap = (e.currentTarget as any).lastTap || 0
+                if (now - lastTap < 300) {
+                  handleChartDoubleTap('experts', 'Expert Usage')
+                }
+                (e.currentTarget as any).lastTap = now
+              }}
+            >
               <Bar data={expertUsageData} options={enhancedBarOptions} />
+              {isMobile && (
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="text-xs text-gray-300 bg-black/70 px-2 py-1 rounded-lg text-center">
+                    Double-tap to expand
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -717,6 +1043,9 @@ const TrainingDashboard: React.FC = () => {
           ))}
         </div>
       </motion.div>
+
+      {/* Expanded Chart Overlay */}
+      {renderExpandedChart()}
     </div>
   )
 }

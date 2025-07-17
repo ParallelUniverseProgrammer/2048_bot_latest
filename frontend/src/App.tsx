@@ -273,7 +273,7 @@ const App: React.FC = () => {
 
       {/* Main Content - More generous padding */}
       <motion.main 
-        className={`flex-1 overflow-auto ${isMobile ? 'mobile-main pb-4' : 'px-6 py-4 sm:px-8 lg:px-10 pb-4'}`}
+        className={`flex-1 overflow-hidden ${isMobile ? 'mobile-main pb-4' : 'px-6 py-4 sm:px-8 lg:px-10 pb-4'}`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.6, delay: 0.4 }}
