@@ -161,7 +161,17 @@ More in `docs/TROUBLESHOOTING.md` (coming soon).
 
 ## 🚀 Development Roadmap
 
-### Background Service Installer (In Development)
+### Remote Access Integration (In Development)
+We're implementing **Cloudflare Tunnel integration** to transform this LAN-only development tool into an internet-reachable, HTTPS-secured service. This will enable:
+
+• **Internet Accessibility** – Access from anywhere via HTTPS with automatic QR code generation
+• **Zero Configuration** – Automatic tunnel setup with Quick Tunnel fallback
+• **Production Ready** – Named tunnels with auto-reconnect, monitoring, and service persistence
+• **Mobile PWA Support** – Seamless installation and offline functionality across all devices
+
+See [REMOTE_ACCESS_ROADMAP.md](./REMOTE_ACCESS_ROADMAP.md) for the complete 8-phase implementation plan.
+
+### Background Service Installer (Planned)
 We're working on a **platform-agnostic background service installer** that will transform this development tool into a production-ready service. This will enable:
 
 • **Automatic Startup** – runs as a background service with system boot
