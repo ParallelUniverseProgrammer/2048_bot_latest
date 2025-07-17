@@ -18,6 +18,8 @@
 
 • **Checkpoint Workflow** – revamped manager with search, inline rename, quick stats and rich loading states.
 
+• **🚀 Background Service Roadmap** – comprehensive 5-phase plan for platform-agnostic installer that transforms this into a production-ready background service with automatic startup, while preserving all real-time functionality.
+
 
 ## 📋 Table of Contents
 1. [Key Features](#key-features)
@@ -156,6 +158,27 @@ More in `docs/TROUBLESHOOTING.md` (coming soon).
 **A:** Yes – checkpoints are standard PyTorch `.pt` files saved under `backend/checkpoints/`.
 
 ---
+
+## 🚀 Development Roadmap
+
+### Background Service Installer (In Development)
+We're working on a **platform-agnostic background service installer** that will transform this development tool into a production-ready service. This will enable:
+
+• **Automatic Startup** – runs as a background service with system boot
+• **Persistent Training** – survives system restarts and continues training sessions
+• **Service Management** – easy install/uninstall with comprehensive monitoring
+• **Cross-Platform** – works seamlessly on Windows, macOS, and Linux
+
+See [BACKGROUND_SERVICE_ROADMAP.md](./BACKGROUND_SERVICE_ROADMAP.md) for the complete 5-phase development plan.
+
+### Future Vision: Model Studio Tab
+Our long-term vision includes a **graphical Model Studio** where users can:
+• Visually design novel transformer architectures
+• Experiment with different MoE configurations in real-time
+• Test model performance instantly
+• Save and share custom model designs
+
+This will leverage our existing checkpoint system and WebSocket infrastructure to provide a powerful visual AI model development environment.
 
 ## Contributing
 
