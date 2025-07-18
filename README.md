@@ -28,6 +28,8 @@
 
 • **🚀 Background Service Roadmap** – comprehensive 5-phase plan for platform-agnostic installer that transforms this into a production-ready background service with automatic startup, while preserving all real-time functionality.
 
+• **🎨 Modern Launcher UI** – redesigned console interface with smooth progress animations, non-scrolling display, and QR-focused experience that makes mobile access effortless.
+
 ---
 
 ## 📋 Table of Contents
@@ -83,10 +85,10 @@ $ git clone https://github.com/krdge/2048_bot_latest.git && cd 2048_bot_latest
 # Fire up everything via the launcher (backend, frontend & tunnel/QR)
 $ python launcher.py
 
-# Open http://localhost:8000  (QR code printed for mobile)
+# Open http://localhost:8000  (QR code displayed prominently in terminal)
 ```
 
-The launcher installs dependencies, detects hardware (CUDA ↔︎ CPU) and starts both servers with automatic Cloudflare Tunnel creation for internet access.
+The launcher installs dependencies, detects hardware (CUDA ↔︎ CPU) and starts both servers with automatic Cloudflare Tunnel creation for internet access. The new console interface features smooth progress animations and prominently displays the QR code for mobile access.
 
 ### Advanced Usage
 
@@ -151,6 +153,8 @@ The launcher automatically creates a Cloudflare Tunnel for internet access:
 ---
 
 ## Test Suite & Developer Experience
+
+> **⚠️ Note**: The test suite is currently partially broken and under investigation. Some tests may fail or behave unexpectedly.
 
 Tests live under `tests/` and are grouped by domain (core, integration, performance, mobile, frontend…). Most integration tests spin up a mock backend automatically.
 
@@ -220,6 +224,15 @@ We've successfully redesigned the Training Dashboard with a focus on mobile-firs
 • **Touch Optimization** – Double-tap chart expansion and touch-friendly controls
 • **Responsive Design** – Seamless experience across all device sizes
 • **Visual Polish** – Streamlined interface that reduces cognitive load while maintaining all functionality
+
+### Launcher UI Redesign ✅ COMPLETED
+We've completely redesigned the launcher console interface to provide a modern, non-scrolling experience:
+
+• **Smooth Progress Animations** – Beautiful animated spinners and progress bars with high refresh rate
+• **QR-Focused Display** – Prominent QR code display in the center of the terminal
+• **Non-Scrolling Interface** – Clean, single-screen updates that don't clutter the console
+• **Mobile-First Experience** – QR code is the primary focus, making mobile access effortless
+• **Development Mode** – `--dev` flag provides traditional verbose output for debugging
 
 ### Remote Access Integration ✅ COMPLETED
 We've successfully implemented **Cloudflare Tunnel integration** to transform this LAN-only development tool into an internet-reachable, HTTPS-secured service. This enables:

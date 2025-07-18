@@ -63,6 +63,189 @@ class Colors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
+class ConsoleUI:
+    """Modern console UI with non-scrolling display and smooth animations"""
+    
+    def __init__(self, quiet: bool = False, no_color: bool = False):
+        self.quiet = quiet
+        self.no_color = no_color
+        self.terminal_width = shutil.get_terminal_size((80, 24)).columns
+        self.terminal_height = shutil.get_terminal_size((80, 24)).lines
+        self.current_screen = []
+        self.progress_animation_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        self.animation_index = 0
+        self.last_update_time = time.time()
+        
+        # Setup terminal for better experience
+        self._setup_terminal()
+    
+    def _setup_terminal(self):
+        """Setup terminal for better display"""
+        # Clear screen and hide cursor for cleaner experience
+        if not self.quiet:
+            self.clear_screen()
+            self.hide_cursor()
+    
+    def clear_screen(self):
+        """Clear the entire terminal screen"""
+        if os.name == 'nt':
+            os.system('cls')
+        else:
+            os.system('clear')
+    
+    def hide_cursor(self):
+        """Hide the terminal cursor"""
+        if not self.quiet:
+            sys.stdout.write('\033[?25l')
+            sys.stdout.flush()
+    
+    def show_cursor(self):
+        """Show the terminal cursor"""
+        if not self.quiet:
+            sys.stdout.write('\033[?25h')
+            sys.stdout.flush()
+    
+    def move_cursor(self, row: int, col: int):
+        """Move cursor to specific position"""
+        if not self.quiet:
+            sys.stdout.write(f'\033[{row};{col}H')
+            sys.stdout.flush()
+    
+    def clear_line(self):
+        """Clear current line"""
+        if not self.quiet:
+            sys.stdout.write('\033[K')
+            sys.stdout.flush()
+    
+    def get_animation_char(self) -> str:
+        """Get next animation character for smooth progress"""
+        char = self.progress_animation_chars[self.animation_index]
+        self.animation_index = (self.animation_index + 1) % len(self.progress_animation_chars)
+        return char
+    
+    def render_progress_screen(self, step: str, progress: float, status: str = "", error: str = ""):
+        """Render a beautiful progress screen"""
+        if self.quiet:
+            return
+        
+        # Calculate positions
+        center_x = self.terminal_width // 2
+        center_y = self.terminal_height // 2
+        
+        # Clear screen
+        self.clear_screen()
+        
+        # Header
+        header = "🚀 2048 Bot Training Launcher"
+        print(f"\n{Colors.HEADER}{header:^{self.terminal_width}}{Colors.ENDC}")
+        
+        # Progress section
+        print(f"\n{' ' * (center_x - 20)}")
+        
+        # Animated spinner
+        spinner = self.get_animation_char()
+        print(f"{' ' * (center_x - 15)}{Colors.OKBLUE}{spinner}{Colors.ENDC} {Colors.BOLD}{step}{Colors.ENDC}")
+        
+        # Progress bar
+        bar_width = 40
+        filled_width = int(bar_width * progress)
+        bar = '█' * filled_width + '░' * (bar_width - filled_width)
+        print(f"{' ' * (center_x - bar_width//2)}{Colors.OKGREEN}{bar}{Colors.ENDC}")
+        
+        # Progress percentage
+        percentage = int(progress * 100)
+        print(f"{' ' * (center_x - 3)}{Colors.OKCYAN}{percentage:3d}%{Colors.ENDC}")
+        
+        # Status message
+        if status:
+            print(f"\n{' ' * (center_x - len(status)//2)}{Colors.OKBLUE}{status}{Colors.ENDC}")
+        
+        # Error message
+        if error:
+            print(f"\n{' ' * (center_x - len(error)//2)}{Colors.FAIL}❌ {error}{Colors.ENDC}")
+        
+        # Footer
+        footer = "Press Ctrl+C to stop"
+        print(f"\n{' ' * (center_x - len(footer)//2)}{Colors.WARNING}{footer}{Colors.ENDC}")
+        
+        sys.stdout.flush()
+    
+    def render_qr_screen(self, frontend_url: str, backend_url: str):
+        """Render the final QR code screen"""
+        if self.quiet:
+            return
+        
+        # Clear screen
+        self.clear_screen()
+        
+        # Calculate positions
+        center_x = self.terminal_width // 2
+        
+        # Header
+        header = "🎉 2048 Bot Training Ready!"
+        print(f"\n{Colors.HEADER}{header:^{self.terminal_width}}{Colors.ENDC}")
+        
+        # Separator
+        separator = "=" * min(50, self.terminal_width - 10)
+        print(f"\n{Colors.HEADER}{separator:^{self.terminal_width}}{Colors.ENDC}")
+        
+        # URLs
+        print(f"\n{Colors.OKGREEN}{'Frontend:':<12} {frontend_url}{Colors.ENDC}".center(self.terminal_width))
+        print(f"{Colors.OKGREEN}{'Backend:':<12} {backend_url}{Colors.ENDC}".center(self.terminal_width))
+        print(f"{Colors.OKGREEN}{'Docs:':<12} {backend_url}/docs{Colors.ENDC}".center(self.terminal_width))
+        
+        # Separator
+        print(f"\n{Colors.HEADER}{separator:^{self.terminal_width}}{Colors.ENDC}")
+        
+        # QR Code
+        print(f"\n{Colors.OKCYAN}{'📱 QR Code for Mobile Access':^{self.terminal_width}}{Colors.ENDC}")
+        QRCodeGenerator.generate_qr_code(frontend_url, "mobile_access_qr.png", center=True, term_width=self.terminal_width)
+        
+        # Instructions
+        print(f"\n{Colors.OKCYAN}{'📱 Scan this QR code with your phone!':^{self.terminal_width}}{Colors.ENDC}")
+        ios_msg = "💡 iOS: Tap share (📤) then 'Add to Home Screen'"
+        print(f"{Colors.WARNING}{ios_msg:^{self.terminal_width}}{Colors.ENDC}")
+        
+        # Footer
+        footer = "Press Ctrl+C to stop the servers"
+        print(f"\n{Colors.HEADER}{separator:^{self.terminal_width}}{Colors.ENDC}")
+        print(f"{Colors.WARNING}{footer:^{self.terminal_width}}{Colors.ENDC}")
+        
+        sys.stdout.flush()
+    
+    def render_error_screen(self, step: str, error: str):
+        """Render error screen"""
+        if self.quiet:
+            return
+        
+        # Clear screen
+        self.clear_screen()
+        
+        # Calculate positions
+        center_x = self.terminal_width // 2
+        
+        # Header
+        header = "❌ Setup Failed"
+        print(f"\n{Colors.FAIL}{header:^{self.terminal_width}}{Colors.ENDC}")
+        
+        # Error details
+        print(f"\n{Colors.FAIL}{'Failed at:':^{self.terminal_width}}{Colors.ENDC}")
+        print(f"{Colors.BOLD}{step:^{self.terminal_width}}{Colors.ENDC}")
+        
+        # Error message
+        print(f"\n{Colors.FAIL}{error:^{self.terminal_width}}{Colors.ENDC}")
+        
+        # Instructions
+        instructions = "Check the logs for more details"
+        print(f"\n{Colors.WARNING}{instructions:^{self.terminal_width}}{Colors.ENDC}")
+        
+        sys.stdout.flush()
+    
+    def cleanup(self):
+        """Cleanup terminal state"""
+        if not self.quiet:
+            self.show_cursor()
+
 class Logger:
     """Enhanced logging with file output"""
     
@@ -393,12 +576,13 @@ class ProcessMonitor:
 class ProcessManager:
     """Enhanced process management with monitoring"""
     
-    def __init__(self, logger: Logger):
+    def __init__(self, logger: Logger, quiet: bool = False):
         self.processes: Dict[str, subprocess.Popen] = {}
         self.monitors: Dict[str, ProcessMonitor] = {}
         self.threads = []
         self.running = True
         self.logger = logger
+        self.quiet = quiet
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -441,7 +625,8 @@ class ProcessManager:
         """Enhanced cleanup with better process termination"""
         self.running = False
         
-        print(f"{Colors.OKCYAN}Terminating processes...{Colors.ENDC}")
+        if not self.quiet:
+            print(f"{Colors.OKCYAN}Terminating processes...{Colors.ENDC}")
         
         # Stop all monitors
         for monitor in self.monitors.values():
@@ -467,10 +652,12 @@ class ProcessManager:
                     self.logger.info(f"{name} already terminated (return code: {process.returncode})")
             except Exception as e:
                 self.logger.error(f"Error terminating {name}: {e}")
-                print(f"{Colors.WARNING}Error terminating {name}: {e}{Colors.ENDC}")
+                if not self.quiet:
+                    print(f"{Colors.WARNING}Error terminating {name}: {e}{Colors.ENDC}")
         
         # Wait for threads
-        print(f"{Colors.OKCYAN}Waiting for threads...{Colors.ENDC}")
+        if not self.quiet:
+            print(f"{Colors.OKCYAN}Waiting for threads...{Colors.ENDC}")
         for thread in self.threads:
             if thread.is_alive():
                 thread.join(timeout=5)
@@ -495,19 +682,21 @@ class ServerHealth:
     """Enhanced server health checks with detailed error reporting"""
     
     @staticmethod
-    def wait_for_backend(host: str, port: int, logger: Logger, timeout: int = 30) -> bool:
+    def wait_for_backend(host: str, port: int, logger: Logger, timeout: int = 30, quiet: bool = False) -> bool:
         """Wait for backend to be ready with detailed error reporting"""
         url = f"http://{host}:{port}"
         start_time = time.time()
         
-        print(f"{Colors.OKCYAN}Waiting for backend at {url}...{Colors.ENDC}")
+        if not quiet:
+            print(f"{Colors.OKCYAN}Waiting for backend at {url}...{Colors.ENDC}")
         logger.info(f"Waiting for backend at {url}")
         
         while time.time() - start_time < timeout:
             try:
                 response = requests.get(f"{url}/docs", timeout=2)
                 if response.status_code == 200:
-                    print(f"{Colors.OKGREEN}✓ Backend is ready!{Colors.ENDC}")
+                    if not quiet:
+                        print(f"{Colors.OKGREEN}✓ Backend is ready!{Colors.ENDC}")
                     logger.info("Backend is ready")
                     return True
             except requests.ConnectionError:
@@ -518,26 +707,30 @@ class ServerHealth:
                 logger.debug(f"Backend health check error: {e}")
             
             time.sleep(1)
-            print(".", end="", flush=True)
+            if not quiet:
+                print(".", end="", flush=True)
         
-        print(f"\n{Colors.FAIL}✗ Backend failed to start within {timeout} seconds{Colors.ENDC}")
+        if not quiet:
+            print(f"\n{Colors.FAIL}✗ Backend failed to start within {timeout} seconds{Colors.ENDC}")
         logger.error(f"Backend failed to start within {timeout} seconds")
         return False
     
     @staticmethod
-    def wait_for_frontend(host: str, port: int, logger: Logger, timeout: int = 30) -> bool:
+    def wait_for_frontend(host: str, port: int, logger: Logger, timeout: int = 30, quiet: bool = False) -> bool:
         """Wait for frontend to be ready with detailed error reporting"""
         url = f"http://{host}:{port}"
         start_time = time.time()
         
-        print(f"{Colors.OKCYAN}Waiting for frontend at {url}...{Colors.ENDC}")
+        if not quiet:
+            print(f"{Colors.OKCYAN}Waiting for frontend at {url}...{Colors.ENDC}")
         logger.info(f"Waiting for frontend at {url}")
         
         while time.time() - start_time < timeout:
             try:
                 response = requests.get(url, timeout=2)
                 if response.status_code == 200:
-                    print(f"{Colors.OKGREEN}✓ Frontend is ready!{Colors.ENDC}")
+                    if not quiet:
+                        print(f"{Colors.OKGREEN}✓ Frontend is ready!{Colors.ENDC}")
                     logger.info("Frontend is ready")
                     return True
             except requests.ConnectionError:
@@ -548,9 +741,11 @@ class ServerHealth:
                 logger.debug(f"Frontend health check error: {e}")
             
             time.sleep(1)
-            print(".", end="", flush=True)
+            if not quiet:
+                print(".", end="", flush=True)
         
-        print(f"\n{Colors.FAIL}✗ Frontend failed to start within {timeout} seconds{Colors.ENDC}")
+        if not quiet:
+            print(f"\n{Colors.FAIL}✗ Frontend failed to start within {timeout} seconds{Colors.ENDC}")
         logger.error(f"Frontend failed to start within {timeout} seconds")
         return False
 
@@ -620,7 +815,7 @@ class QRCodeGenerator:
 class Launcher:
     """Enhanced launcher with robust error handling and monitoring"""
     
-    def __init__(self, dev_mode: bool = False, force_ports: bool = False, qr_only: bool = False,
+    def __init__(self, dev_mode: bool = False, force_ports: bool = False,
                  lan_only: bool = False, tunnel_only: bool = False, tunnel_type: str = "quick",
                  tunnel_name: str = "2048-bot", tunnel_domain: Optional[str] = None,
                  no_tunnel_fallback: bool = False, backend_port: int = 8000,
@@ -629,13 +824,21 @@ class Launcher:
                  skip_deps: bool = False, cloudflared_path: Optional[str] = None,
                  timeout: int = 30):
         self.logger = Logger()
-        self.process_manager = ProcessManager(self.logger)
+        self.process_manager = ProcessManager(self.logger, quiet=quiet)
         self.backend_port = backend_port
         self.frontend_port = frontend_port
         self.host_ip = None
         self.dev_mode = dev_mode
         self.force_ports = force_ports
-        self.qr_only = qr_only
+        
+        # Default to QR-only mode unless dev mode is explicitly requested
+        if not dev_mode and not no_qr:
+            self.qr_only = True
+        else:
+            self.qr_only = False
+        
+        # Initialize console UI
+        self.console_ui = ConsoleUI(quiet=quiet, no_color=no_color)
         
         # New tunnel and configuration options
         self.lan_only = lan_only
@@ -842,51 +1045,35 @@ class Launcher:
         
     def check_dependencies(self) -> bool:
         """Check if required dependencies are installed"""
-        if not self.qr_only:
-            print(f"{Colors.OKCYAN}Checking dependencies...{Colors.ENDC}")
         self.logger.info("Checking dependencies")
         
         # Check if we're in the right directory
         if not os.path.exists("backend") or not os.path.exists("frontend"):
             error_msg = "Error: Please run this script from the project root directory"
-            if not self.qr_only:
-                print(f"{Colors.FAIL}{error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
         
         # Check Poetry
         try:
             subprocess.run(["poetry", "--version"], check=True, capture_output=True, shell=True)
-            if not self.qr_only:
-                print(f"{Colors.OKGREEN}✓ Poetry found{Colors.ENDC}")
         except (subprocess.CalledProcessError, FileNotFoundError):
             error_msg = "Poetry not found. Please install Poetry first."
-            if not self.qr_only:
-                print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
         
         # Check Node.js
         try:
             subprocess.run(["node", "--version"], check=True, capture_output=True, shell=True)
-            if not self.qr_only:
-                print(f"{Colors.OKGREEN}✓ Node.js found{Colors.ENDC}")
         except (subprocess.CalledProcessError, FileNotFoundError):
             error_msg = "Node.js not found. Please install Node.js first."
-            if not self.qr_only:
-                print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
         
         # Check npm
         try:
             subprocess.run(["npm", "--version"], check=True, capture_output=True, shell=True)
-            if not self.qr_only:
-                print(f"{Colors.OKGREEN}✓ npm found{Colors.ENDC}")
         except (subprocess.CalledProcessError, FileNotFoundError):
             error_msg = "npm not found. Please install npm first."
-            if not self.qr_only:
-                print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
         
@@ -895,18 +1082,15 @@ class Launcher:
     
     def setup_network(self) -> bool:
         """Setup network configuration with port management"""
-        print(f"{Colors.OKCYAN}Discovering network configuration...{Colors.ENDC}")
         self.logger.info("Setting up network configuration")
         
         # Find the best IP address
         self.host_ip = NetworkDiscovery.find_best_ip()
         if not self.host_ip:
             error_msg = "Could not determine local IP address"
-            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
         
-        print(f"{Colors.OKGREEN}✓ Using IP address: {self.host_ip}{Colors.ENDC}")
         self.logger.info(f"Using IP address: {self.host_ip}")
         
         # Check and manage ports
@@ -926,33 +1110,26 @@ class Launcher:
         for port, name in ports_to_check:
             if PortManager.is_port_in_use(port):
                 if self.force_ports:
-                    print(f"{Colors.WARNING}Port {port} ({name}) is in use, attempting to free it...{Colors.ENDC}")
                     self.logger.warning(f"Port {port} ({name}) is in use, attempting to free it")
                     if PortManager.kill_process_on_port(port):
-                        print(f"{Colors.OKGREEN}✓ Successfully freed port {port}{Colors.ENDC}")
                         self.logger.info(f"Successfully freed port {port}")
                     else:
                         error_msg = f"Could not free port {port} ({name})"
-                        print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
                         self.logger.error(error_msg)
                         return False
                 else:
                     error_msg = f"Port {port} ({name}) is already in use. Use --force-ports to attempt to free it."
-                    print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
                     self.logger.error(error_msg)
                     return False
         
-        print(f"{Colors.OKGREEN}✓ All ports are available{Colors.ENDC}")
         self.logger.info("All ports are available")
         return True
     
     def install_dependencies(self) -> bool:
         """Install project dependencies with error reporting"""
-        print(f"{Colors.OKCYAN}Installing dependencies...{Colors.ENDC}")
         self.logger.info("Installing dependencies")
         
         # Install backend dependencies
-        print(f"{Colors.OKCYAN}Installing backend dependencies...{Colors.ENDC}")
         try:
             result = subprocess.run(
                 ["poetry", "install"], 
@@ -962,16 +1139,13 @@ class Launcher:
                 capture_output=True,
                 text=True
             )
-            print(f"{Colors.OKGREEN}✓ Backend dependencies installed{Colors.ENDC}")
             self.logger.info("Backend dependencies installed successfully")
         except subprocess.CalledProcessError as e:
             error_msg = f"Failed to install backend dependencies: {e.stderr}"
-            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
         
         # Install frontend dependencies
-        print(f"{Colors.OKCYAN}Installing frontend dependencies...{Colors.ENDC}")
         try:
             result = subprocess.run(
                 ["npm", "install"], 
@@ -981,11 +1155,9 @@ class Launcher:
                 capture_output=True,
                 text=True
             )
-            print(f"{Colors.OKGREEN}✓ Frontend dependencies installed{Colors.ENDC}")
             self.logger.info("Frontend dependencies installed successfully")
         except subprocess.CalledProcessError as e:
             error_msg = f"Failed to install frontend dependencies: {e.stderr}"
-            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
         
@@ -993,7 +1165,6 @@ class Launcher:
     
     def start_backend(self) -> bool:
         """Start the backend server with enhanced error reporting"""
-        print(f"{Colors.OKCYAN}Starting backend server...{Colors.ENDC}")
         self.logger.info("Starting backend server")
         
         # Set up environment variables for CORS
@@ -1035,7 +1206,7 @@ class Launcher:
             self.process_manager.add_process("Backend", backend_process)
             
             # Wait for backend to be ready
-            if self.host_ip and not ServerHealth.wait_for_backend(self.host_ip, self.backend_port, self.logger):
+            if self.host_ip and not ServerHealth.wait_for_backend(self.host_ip, self.backend_port, self.logger, quiet=self.quiet):
                 # Get recent errors for debugging
                 status = self.process_manager.get_process_status()
                 backend_status = status.get("Backend", {})
@@ -1057,7 +1228,6 @@ class Launcher:
     
     def start_frontend(self) -> bool:
         """Start the frontend server with enhanced error reporting"""
-        print(f"{Colors.OKCYAN}Starting frontend server...{Colors.ENDC}")
         self.logger.info("Starting frontend server")
 
         # Create a temporary Vite config that injects the correct backend URL
@@ -1209,16 +1379,19 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
             ]
         else:
             # Build production bundle first
-            print(f"{Colors.OKCYAN}Building production bundle...{Colors.ENDC}")
+            if not self.quiet:
+                print(f"{Colors.OKCYAN}Building production bundle...{Colors.ENDC}")
             try:
                 result = subprocess.run([
                     "npm", "run", "build", "--", "--config", "vite.config.temp.ts"
                 ], cwd="frontend", check=True, shell=True, capture_output=True, text=True)
-                print(f"{Colors.OKGREEN}✓ Production build completed{Colors.ENDC}")
+                if not self.quiet:
+                    print(f"{Colors.OKGREEN}✓ Production build completed{Colors.ENDC}")
                 self.logger.info("Production build completed successfully")
             except subprocess.CalledProcessError as e:
                 error_msg = f"Production build failed: {e.stderr}"
-                print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
+                if not self.quiet:
+                    print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
                 self.logger.error(error_msg)
                 return False
 
@@ -1242,7 +1415,7 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
             self.process_manager.add_process("Frontend", frontend_process)
             
             # Wait for frontend to be ready
-            if self.host_ip and not ServerHealth.wait_for_frontend(self.host_ip, self.frontend_port, self.logger):
+            if self.host_ip and not ServerHealth.wait_for_frontend(self.host_ip, self.frontend_port, self.logger, quiet=self.quiet):
                 # Get recent errors for debugging
                 status = self.process_manager.get_process_status()
                 frontend_status = status.get("Frontend", {})
@@ -1347,95 +1520,87 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
                 for error in info['recent_errors'][-2:]:  # Show last 2 errors
                     print(f"   - {error}")
     
-    def _qr_progress_bar(self, steps, current_idx, width=40):
-        # Fun icons for each step
-        icons = ['🔍', '🌐', '📦', '🦄', '⚡']
-        bar = ''
-        for i, step in enumerate(steps):
-            if i < current_idx:
-                bar += f'{Colors.OKGREEN}{icons[i]}{Colors.ENDC}'
-            elif i == current_idx:
-                bar += f'{Colors.OKBLUE}{icons[i]}{Colors.ENDC}'
-            else:
-                bar += f'{Colors.WARNING}·{Colors.ENDC}'
-        pad = ' ' * (width - len(steps))
-        sys.stdout.write(f'\r{bar}{pad}  {Colors.BOLD}{steps[current_idx]}...{Colors.ENDC}   ')
-        sys.stdout.flush()
 
-    def _qr_clear_console(self):
-        if os.name == 'nt':
-            os.system('cls')
-        else:
-            os.system('clear')
-
-    def _qr_pretty_qr_screen(self, frontend_url, backend_url):
-        self._qr_clear_console()
-        term_width = shutil.get_terminal_size((80, 20)).columns
-        # Centered header
-        header = f"{Colors.HEADER}{'='*min(term_width,50)}{Colors.ENDC}"
-        print('\n' * 2)
-        print(header.center(term_width))
-        print(f"{Colors.HEADER}{'🚀 2048 Bot Training Ready!':^{term_width}}{Colors.ENDC}")
-        print(header.center(term_width))
-        print(f"{Colors.OKGREEN}{'Frontend:':<12} {frontend_url}{Colors.ENDC}".center(term_width))
-        print(f"{Colors.OKGREEN}{'Backend:':<12} {backend_url}{Colors.ENDC}".center(term_width))
-        print(f"{Colors.OKGREEN}{'Docs:':<12} {backend_url}/docs{Colors.ENDC}".center(term_width))
-        print(header.center(term_width))
-        # QR code
-        QRCodeGenerator.generate_qr_code(frontend_url, "mobile_access_qr.png", center=True, term_width=term_width)
-        print(header.center(term_width))
-        print(f"{Colors.OKCYAN}{'📱 Scan this QR code with your phone!':^{term_width}}{Colors.ENDC}")
-        msg = "💡 iOS: Tap share (📤) then 'Add to Home Screen'"
-        print(f"{Colors.WARNING}{msg:^{term_width}}{Colors.ENDC}")
-        print(header.center(term_width))
-        print('\n' * 2)
 
     def run(self):
         if self.qr_only:
             steps = [
                 'Checking dependencies',
-                'Setting up network',
+                'Setting up network', 
                 'Installing dependencies',
                 'Starting backend',
                 'Starting frontend'
             ]
-            for idx, step in enumerate(steps):
-                self._qr_progress_bar(steps, idx)
-                if step == 'Checking dependencies':
-                    if not self.check_dependencies():
-                        print(f"\n{Colors.FAIL}Failed at: {step}{Colors.ENDC}")
+            
+            # Progress tracking
+            current_step = 0
+            total_steps = len(steps)
+            
+            try:
+                for idx, step in enumerate(steps):
+                    current_step = idx
+                    progress = (idx + 0.1) / total_steps  # Start with some progress
+                    
+                    # Update progress display
+                    self.console_ui.render_progress_screen(step, progress, "Initializing...")
+                    
+                    # Execute step
+                    success = False
+                    error_msg = ""
+                    
+                    if step == 'Checking dependencies':
+                        success = self.check_dependencies()
+                        if not success:
+                            error_msg = "Missing required dependencies"
+                    elif step == 'Setting up network':
+                        success = self.setup_network()
+                        if not success:
+                            error_msg = "Network configuration failed"
+                    elif step == 'Installing dependencies':
+                        success = self.install_dependencies()
+                        if not success:
+                            error_msg = "Dependency installation failed"
+                    elif step == 'Starting backend':
+                        success = self.start_backend()
+                        if not success:
+                            error_msg = "Backend startup failed"
+                        # Start tunnel if needed
+                        if success and not self.lan_only:
+                            self.console_ui.render_progress_screen(step, (idx + 0.5) / total_steps, "Starting tunnel...")
+                            self.tunnel_url = self._start_tunnel()
+                    elif step == 'Starting frontend':
+                        success = self.start_frontend()
+                        if not success:
+                            error_msg = "Frontend startup failed"
+                    
+                    # Update progress
+                    progress = (idx + 1) / total_steps
+                    if success:
+                        self.console_ui.render_progress_screen(step, progress, "✓ Completed")
+                        time.sleep(0.3)  # Brief pause to show completion
+                    else:
+                        self.console_ui.render_error_screen(step, error_msg)
                         return False
-                elif step == 'Setting up network':
-                    if not self.setup_network():
-                        print(f"\n{Colors.FAIL}Failed at: {step}{Colors.ENDC}")
-                        return False
-                elif step == 'Installing dependencies':
-                    if not self.install_dependencies():
-                        print(f"\n{Colors.FAIL}Failed at: {step}{Colors.ENDC}")
-                        return False
-                elif step == 'Starting backend':
-                    if not self.start_backend():
-                        print(f"\n{Colors.FAIL}Failed at: {step}{Colors.ENDC}")
-                        return False
-                    # Start tunnel if needed
-                    if not self.lan_only:
-                        self.tunnel_url = self._start_tunnel()
-                elif step == 'Starting frontend':
-                    if not self.start_frontend():
-                        print(f"\n{Colors.FAIL}Failed at: {step}{Colors.ENDC}")
-                        return False
-                time.sleep(0.5)
-            # Final pretty QR code screen
-            if self.tunnel_url:
-                # Use tunnel URL for QR code (preferred for mobile access)
-                frontend_url = self.tunnel_url
-                backend_url = self.tunnel_url
-            else:
-                # Fallback to LAN URLs
-                frontend_url = f"http://{self.host_ip}:{self.frontend_port}"
-                backend_url = f"http://{self.host_ip}:{self.backend_port}"
-            self._qr_pretty_qr_screen(frontend_url, backend_url)
-            return True
+                
+                # Final QR code screen
+                if self.tunnel_url:
+                    # Use tunnel URL for QR code (preferred for mobile access)
+                    frontend_url = self.tunnel_url
+                    backend_url = self.tunnel_url
+                else:
+                    # Fallback to LAN URLs
+                    frontend_url = f"http://{self.host_ip}:{self.frontend_port}"
+                    backend_url = f"http://{self.host_ip}:{self.backend_port}"
+                
+                self.console_ui.render_qr_screen(frontend_url, backend_url)
+                return True
+                
+            except KeyboardInterrupt:
+                self.console_ui.render_error_screen(steps[current_step], "Setup interrupted by user")
+                return False
+            except Exception as e:
+                self.console_ui.render_error_screen(steps[current_step], str(e))
+                return False
         else:
             print(f"{Colors.HEADER}🚀 2048 Bot Training Launcher{Colors.ENDC}")
             print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
@@ -1474,6 +1639,7 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
             finally:
                 self.process_manager.cleanup()
                 self._stop_tunnel()
+                self.console_ui.cleanup()
                 temp_config = "frontend/vite.config.temp.ts"
                 if os.path.exists(temp_config):
                     try:
@@ -1481,7 +1647,8 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
                         self.logger.info("Removed temporary Vite config")
                     except Exception as e:
                         self.logger.warning(f"Could not remove temporary config: {e}")
-                print(f"{Colors.OKGREEN}✓ Cleanup completed{Colors.ENDC}")
+                if not self.qr_only:
+                    print(f"{Colors.OKGREEN}✓ Cleanup completed{Colors.ENDC}")
                 self.logger.info("Launcher cleanup completed")
 
 def main():
@@ -1491,14 +1658,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python launcher.py                           # Default: LAN + tunnel with QR code
+  python launcher.py                           # Default: Clean QR-focused interface
+  python launcher.py --dev                     # Development mode with verbose output
   python launcher.py --lan-only                # LAN access only (no tunnel)
   python launcher.py --tunnel-only             # Tunnel access only (no LAN)
-  python launcher.py --dev                     # Development mode with hot reload
   python launcher.py --tunnel-type named       # Use named tunnel (requires setup)
   python launcher.py --port 9000               # Custom backend port
   python launcher.py --no-qr                   # Skip QR code generation
-  python launcher.py --qr-only                 # Show only QR code and essential output
         """
     )
     
@@ -1538,9 +1704,7 @@ Examples:
     # Output and UI configuration
     ui_group = parser.add_argument_group('UI and Output')
     ui_group.add_argument("--no-qr", action="store_true", 
-                         help="Skip QR code generation")
-    ui_group.add_argument("--qr-only", action="store_true", 
-                         help="Show only QR code and essential output")
+                         help="Skip QR code generation (default: enabled)")
     ui_group.add_argument("--no-color", action="store_true", 
                          help="Disable colored output")
     ui_group.add_argument("--quiet", action="store_true", 
@@ -1568,9 +1732,6 @@ Examples:
     if args.dev and args.production:
         parser.error("Cannot specify both --dev and --production")
     
-    if args.qr_only and args.no_qr:
-        parser.error("Cannot specify both --qr-only and --no-qr")
-    
     # Auto-configure based on mode
     if args.dev:
         args.lan_only = True  # Dev mode implies LAN only
@@ -1582,7 +1743,6 @@ Examples:
     launcher = Launcher(
         dev_mode=args.dev,
         force_ports=args.force_ports,
-        qr_only=args.qr_only,
         lan_only=args.lan_only,
         tunnel_only=args.tunnel_only,
         tunnel_type=args.tunnel_type,

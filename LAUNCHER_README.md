@@ -13,6 +13,7 @@ The launcher script (`launcher.py`) is a comprehensive Python-based deployment t
 - Provides comprehensive logging and error reporting
 - Ensures proper cleanup of all resources
 - **Supports multiple deployment modes** (development, production, cloud-first)
+- **Modern console UI** with smooth progress animations and non-scrolling display
 
 ## Features
 
@@ -30,6 +31,7 @@ The launcher script (`launcher.py`) is a comprehensive Python-based deployment t
 - **Status Monitoring**: Real-time display of process status and recent errors
 - **Tunnel Fallback**: Automatic fallback from named to quick tunnels
 - **Production Ready**: Named tunnels with persistent URLs and auto-reconnect
+- **Modern Console UI**: Smooth progress animations, non-scrolling display, and QR-focused interface
 
 ## Prerequisites
 
@@ -64,7 +66,7 @@ Simply run the launcher from the project root directory:
 python launcher.py
 ```
 
-This will start both servers with automatic Cloudflare Tunnel creation for internet access.
+This will start both servers with automatic Cloudflare Tunnel creation for internet access. The launcher now features a modern, non-scrolling console interface that displays smooth progress animations and prominently shows the QR code for mobile access.
 
 ### Deployment Modes
 
@@ -106,6 +108,9 @@ python launcher.py --no-qr
 # Quiet mode (minimal output)
 python launcher.py --quiet
 
+# Development mode (verbose output)
+python launcher.py --dev
+
 # Combine options
 python launcher.py --dev --force-ports --log-level INFO
 ```
@@ -139,8 +144,7 @@ python launcher.py --dev --force-ports --log-level INFO
 #### UI and Output
 | Option | Description |
 |--------|-------------|
-| `--no-qr` | Skip QR code generation |
-| `--qr-only` | Show only QR code and essential output |
+| `--no-qr` | Skip QR code generation (default: enabled) |
 | `--no-color` | Disable colored output |
 | `--quiet` | Suppress non-essential output |
 | `--log-level` | Set logging level: DEBUG, INFO, WARNING, ERROR |
@@ -183,7 +187,8 @@ python launcher.py --dev --force-ports --log-level INFO
 ### Mobile Access
 
 Once the launcher is running, you'll see:
-- QR codes displayed in the terminal (LAN and/or tunnel)
+- **Modern console interface** with smooth progress animations
+- **Prominent QR code display** in the center of the terminal
 - QR codes saved as `mobile_access_qr.png`
 - Access URLs for both desktop and mobile
 - Real-time status of all servers and tunnels
@@ -451,6 +456,7 @@ python launcher.py --dev --log-level DEBUG
 ```
 
 This provides:
+- Traditional verbose output (instead of the clean QR interface)
 - Hot Module Replacement for frontend changes
 - Detailed logging for debugging
 - Real-time error reporting
