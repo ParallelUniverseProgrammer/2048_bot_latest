@@ -190,9 +190,19 @@ class TrainingManager:
         if enabled:
             self._current_run_id = f"run_{int(time.time())}"
             print(f"Long run mode enabled with run ID: {self._current_run_id}")
+            
+            # REMOVED: Don't clean up existing checkpoints when enabling long run mode
+            # This allows users to keep their existing checkpoints and only affect future ones
+            print("Long run mode will only affect future checkpoints from this run")
         else:
             self._current_run_id = None
             print("Long run mode disabled")
+
+    def _cleanup_previous_run_checkpoints(self):
+        """Clean up checkpoints from previous runs when long run mode is enabled"""
+        # REMOVED: This method is no longer used since we don't delete existing checkpoints
+        # when long run mode is first enabled
+        pass
 
     def get_checkpoint_config(self) -> Dict[str, Any]:
         """Get current checkpoint configuration"""

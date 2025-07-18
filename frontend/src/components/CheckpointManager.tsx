@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Archive, 
   Play, 
@@ -67,34 +67,37 @@ interface CheckpointManagerProps {
 }
 
 const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }) => {
+  // ===== STATE MANAGEMENT =====
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([])
   const [stats, setStats] = useState<CheckpointStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
-  // Device detection for mobile optimization
+  // ===== DEVICE DETECTION =====
   const { displayMode } = useDeviceDetection()
   const isMobile = displayMode === 'mobile'
   
-  // UI state
+  // ===== UI STATE =====
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<string | null>(null)
   const [editingNickname, setEditingNickname] = useState<string | null>(null)
   const [newNickname, setNewNickname] = useState('')
   const [expandedCheckpoint, setExpandedCheckpoint] = useState<string | null>(null)
   
-  // Enhanced UI state
+  // ===== FILTER & SORT STATE =====
   const [sortBy, setSortBy] = useState<'date' | 'score' | 'episode' | 'size'>('date')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [filterBy, setFilterBy] = useState<'all' | 'recent' | 'high-score' | 'large'>('all')
   
-  // Checkpoint configuration state
+  // ===== CONFIGURATION STATE =====
   const [checkpointInterval, setCheckpointInterval] = useState(50)
+  const [checkpointIntervalInput, setCheckpointIntervalInput] = useState('50')
+  const [checkpointIntervalError, setCheckpointIntervalError] = useState<string | null>(null)
   const [longRunMode, setLongRunMode] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [configLoading, setConfigLoading] = useState(false)
   
-  // Ref for the editing input field to ensure proper focus on mobile
+  // ===== REFS =====
   const editingInputRef = useRef<HTMLInputElement>(null)
 
   // Cleanup loading states on component unmount
@@ -207,6 +210,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       if (res.ok) {
         const config = await res.json()
         setCheckpointInterval(config.interval)
+        setCheckpointIntervalInput(config.interval.toString())
         setLongRunMode(config.long_run_mode)
       }
     } catch (err) {
@@ -214,15 +218,53 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     }
   }
 
+  // Validate checkpoint interval
+  const validateCheckpointInterval = (value: string): number | null => {
+    const num = parseInt(value)
+    if (isNaN(num) || num < 1) {
+      return null
+    }
+    if (num > 1000) {
+      return null
+    }
+    return num
+  }
+
+  // Handle checkpoint interval input changes
+  const handleCheckpointIntervalChange = (value: string) => {
+    setCheckpointIntervalInput(value)
+    setCheckpointIntervalError(null)
+  }
+
+  // Handle checkpoint interval blur (validation)
+  const handleCheckpointIntervalBlur = () => {
+    const validatedValue = validateCheckpointInterval(checkpointIntervalInput)
+    if (validatedValue === null) {
+      setCheckpointIntervalError('Please enter a number between 1 and 1000')
+      setCheckpointIntervalInput(checkpointInterval.toString())
+    } else {
+      setCheckpointInterval(validatedValue)
+      setCheckpointIntervalInput(validatedValue.toString())
+      setCheckpointIntervalError(null)
+    }
+  }
+
   // Save checkpoint configuration
   const saveCheckpointConfig = async () => {
+    // Validate before saving
+    const validatedValue = validateCheckpointInterval(checkpointIntervalInput)
+    if (validatedValue === null) {
+      setCheckpointIntervalError('Please enter a valid number between 1 and 1000')
+      return
+    }
+
     try {
       setConfigLoading(true)
       const res = await fetch(`${config.api.baseUrl}/training/checkpoint/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          interval: checkpointInterval,
+          interval: validatedValue,
           long_run_mode: longRunMode
         })
       })
@@ -231,6 +273,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         throw new Error('Failed to save checkpoint configuration')
       }
       
+      setCheckpointInterval(validatedValue)
       setShowConfigPanel(false)
       setError(null)
     } catch (err) {
@@ -293,7 +336,11 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     return filtered
   }, [checkpoints, searchTerm, filterBy, sortBy, sortOrder])
 
-  // Utility functions
+  // ===== UTILITY FUNCTIONS =====
+  
+  /**
+   * Format file size in bytes to human readable format
+   */
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024 * 1024) {
       return `${(bytes / 1024).toFixed(1)} KB`
@@ -304,6 +351,9 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     }
   }
 
+  /**
+   * Format duration in seconds to human readable format
+   */
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
@@ -318,12 +368,18 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     }
   }
 
+  /**
+   * Get appropriate trend icon based on score performance
+   */
   const getScoreTrendIcon = (score: number) => {
     if (score > 1000) return <TrendingUp className="w-3 h-3 text-green-400" />
     if (score > 500) return <BarChart3 className="w-3 h-3 text-yellow-400" />
     return <TrendingDown className="w-3 h-3 text-red-400" />
   }
 
+  /**
+   * Get text color for model size indicator
+   */
   const getModelSizeColor = (size: string) => {
     switch (size.toLowerCase()) {
       case 'tiny': return 'text-blue-400'
@@ -334,7 +390,16 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     }
   }
 
-  // Action functions
+  /**
+   * Get background color for model size indicator
+   */
+
+
+  // ===== ACTION FUNCTIONS =====
+  
+  /**
+   * Update checkpoint nickname via API
+   */
   const updateNickname = async (checkpointId: string, nickname: string) => {
     try {
       const res = await fetch(`${config.api.baseUrl}/checkpoints/${checkpointId}/nickname`, {
@@ -508,7 +573,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   ] : []
 
   return (
-    <div className="h-full grid grid-rows-[auto_auto_auto_1fr] gap-2 pb-6">
+    <div className="h-full grid grid-rows-[auto_auto_auto_1fr] gap-1 pb-4">
       {/* Error Display */}
       {error && (
         <motion.div
@@ -521,7 +586,8 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             <span className="text-red-400 text-sm flex-1">{error}</span>
             <button
               onClick={() => setError(null)}
-              className="text-red-400 hover:text-red-300 p-1 rounded-lg hover:bg-red-500/20"
+              className="text-red-400 hover:text-red-300 p-2 rounded-lg hover:bg-red-500/20 transition-colors"
+              aria-label="Dismiss error"
             >
               <X className="w-4 h-4" />
             </button>
@@ -529,33 +595,29 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         </motion.div>
       )}
 
-      {/* Stats Overview - Inspired by TrainingDashboard */}
+      {/* Stats Overview - Compact */}
       {stats && (
         <motion.div
-          className="card-glass p-4 rounded-2xl"
-          initial={{ opacity: 0, y: -20 }}
+          className="card-glass p-3 rounded-xl"
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.3 }}
         >
-          <h3 className="text-sm font-semibold mb-3 flex items-center">
-            <Activity className="w-4 h-4 mr-2 text-blue-400" />
-            Checkpoint Overview
-          </h3>
-          <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-4 gap-3'}`}>
+          <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-4 gap-2'}`}>
             {statsMetrics.map((metric, index) => (
               <motion.div
                 key={metric.title}
-                className="flex items-center space-x-2 p-2 bg-gray-800/30 rounded-xl"
-                initial={{ opacity: 0, x: -20 }}
+                className="flex items-center space-x-1.5 p-1.5 bg-gray-800/30 rounded-lg"
+                initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 + index * 0.05 }}
+                transition={{ duration: 0.3, delay: 0.05 + index * 0.02 }}
               >
-                <div className={`p-1 rounded ${metric.bgColor}`}>
-                  <metric.icon className={`w-3 h-3 ${metric.color}`} />
+                <div className={`p-0.5 rounded ${metric.bgColor}`}>
+                  <metric.icon className={`w-2.5 h-2.5 ${metric.color}`} />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs text-gray-400 font-medium truncate">{metric.title}</div>
-                  <div className={`font-bold ${metric.color} text-sm truncate`}>{metric.value}</div>
+                  <div className="text-xs text-gray-400 truncate">{metric.title}</div>
+                  <div className={`font-semibold ${metric.color} text-xs truncate`}>{metric.value}</div>
                 </div>
               </motion.div>
             ))}
@@ -587,6 +649,12 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-gray-700 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              inputMode="text"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck="false"
+              style={{ fontSize: '16px' }} // Prevents zoom on iOS
             />
           </div>
 
@@ -632,12 +700,13 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                 <option value="episode">Episode</option>
                 <option value="size">Size</option>
               </select>
-              <button
-                onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
-                className="p-1.5 bg-gray-700 text-gray-400 rounded-lg hover:bg-gray-600"
-              >
-                {sortOrder === 'desc' ? <SortDesc className="w-3 h-3" /> : <SortAsc className="w-3 h-3" />}
-              </button>
+                          <button
+              onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+              className="p-2 bg-gray-700 text-gray-400 rounded-lg hover:bg-gray-600 transition-colors"
+              aria-label={`Sort ${sortOrder === 'desc' ? 'ascending' : 'descending'}`}
+            >
+              {sortOrder === 'desc' ? <SortDesc className="w-3 h-3" /> : <SortAsc className="w-3 h-3" />}
+            </button>
             </div>
           </div>
 
@@ -659,82 +728,125 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             </button>
           </div>
         </div>
-      </motion.div>
 
-      {/* Configuration Panel */}
-      {showConfigPanel && (
-        <motion.div
-          className="card-glass p-4 rounded-2xl"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <h3 className="text-sm font-semibold mb-3 flex items-center">
-            <Settings className="w-4 h-4 mr-2 text-blue-400" />
-            Checkpoint Configuration
-          </h3>
-          
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">
-                Checkpoint Interval (episodes)
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="1000"
-                value={checkpointInterval}
-                onChange={(e) => setCheckpointInterval(parseInt(e.target.value) || 50)}
-                className="w-full px-3 py-2 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Save a checkpoint every {checkpointInterval} episodes
-              </p>
-            </div>
-            
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1">
-                <label className="text-xs text-gray-400 block">Long Run Mode</label>
-                <p className="text-xs text-gray-500">
-                  Only keep the latest checkpoint from this training run
-                </p>
+        {/* Configuration Panel - Integrated into search section */}
+        <AnimatePresence mode="wait">
+          {showConfigPanel && (
+            <motion.div
+              className="mt-3"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ 
+                type: "spring",
+                damping: 25,
+                stiffness: 150,
+                duration: 0.4
+              }}
+            >
+              <div className="card-glass p-4 rounded-2xl">
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ 
+                    type: "spring",
+                    damping: 25,
+                    stiffness: 150,
+                    duration: 0.3,
+                    delay: 0.1
+                  }}
+                >
+                  <h3 className="text-sm font-semibold mb-3 flex items-center">
+                    <Settings className="w-4 h-4 mr-2 text-blue-400" />
+                    Checkpoint Configuration
+                  </h3>
+              
+                  <div className="space-y-3 min-h-0">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">
+                        Checkpoint Interval (episodes)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="1000"
+                        value={checkpointIntervalInput}
+                        onChange={(e) => handleCheckpointIntervalChange(e.target.value)}
+                        onBlur={handleCheckpointIntervalBlur}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.currentTarget.blur()
+                          }
+                        }}
+                        className={`w-full px-3 py-2 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
+                          checkpointIntervalError ? 'ring-2 ring-red-500' : ''
+                        }`}
+                        inputMode="numeric"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck="false"
+                        style={{ fontSize: '16px' }} // Prevents zoom on iOS
+                      />
+                      {checkpointIntervalError ? (
+                        <p className="text-xs text-red-400 mt-1">{checkpointIntervalError}</p>
+                      ) : (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Save a checkpoint every {checkpointInterval} episodes
+                        </p>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <label className="text-xs text-gray-400 block">Long Run Mode</label>
+                        <p className="text-xs text-gray-500">
+                          Only keep the latest checkpoint from this training run
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setLongRunMode(!longRunMode)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          longRunMode ? 'bg-blue-500' : 'bg-gray-600'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            longRunMode ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    
+                    <div className="flex space-x-2 pt-2">
+                      <button
+                        onClick={saveCheckpointConfig}
+                        disabled={configLoading}
+                        className="flex-1 flex items-center justify-center space-x-2 bg-blue-500 text-white rounded-xl py-2 text-sm font-medium disabled:opacity-50"
+                      >
+                        {configLoading ? (
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Check className="w-4 h-4" />
+                        )}
+                        <span>{configLoading ? 'Saving...' : 'Save Configuration'}</span>
+                      </button>
+                      <button
+                        onClick={() => setShowConfigPanel(false)}
+                        className="flex items-center justify-center bg-gray-700 text-gray-400 rounded-xl py-2 px-3 text-sm font-medium hover:bg-gray-600 transition-colors"
+                        aria-label="Close configuration"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
               </div>
-              <button
-                onClick={() => setLongRunMode(!longRunMode)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  longRunMode ? 'bg-blue-500' : 'bg-gray-600'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    longRunMode ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </div>
-            
-            <div className="flex space-x-2 pt-2">
-              <button
-                onClick={saveCheckpointConfig}
-                disabled={configLoading}
-                className="flex-1 flex items-center justify-center space-x-2 bg-blue-500 text-white rounded-xl py-2 text-sm font-medium disabled:opacity-50"
-              >
-                {configLoading ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Check className="w-4 h-4" />
-                )}
-                <span>{configLoading ? 'Saving...' : 'Save Configuration'}</span>
-              </button>
-              <button
-                onClick={() => setShowConfigPanel(false)}
-                className="flex items-center justify-center bg-gray-700 text-gray-400 rounded-xl py-2 px-3 text-sm font-medium"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </motion.div>
-      )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
 
       {/* Checkpoints List - Redesigned */}
       <div className="flex-1 overflow-y-auto space-y-2">
@@ -765,10 +877,12 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                       autoCorrect="off"
                       autoCapitalize="off"
                       spellCheck="false"
+                      style={{ fontSize: '16px' }} // Prevents zoom on iOS
                     />
                     <button
                       onClick={() => updateNickname(checkpoint.id, newNickname)}
-                      className="text-green-400 hover:text-green-300 p-1"
+                      className="text-green-400 hover:text-green-300 p-2 rounded-lg hover:bg-green-500/20 transition-colors"
+                      aria-label="Save nickname"
                     >
                       <Check className="w-4 h-4" />
                     </button>
@@ -777,7 +891,8 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                         setEditingNickname(null)
                         setNewNickname('')
                       }}
-                      className="text-red-400 hover:text-red-300 p-1"
+                      className="text-red-400 hover:text-red-300 p-2 rounded-lg hover:bg-red-500/20 transition-colors"
+                      aria-label="Cancel edit"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -790,7 +905,8 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                         setEditingNickname(checkpoint.id)
                         setNewNickname(checkpoint.nickname)
                       }}
-                      className="text-gray-400 hover:text-gray-300 p-1 rounded-lg hover:bg-gray-700/50"
+                      className="text-gray-400 hover:text-gray-300 p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
+                      aria-label="Edit nickname"
                     >
                       <Edit className="w-3 h-3" />
                     </button>
@@ -798,7 +914,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                 )}
                 
                 {/* Quick Stats Row */}
-                <div className="flex items-center space-x-4 mt-2 text-xs">
+                <div className="flex items-center space-x-3 mt-2 text-xs">
                   <div className="flex items-center space-x-1">
                     <Target className="w-3 h-3 text-green-400" />
                     <span className="text-green-400 font-medium">
@@ -826,7 +942,14 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                   onClick={() => setExpandedCheckpoint(
                     expandedCheckpoint === checkpoint.id ? null : checkpoint.id
                   )}
-                  className="text-gray-400 hover:text-gray-300 p-1 rounded-lg hover:bg-gray-700/50"
+                  onTouchEnd={(e) => {
+                    e.preventDefault()
+                    setExpandedCheckpoint(
+                      expandedCheckpoint === checkpoint.id ? null : checkpoint.id
+                    )
+                  }}
+                  className="text-gray-400 hover:text-gray-300 p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
+                  aria-label={expandedCheckpoint === checkpoint.id ? "Collapse details" : "Expand details"}
                 >
                   {expandedCheckpoint === checkpoint.id ? 
                     <ChevronUp className="w-4 h-4" /> : 
@@ -837,7 +960,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             </div>
 
             {/* Action Buttons - Enhanced */}
-            <div className="flex space-x-2">
+            <div className="flex space-x-2 mt-3">
               <button
                 onClick={() => startPlayback(checkpoint.id)}
                 className="flex-1 flex items-center justify-center space-x-2 bg-green-500/20 text-green-400 rounded-xl py-2.5 text-sm font-medium hover:bg-green-500/30 transition-colors"
@@ -855,82 +978,104 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
               <button
                 onClick={() => deleteCheckpoint(checkpoint.id)}
                 className="flex items-center justify-center bg-red-500/20 text-red-400 rounded-xl py-2.5 px-3 text-sm font-medium hover:bg-red-500/30 transition-colors"
+                aria-label="Delete checkpoint"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
 
             {/* Expanded Details - Enhanced */}
-            {expandedCheckpoint === checkpoint.id && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mt-3 pt-3 border-t border-gray-700"
-              >
-                <div className="grid grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <div className="text-gray-400 mb-2 flex items-center">
-                      <Layers className="w-3 h-3 mr-1" />
-                      Model Config
+            <AnimatePresence mode="wait">
+              {expandedCheckpoint === checkpoint.id && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ 
+                    type: "spring",
+                    damping: 25,
+                    stiffness: 150,
+                    duration: 0.4
+                  }}
+                  className="mt-3 pt-3 border-t border-gray-700 overflow-hidden"
+                >
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ 
+                      type: "spring",
+                      damping: 25,
+                      stiffness: 150,
+                      duration: 0.3,
+                      delay: 0.1
+                    }}
+                  >
+                    <div className="grid grid-cols-2 gap-4 text-xs">
+                      <div>
+                        <div className="text-gray-400 mb-2 flex items-center">
+                          <Layers className="w-3 h-3 mr-1" />
+                          Model Config
+                        </div>
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between">
+                            <span>Experts:</span>
+                            <span className="text-white font-medium">{checkpoint.model_config.n_experts}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Layers:</span>
+                            <span className="text-white font-medium">{checkpoint.model_config.n_layers}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Dimensions:</span>
+                            <span className="text-white font-medium">{checkpoint.model_config.d_model}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Heads:</span>
+                            <span className="text-white font-medium">{checkpoint.model_config.n_heads}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-400 mb-2 flex items-center">
+                          <Activity className="w-3 h-3 mr-1" />
+                          Performance
+                        </div>
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between">
+                            <span>Avg Score:</span>
+                            <span className="text-white font-medium">{checkpoint.performance_metrics.avg_score.toFixed(0)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Final Loss:</span>
+                            <span className="text-white font-medium">{checkpoint.performance_metrics.final_loss.toFixed(3)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Speed:</span>
+                            <span className="text-white font-medium">{checkpoint.performance_metrics.training_speed.toFixed(1)} ep/min</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Duration:</span>
+                            <span className="text-white font-medium">{formatDuration(checkpoint.training_duration)}</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between">
-                        <span>Experts:</span>
-                        <span className="text-white font-medium">{checkpoint.model_config.n_experts}</span>
+                    
+                    <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-700">
+                      <div className="flex items-center space-x-1 text-xs text-gray-400">
+                        <Calendar className="w-3 h-3" />
+                        <span>{new Date(checkpoint.created_at).toLocaleDateString()}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span>Layers:</span>
-                        <span className="text-white font-medium">{checkpoint.model_config.n_layers}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Dimensions:</span>
-                        <span className="text-white font-medium">{checkpoint.model_config.d_model}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Heads:</span>
-                        <span className="text-white font-medium">{checkpoint.model_config.n_heads}</span>
+                      <div className="flex items-center space-x-1 text-xs text-gray-400">
+                        <Database className="w-3 h-3" />
+                        <span>{formatFileSize(checkpoint.file_size)}</span>
                       </div>
                     </div>
-                  </div>
-                  <div>
-                    <div className="text-gray-400 mb-2 flex items-center">
-                      <Activity className="w-3 h-3 mr-1" />
-                      Performance
-                    </div>
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between">
-                        <span>Avg Score:</span>
-                        <span className="text-white font-medium">{checkpoint.performance_metrics.avg_score.toFixed(0)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Final Loss:</span>
-                        <span className="text-white font-medium">{checkpoint.performance_metrics.final_loss.toFixed(3)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Speed:</span>
-                        <span className="text-white font-medium">{checkpoint.performance_metrics.training_speed.toFixed(1)} ep/min</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Duration:</span>
-                        <span className="text-white font-medium">{formatDuration(checkpoint.training_duration)}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-700">
-                  <div className="flex items-center space-x-1 text-xs text-gray-400">
-                    <Calendar className="w-3 h-3" />
-                    <span>{new Date(checkpoint.created_at).toLocaleDateString()}</span>
-                  </div>
-                  <div className="flex items-center space-x-1 text-xs text-gray-400">
-                    <Database className="w-3 h-3" />
-                    <span>{formatFileSize(checkpoint.file_size)}</span>
-                  </div>
-                </div>
-              </motion.div>
-            )}
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         ))}
 

@@ -58,7 +58,7 @@ export default defineConfig({
   },
   define: {
     global: 'globalThis',
-    __BACKEND_URL__: JSON.stringify('https://psi-newport-connectors-gloves.trycloudflare.com')
+    __BACKEND_URL__: JSON.stringify('https://all-dash-allocated-editors.trycloudflare.com')
   },
   // Build optimizations for mobile
   build: {
