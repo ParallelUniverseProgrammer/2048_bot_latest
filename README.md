@@ -8,9 +8,17 @@
 
 ---
 
-## ✨ What’s New?
+## ✨ What's New?
 
-• **Unified Metrics & Visuals** – the Training dashboard now concentrates all key analytics; the previous “Network” tab has been removed for clarity.
+• **🎨 Redesigned Training Dashboard** – Streamlined controls with smart button logic, compact charts, and unified metrics display. All functionality preserved in a mobile-optimized layout that fits perfectly on any screen size.
+
+• **📱 Mobile-First Design** – Enhanced responsive layout with touch-friendly controls, double-tap chart expansion, and optimized spacing that works beautifully on phones, tablets, and desktops.
+
+• **⚡ Performance Optimizations** – Reduced chart heights, tighter spacing, and efficient layout that maintains all visual richness while fitting comfortably within screen constraints.
+
+• **🎯 Smart UI Logic** – Context-aware buttons that adapt based on training state, integrated status indicators, and streamlined workflow that reduces cognitive load.
+
+• **Unified Metrics & Visuals** – the Training dashboard now concentrates all key analytics; the previous "Network" tab has been removed for clarity.
 
 • **Progress-First UX** – global top-bar progress indicators replace floating pop-ups, providing unobtrusive feedback during training, checkpoint loading and playback.
 
@@ -20,6 +28,7 @@
 
 • **🚀 Background Service Roadmap** – comprehensive 5-phase plan for platform-agnostic installer that transforms this into a production-ready background service with automatic startup, while preserving all real-time functionality.
 
+---
 
 ## 📋 Table of Contents
 1. [Key Features](#key-features)
@@ -37,15 +46,17 @@
 
 ## Key Features
 
-• **Real-Time Training Dashboard** – loss & score charts, action distributions, expert usage and advanced KPIs, all updating every 1-2 s via WebSocket.
+• **Real-Time Training Dashboard** – Redesigned with smart controls, compact charts, and unified metrics. Loss & score charts, action distributions, expert usage and advanced KPIs, all updating every 1-2 s via WebSocket.
 
 • **Interactive Game Viewer** – watch the agent play with attention overlays and live action probabilities.
 
 • **Comprehensive Checkpoint Manager** – browse, rename, delete and resume checkpoints or start instant playback with animated loading states.
 
-• **Adaptive PWA** – installs to mobile home-screen, works offline for checkpoint replay and includes robust connection fall-backs.
+• **Adaptive PWA** – installs to mobile home-screen, works offline for checkpoint replay and includes robust connection fall-backs. Optimized for touch interfaces with double-tap chart expansion.
 
 • **GPU-Aware Backend** – FastAPI + PyTorch PPO training engine that auto-scales model size to available VRAM, with CPU fallback.
+
+• **Mobile-First Design** – Responsive layout that adapts perfectly to any screen size, with touch-optimized controls and efficient use of screen real estate.
 
 ---
 
@@ -109,14 +120,21 @@ The interface is split into three tabs:
 
 | Tab | Description |
 |-----|-------------|
-| **Training** | Real-time metrics, charts and training controls (start, pause, stop). |
+| **Training** | Redesigned real-time metrics, compact charts and smart training controls. Features context-aware buttons that adapt based on training state. |
 | **Game** | Live board view for training or checkpoint playback with attention overlay and playback controls. |
 | **Checkpoints** | Library of saved models with rename, search, resume-training and playback. |
 
 ### Starting a Training Session
 1. Launch the backend & frontend (see *Quick Start*).
-2. Navigate to **Training** and press **Start**. Select model size if prompted.
+2. Navigate to **Training** and press **Start Training**. Select model size if prompted.
 3. Monitor metrics or switch to **Game** to visually inspect gameplay.
+4. Use the smart controls to pause, resume, or create manual checkpoints as needed.
+
+### Mobile Experience
+• **Touch-Optimized**: All controls are designed for touch interaction
+• **Chart Expansion**: Double-tap any chart to view it in full-screen mode
+• **Responsive Layout**: Automatically adapts to your device's screen size
+• **PWA Installation**: Install directly to your home screen for offline access
 
 ### Remote Access
 The launcher automatically creates a Cloudflare Tunnel for internet access:
@@ -127,7 +145,7 @@ The launcher automatically creates a Cloudflare Tunnel for internet access:
 
 ### Playing a Checkpoint
 1. Open **Checkpoints** and click *Watch* on any entry.
-2. You’ll be auto-redirected to **Game** while the playback environment starts (progress bar at top).
+2. You'll be auto-redirected to **Game** while the playback environment starts (progress bar at top).
 3. Pause/resume, change speed or start a new game anytime.
 
 ---
@@ -187,9 +205,21 @@ More in `docs/TROUBLESHOOTING.md` (coming soon).
 **Q:** *Can I export checkpoints?*  
 **A:** Yes – checkpoints are standard PyTorch `.pt` files saved under `backend/checkpoints/`.
 
+**Q:** *How does the mobile experience work?*  
+**A:** The interface is fully responsive and touch-optimized. Double-tap charts to expand them, and all controls are designed for mobile interaction.
+
 ---
 
 ## 🚀 Development Roadmap
+
+### UI/UX Improvements ✅ COMPLETED
+We've successfully redesigned the Training Dashboard with a focus on mobile-first design and user experience:
+
+• **Smart Controls** – Context-aware buttons that adapt based on training state
+• **Compact Layout** – Optimized spacing and chart sizes that fit perfectly on mobile screens
+• **Touch Optimization** – Double-tap chart expansion and touch-friendly controls
+• **Responsive Design** – Seamless experience across all device sizes
+• **Visual Polish** – Streamlined interface that reduces cognitive load while maintaining all functionality
 
 ### Remote Access Integration ✅ COMPLETED
 We've successfully implemented **Cloudflare Tunnel integration** to transform this LAN-only development tool into an internet-reachable, HTTPS-secured service. This enables:
@@ -226,6 +256,7 @@ This will leverage our existing checkpoint system and WebSocket infrastructure t
 2. Run `python launcher.py --dev` to spin up watch mode for both servers.  
 3. Add/adjust tests.  
 4. Follow the existing code style (Black, ESLint) and ensure the UI remains responsive on mobile.
+5. See [STYLE_GUIDE.md](./STYLE_GUIDE.md) for detailed design and development guidelines.
 
 ---
 

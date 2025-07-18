@@ -58,7 +58,7 @@ export default defineConfig({
   },
   define: {
     global: 'globalThis',
-    __BACKEND_URL__: JSON.stringify('https://yemen-casual-adapted-mug.trycloudflare.com')
+    __BACKEND_URL__: JSON.stringify('https://depot-luggage-concord-mystery.trycloudflare.com')
   },
   // Build optimizations for mobile
   build: {

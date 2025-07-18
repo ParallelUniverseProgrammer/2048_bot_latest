@@ -747,152 +747,195 @@ const TrainingDashboard: React.FC = () => {
   }
 
   return (
-    <div className="h-full grid grid-rows-[auto_auto_auto_1fr] gap-2 pb-6">
-      {/* Training Controls */}
+    <div className="h-full grid grid-rows-[auto_auto_1fr] gap-2 pb-4">
+      {/* Redesigned Training Controls */}
       <motion.div
-        className="card-glass p-4 rounded-2xl flex items-center justify-between"
+        className="card-glass p-3 rounded-2xl"
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="flex items-center space-x-2">
-          <h3 className="text-sm font-semibold flex items-center">
-            <Activity className="w-4 h-4 mr-2 text-blue-400" />
-            Training Status
-          </h3>
-          <div className="flex items-center space-x-1 text-xs">
+        {/* Header Row */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center space-x-2">
+            <Activity className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-semibold text-white">Training Controls</h3>
+          </div>
+          
+          {/* Status Indicator */}
+          <div className="flex items-center space-x-2 text-xs">
+            <div className={`w-2 h-2 rounded-full ${isTraining ? 'bg-green-400' : 'bg-red-400'}`} />
             <span className={`font-medium ${isTraining ? 'text-green-400' : 'text-red-400'}`}>
-              {isTraining ? 'Training' : 'Paused'}
+              {isTraining ? 'Active' : 'Stopped'}
             </span>
-            {!isConnected && (
-              <span className="text-red-400"> (Disconnected)</span>
+            {isPaused && isTraining && (
+              <span className="text-yellow-400">(Paused)</span>
             )}
-            {/* Show waiting indicator using new flag */}
-            {showWaitingForFirstData && (
-              <span className="text-purple-400"> (Waiting for data...)</span>
+            {!isConnected && (
+              <span className="text-red-400">(Disconnected)</span>
             )}
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
-          {!isTraining && (
+        {/* Model Size Selector - Only show when not training */}
+        {!isTraining && (
+          <div className="mb-2">
+            <label className="block text-xs text-gray-400 mb-1">Model Size</label>
             <select
               value={modelSize}
               onChange={(e) => setModelSize(e.target.value as 'tiny' | 'small' | 'medium' | 'large')}
               disabled={isTraining || loadingStates.isTrainingStarting}
               className={`
-                bg-gray-700 text-white rounded-lg px-2 py-1.5 text-xs border border-gray-600
-                focus:outline-none focus:ring-1 focus:ring-blue-500
+                w-full bg-gray-700 text-white rounded-lg px-3 py-2 text-sm border border-gray-600
+                focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500
                 ${isTraining || loadingStates.isTrainingStarting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-600'}
               `}
             >
-              <option value="tiny">Tiny</option>
-              <option value="small">Small</option>
-              <option value="medium">Medium</option>
-              <option value="large">Large</option>
+              <option value="tiny">Tiny Model</option>
+              <option value="small">Small Model</option>
+              <option value="medium">Medium Model</option>
+              <option value="large">Large Model</option>
             </select>
-          )}
-          {isTraining && !isPaused && (
-            <button
-              onClick={() => handleTrainingControl('pause')}
-              className="flex items-center px-3 py-1.5 rounded-xl text-xs font-medium text-white bg-yellow-500 hover:bg-yellow-600 transition-colors"
-              disabled={loadingStates.isTrainingStarting || !isConnected}
-            >
-              <Pause className="w-3 h-3 mr-1" />
-              Pause
-            </button>
-          )}
-          {isTraining && isPaused && (
-            <button
-              onClick={() => handleTrainingControl('resume')}
-              className="flex items-center px-3 py-1.5 rounded-xl text-xs font-medium text-white bg-green-500 hover:bg-green-600 transition-colors"
-              disabled={loadingStates.isTrainingStarting || !isConnected}
-            >
-              <Play className="w-3 h-3 mr-1" />
-              Resume
-            </button>
-          )}
-          {!isTraining && (
-            <button
-              onClick={() => handleTrainingControl('start')}
-              className="flex items-center px-3 py-1.5 rounded-xl text-xs font-medium text-white bg-green-500 hover:bg-green-600 transition-colors"
-              disabled={loadingStates.isTrainingStarting || !isConnected}
-            >
-              <Play className="w-3 h-3 mr-1" />
-              Start
-            </button>
-          )}
-          {isTraining && (
+          </div>
+        )}
+
+        {/* Control Buttons */}
+        <div className="grid grid-cols-2 gap-2">
+          {/* Primary Action Button */}
+          <button
+            onClick={() => {
+              if (!isTraining) {
+                handleTrainingControl('start')
+              } else if (isPaused) {
+                handleTrainingControl('resume')
+              } else {
+                handleTrainingControl('pause')
+              }
+            }}
+            disabled={loadingStates.isTrainingStarting || !isConnected}
+            className={`
+              flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-medium transition-all
+              ${!isTraining 
+                ? 'bg-green-500 hover:bg-green-600 text-white' 
+                : isPaused 
+                  ? 'bg-green-500 hover:bg-green-600 text-white'
+                  : 'bg-yellow-500 hover:bg-yellow-600 text-white'
+              }
+              ${(loadingStates.isTrainingStarting || !isConnected) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}
+            `}
+          >
+            {!isTraining ? (
+              <>
+                <Play className="w-4 h-4 mr-2" />
+                Start Training
+              </>
+            ) : isPaused ? (
+              <>
+                <Play className="w-4 h-4 mr-2" />
+                Resume
+              </>
+            ) : (
+              <>
+                <Pause className="w-4 h-4 mr-2" />
+                Pause
+              </>
+            )}
+          </button>
+
+          {/* Secondary Action Button */}
+          <button
+            onClick={() => {
+              if (isTraining) {
+                handleTrainingControl('stop')
+              } else {
+                // If not training, this becomes a manual checkpoint button
+                handleManualCheckpoint()
+              }
+            }}
+            disabled={loadingStates.isTrainingStarting || !isConnected || isCreatingCheckpoint}
+            className={`
+              flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-medium transition-all
+              ${isTraining 
+                ? 'bg-red-500 hover:bg-red-600 text-white' 
+                : 'bg-purple-500 hover:bg-purple-600 text-white'
+              }
+              ${(loadingStates.isTrainingStarting || !isConnected || isCreatingCheckpoint) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}
+            `}
+          >
+            {isTraining ? (
+              <>
+                <StopIcon className="w-4 h-4 mr-2" />
+                Stop Training
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 mr-2" />
+                {isCreatingCheckpoint ? 'Creating...' : 'Manual Checkpoint'}
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Manual Checkpoint Button - Only show when training */}
+        {isTraining && (
+          <div className="mt-2">
             <button
               onClick={handleManualCheckpoint}
-              className="flex items-center px-3 py-1.5 rounded-xl text-xs font-medium text-white bg-purple-500 hover:bg-purple-600 transition-colors"
               disabled={loadingStates.isTrainingStarting || !isConnected || isCreatingCheckpoint}
+              className={`
+                w-full flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium transition-all
+                bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30
+                ${(loadingStates.isTrainingStarting || !isConnected || isCreatingCheckpoint) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-102'}
+              `}
             >
-              <Save className="w-3 h-3 mr-1" />
-              {isCreatingCheckpoint ? 'Creating...' : 'Manual Checkpoint'}
+              <Save className="w-4 h-4 mr-2" />
+              {isCreatingCheckpoint ? 'Creating Checkpoint...' : 'Create Manual Checkpoint'}
             </button>
-          )}
-          {isTraining && (
-            <button
-              onClick={() => handleTrainingControl('stop')}
-              className="flex items-center px-3 py-1.5 rounded-xl text-xs font-medium text-white bg-red-500 hover:bg-red-600 transition-colors"
-              disabled={loadingStates.isTrainingStarting || !isConnected}
-            >
-              <StopIcon className="w-3 h-3 mr-1" />
-              Stop
-            </button>
-          )}
-        </div>
-      </motion.div>
+          </div>
+        )}
 
-      {/* Waiting for First Data Indicator */}
-      {showWaitingForFirstData && (
-        <motion.div
-          className="card-glass p-4 rounded-2xl border border-purple-500/30 bg-purple-500/10"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-        >
-          <div className="flex items-center space-x-3">
-            <Brain className="w-5 h-5 text-purple-400 animate-pulse" />
-            <div className="flex-1">
-              <div className="text-sm font-medium text-purple-300">Waiting for First Training Data</div>
-              <div className="text-xs text-purple-400/80">
-                The model is initializing and will start sending training metrics shortly. 
-                This typically takes 10-30 seconds for the first episode to complete.
+        {/* Waiting for Data Indicator */}
+        {showWaitingForFirstData && (
+          <div className="mt-2 p-2 rounded-lg border border-purple-500/30 bg-purple-500/10">
+            <div className="flex items-center space-x-2">
+              <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
+              <div className="flex-1">
+                <div className="text-xs font-medium text-purple-300">Initializing Training</div>
+                <div className="text-xs text-purple-400/80">
+                  Waiting for first episode data...
+                </div>
               </div>
-            </div>
-            <div className="text-xs text-purple-400">
-              {loadingStates.estimatedTimeRemaining !== null 
-                ? `${Math.ceil(loadingStates.estimatedTimeRemaining)}s`
-                : '...'
-              }
+              {loadingStates.estimatedTimeRemaining !== null && (
+                <div className="text-xs text-purple-400">
+                  ~{Math.ceil(loadingStates.estimatedTimeRemaining)}s
+                </div>
+              )}
             </div>
           </div>
-        </motion.div>
-      )}
+        )}
+      </motion.div>
 
-      {/* Enhanced Charts Section - Moved to top with more space */}
+      {/* Combined Charts and Metrics Section */}
       <motion.div
-        className="card-glass p-4 rounded-2xl"
+        className="card-glass p-3 rounded-2xl"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1 }}
       >
-        <h3 className="text-sm font-semibold mb-3 flex items-center">
+        <h3 className="text-sm font-semibold mb-2 flex items-center">
           <BarChart3 className="w-4 h-4 mr-2 text-blue-400" />
           Training Analytics
         </h3>
         
-        <div className="grid grid-cols-2 gap-4">
-          {/* Training Loss Chart - Larger */}
-          <div className="flex flex-col items-center space-y-2">
-            <div className="text-sm text-gray-400 font-medium text-center">Training Loss</div>
+        {/* Compact Charts Grid */}
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          {/* Training Loss Chart - Compact */}
+          <div className="flex flex-col items-center space-y-1">
+            <div className="text-xs text-gray-400 font-medium text-center">Training Loss</div>
             <div 
-              className="w-full h-20 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
+              className="w-full h-14 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
               onDoubleClick={() => handleChartDoubleTap('loss', 'Training Loss')}
               onTouchEnd={(e) => {
-                // Simple double-tap detection for mobile
                 const now = Date.now()
                 const lastTap = (e.currentTarget as any).lastTap || 0
                 if (now - lastTap < 300) {
@@ -912,11 +955,11 @@ const TrainingDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Game Score Chart - Larger */}
-          <div className="flex flex-col items-center space-y-2">
-            <div className="text-sm text-gray-400 font-medium text-center">Game Score</div>
+          {/* Game Score Chart - Compact */}
+          <div className="flex flex-col items-center space-y-1">
+            <div className="text-xs text-gray-400 font-medium text-center">Game Score</div>
             <div 
-              className="w-full h-20 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
+              className="w-full h-14 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
               onDoubleClick={() => handleChartDoubleTap('score', 'Game Score')}
               onTouchEnd={(e) => {
                 const now = Date.now()
@@ -938,11 +981,11 @@ const TrainingDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Action Distribution Chart - Larger */}
-          <div className="flex flex-col items-center space-y-2">
-            <div className="text-sm text-gray-400 font-medium text-center">Action Distribution</div>
+          {/* Action Distribution Chart - Compact */}
+          <div className="flex flex-col items-center space-y-1">
+            <div className="text-xs text-gray-400 font-medium text-center">Action Distribution</div>
             <div 
-              className="w-full h-20 bg-gray-800/50 rounded-xl p-2 flex items-center justify-center cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
+              className="w-full h-14 bg-gray-800/50 rounded-xl p-2 flex items-center justify-center cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
               onDoubleClick={() => handleChartDoubleTap('actions', 'Action Distribution')}
               onTouchEnd={(e) => {
                 const now = Date.now()
@@ -964,11 +1007,11 @@ const TrainingDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Expert Usage Chart - Larger */}
-          <div className="flex flex-col items-center space-y-2">
-            <div className="text-sm text-gray-400 font-medium text-center">Expert Usage</div>
+          {/* Expert Usage Chart - Compact */}
+          <div className="flex flex-col items-center space-y-1">
+            <div className="text-xs text-gray-400 font-medium text-center">Expert Usage</div>
             <div 
-              className="w-full h-20 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
+              className="w-full h-14 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
               onDoubleClick={() => handleChartDoubleTap('experts', 'Expert Usage')}
               onTouchEnd={(e) => {
                 const now = Date.now()
@@ -990,23 +1033,9 @@ const TrainingDashboard: React.FC = () => {
             </div>
           </div>
         </div>
-      </motion.div>
 
-      {/* Unified Stats Card - Reduced height to 2/3 */}
-      <motion.div
-        className="card-glass p-4 rounded-2xl"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-        style={{
-          maxHeight: '66vh' // Limit to 2/3 of viewport height
-        }}
-      >
-        <h3 className="text-sm font-semibold mb-3 flex items-center flex-shrink-0">
-          <Activity className="w-4 h-4 mr-2 text-blue-400" />
-          Training Metrics
-        </h3>
-        <div className="flex space-x-2 mb-3">
+        {/* Tab Navigation */}
+        <div className="flex space-x-2 mb-2">
           <button
             onClick={() => setActiveTab('core')}
             className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'core' ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-400'}`}
@@ -1020,7 +1049,9 @@ const TrainingDashboard: React.FC = () => {
             className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'stats' ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-400'}`}
           >Stats</button>
         </div>
-        <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-4 gap-3'}`}>  
+
+        {/* Compact Metrics Grid */}
+        <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-4 gap-2'}`}>  
           {displayedMetrics.map((metric, index) => (
             <motion.div
               key={metric.title}
