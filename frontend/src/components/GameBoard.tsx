@@ -1,6 +1,6 @@
 import React, { useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Eye, EyeOff, PlayCircle, PauseCircle, StopCircle, RefreshCw } from 'lucide-react'
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Eye, EyeOff, PlayCircle, PauseCircle, StopCircle } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 import { useDeviceDetection } from '../utils/deviceDetection'
 import config from '../utils/config'
@@ -109,34 +109,6 @@ const GameBoard: React.FC = () => {
 
   const currentData = getCurrentData()
 
-  // Improved playback control functions with better error handling
-  const pausePlayback = async () => {
-    try {
-      const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/pause`, { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to pause playback')
-    } catch (err) {
-      console.error('Error pausing playback:', err)
-    }
-  }
-
-  const resumePlayback = async () => {
-    try {
-      const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/resume`, { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to resume playback')
-    } catch (err) {
-      console.error('Error resuming playback:', err)
-    }
-  }
-
-  const stopPlayback = async () => {
-    try {
-      const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/stop`, { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to stop playback')
-    } catch (err) {
-      console.error('Error stopping playback:', err)
-    }
-  }
-
   // FIXED: Improved "New Game" functionality
   const startNewGame = useCallback(async () => {
     const store = useTrainingStore.getState()
@@ -209,6 +181,38 @@ const GameBoard: React.FC = () => {
       setTimeout(() => store.setConnectionError(null), 5000)
     }
   }, [playbackStatus?.current_checkpoint, loadingStates.isNewGameStarting])
+
+  // Improved playback control functions with better error handling
+  const pausePlayback = async () => {
+    try {
+      const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/pause`, { method: 'POST' })
+      if (!res.ok) throw new Error('Failed to pause playback')
+    } catch (err) {
+      console.error('Error pausing playback:', err)
+    }
+  }
+
+  const resumePlayback = async () => {
+    try {
+      const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/resume`, { method: 'POST' })
+      if (!res.ok) throw new Error('Failed to resume playback')
+    } catch (err) {
+      console.error('Error resuming playback:', err)
+    }
+  }
+
+  const stopPlayback = async () => {
+    try {
+      // First stop the current playback
+      const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/stop`, { method: 'POST' })
+      if (!res.ok) throw new Error('Failed to stop playback')
+      
+      // Then automatically start a new game
+      await startNewGame()
+    } catch (err) {
+      console.error('Error stopping playback:', err)
+    }
+  }
 
   // Improved speed control with better feedback
   const changePlaybackSpeed = async (newSpeed: number) => {
@@ -344,18 +348,6 @@ const GameBoard: React.FC = () => {
               <div className="text-xs text-gray-500">
                 Starting new game in {restartCountdown} seconds...
               </div>
-              <button
-                onClick={startNewGame}
-                disabled={loadingStates.isNewGameStarting}
-                className={`flex items-center justify-center space-x-2 rounded-xl py-2.5 px-4 text-sm font-medium transition-colors ${
-                  loadingStates.isNewGameStarting
-                    ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed'
-                    : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
-                }`}
-              >
-                <RefreshCw className={`w-4 h-4 ${loadingStates.isNewGameStarting ? 'animate-spin' : ''}`} />
-                <span>{loadingStates.isNewGameStarting ? 'Starting...' : 'Start New Game Now'}</span>
-              </button>
             </div>
           </div>
         </motion.div>
@@ -516,28 +508,15 @@ const GameBoard: React.FC = () => {
           
           <button
             onClick={stopPlayback}
-            disabled={!isPlayingCheckpoint}
+            disabled={!isPlayingCheckpoint || loadingStates.isNewGameStarting}
             className={`flex-1 flex items-center justify-center space-x-2 rounded-xl py-2.5 text-sm font-medium ${
-              isPlayingCheckpoint 
+              isPlayingCheckpoint && !loadingStates.isNewGameStarting
                 ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                 : 'bg-gray-700/50 text-gray-500 cursor-not-allowed'
             }`}
           >
-            <StopCircle className="w-4 h-4" />
-            <span>Stop</span>
-          </button>
-          
-          <button
-            onClick={startNewGame}
-            disabled={!isPlayingCheckpoint || loadingStates.isNewGameStarting}
-            className={`flex-1 flex items-center justify-center space-x-2 rounded-xl py-2.5 text-sm font-medium ${
-              isPlayingCheckpoint && !loadingStates.isNewGameStarting
-                ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
-                : 'bg-gray-700/50 text-gray-500 cursor-not-allowed'
-            }`}
-          >
-            <RefreshCw className={`w-4 h-4 ${loadingStates.isNewGameStarting ? 'animate-spin' : ''}`} />
-            <span>{loadingStates.isNewGameStarting ? 'Starting...' : 'New'}</span>
+            <StopCircle className={`w-4 h-4 ${loadingStates.isNewGameStarting ? 'animate-spin' : ''}`} />
+            <span>{loadingStates.isNewGameStarting ? 'Starting...' : 'Stop & New'}</span>
           </button>
         </div>
         
