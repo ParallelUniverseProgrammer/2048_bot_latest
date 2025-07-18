@@ -267,6 +267,8 @@ Our long-term vision includes a **graphical Model Studio** where users can:
 
 This will leverage our existing checkpoint system and WebSocket infrastructure to provide a powerful visual AI model development environment.
 
+**🎯 Model Studio Roadmap**: See [MODEL_STUDIO_ROADMAP.md](./MODEL_STUDIO_ROADMAP.md) for our comprehensive 10-phase development plan to transform this into a visual "Scratch for Machine Learning" with block-based drag-and-drop model design, real-time validation, and seamless training integration.
+
 ## Contributing
 
 1. Fork → feature branch → PR.  
