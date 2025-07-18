@@ -1593,6 +1593,17 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
                     backend_url = f"http://{self.host_ip}:{self.backend_port}"
                 
                 self.console_ui.render_qr_screen(frontend_url, backend_url)
+                
+                # Keep the servers running until user interrupts
+                try:
+                    while self.process_manager.running:
+                        time.sleep(1)
+                        if int(time.time()) % 30 == 0:
+                            self.show_status()
+                except KeyboardInterrupt:
+                    print(f"\n{Colors.WARNING}Shutting down...{Colors.ENDC}")
+                    self.logger.info("Shutdown requested by user")
+                
                 return True
                 
             except KeyboardInterrupt:
@@ -1601,6 +1612,18 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
             except Exception as e:
                 self.console_ui.render_error_screen(steps[current_step], str(e))
                 return False
+            finally:
+                self.process_manager.cleanup()
+                self._stop_tunnel()
+                self.console_ui.cleanup()
+                temp_config = "frontend/vite.config.temp.ts"
+                if os.path.exists(temp_config):
+                    try:
+                        os.remove(temp_config)
+                        self.logger.info("Removed temporary Vite config")
+                    except Exception as e:
+                        self.logger.warning(f"Could not remove temporary config: {e}")
+                self.logger.info("Launcher cleanup completed")
         else:
             print(f"{Colors.HEADER}🚀 2048 Bot Training Launcher{Colors.ENDC}")
             print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
