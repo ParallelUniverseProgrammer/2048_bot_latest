@@ -1,5 +1,5 @@
 import sys, os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
 
 import asyncio
 import time
@@ -69,7 +69,7 @@ async def _run_playback(websocket_manager, runtime: float = 6.0) -> CheckpointPl
     playback.current_config = {}
     playback.select_action = lambda state, legal, env_game: (legal[0], [0.25]*4, None)
     # Run playback in background
-            task = asyncio.create_task(playback.start_live_playback(websocket_manager))
+    task = asyncio.create_task(playback.start_live_playback(websocket_manager))
     await asyncio.sleep(runtime)
     playback.stop_playback()
     # Allow graceful shutdown

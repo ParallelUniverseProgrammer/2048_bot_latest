@@ -33,10 +33,10 @@ import tempfile
 import shutil
 
 # Add project root to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
-from test_utils import TestLogger, BackendTester, get_backend_tester, requires_backend, check_backend_or_exit
+from tests.utilities.test_utils import TestLogger, BackendTester, get_backend_tester, requires_backend, check_backend_or_exit
 
 class CheckpointLoadingTester:
     """Test suite for checkpoint loading functionality"""
@@ -288,7 +288,7 @@ class CheckpointLoadingTester:
     
     def run_all_tests(self):
         """Run all checkpoint loading tests"""
-        self.logger.info("🚀 Starting Checkpoint Loading Test Suite")
+        self.logger.info("Starting Checkpoint Loading Test Suite")
         self.logger.info("=" * 50)
         
         try:
@@ -319,28 +319,28 @@ class CheckpointLoadingTester:
     
     def generate_report(self):
         """Generate comprehensive test report"""
-        self.logger.info("📊 Checkpoint Loading Test Results")
+        self.logger.info("Checkpoint Loading Test Results")
         self.logger.info("=" * 50)
         
         passed = sum(1 for result in self.test_results.values() if result)
         total = len(self.test_results)
         
         for test_name, result in self.test_results.items():
-            status = "✅ PASS" if result else "❌ FAIL"
+            status = "PASS" if result else "FAIL"
             self.logger.info(f"{status} {test_name}")
         
         self.logger.info("-" * 50)
-        self.logger.info(f"📈 Overall Result: {passed}/{total} tests passed")
+        self.logger.info(f"Overall Result: {passed}/{total} tests passed")
         
         if passed == total:
-            self.logger.info("🎉 All checkpoint loading tests passed!")
+            self.logger.info("All checkpoint loading tests passed!")
         else:
-            self.logger.warning(f"⚠️  {total - passed} tests failed")
+            self.logger.warning(f"{total - passed} tests failed")
         
         # Performance summary
         if self.loading_times:
             avg_loading_time = sum(self.loading_times) / len(self.loading_times)
-            self.logger.info(f"⏱️  Average loading time: {avg_loading_time:.2f}s")
+            self.logger.info(f"Average loading time: {avg_loading_time:.2f}s")
 
 
 def main():
@@ -350,9 +350,9 @@ def main():
         tester.run_all_tests()
         
     except KeyboardInterrupt:
-        print("\n⚠️  Tests interrupted by user")
+        print("\nTests interrupted by user")
     except Exception as e:
-        print(f"❌ Test suite failed: {str(e)}")
+        print(f"Test suite failed: {str(e)}")
         traceback.print_exc()
 
 

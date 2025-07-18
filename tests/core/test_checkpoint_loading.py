@@ -6,8 +6,15 @@ Test script to verify checkpoint loading fix
 import requests
 import time
 import json
+import sys
+import os
 from typing import Dict, Any
-from test_utils import TestLogger, BackendTester
+
+# Add project root to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
+
+from tests.utilities.test_utils import TestLogger, BackendTester
 
 # Configuration
 BASE_URL = "http://localhost:8000"

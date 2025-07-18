@@ -11,7 +11,7 @@ import asyncio
 import time
 
 # Add the backend directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
 
 class MockWebSocketManager:
     """Mock WebSocket manager for testing"""
@@ -68,7 +68,7 @@ def test_training_manager():
         return True
         
     except Exception as e:
-        print(f"❌ Training manager test failed: {e}")
+        print(f"Training manager test failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -123,14 +123,14 @@ def test_memory_usage():
         return True
         
     except Exception as e:
-        print(f"❌ Memory usage test failed: {e}")
+        print(f"Memory usage test failed: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 def main():
     """Run training manager tests"""
-    print("🔍 Running training manager tests...")
+    print("Running training manager tests...")
     
     tests = [
         test_training_manager,
@@ -143,20 +143,20 @@ def main():
             result = test()
             results.append(result)
         except Exception as e:
-            print(f"❌ Test {test.__name__} crashed: {e}")
+            print(f"Test {test.__name__} crashed: {e}")
             import traceback
             traceback.print_exc()
             results.append(False)
     
     print(f"\n📊 Test Results:")
     for i, (test, result) in enumerate(zip(tests, results)):
-        status = "✅ PASS" if result else "❌ FAIL"
+        status = "PASS" if result else "FAIL"
         print(f"  {i+1}. {test.__name__}: {status}")
     
     if all(results):
-        print("\n🎉 All tests passed! The issue might be in the full application setup.")
+        print("\nAll tests passed! The issue might be in the full application setup.")
     else:
-        print("\n💥 Some tests failed. Check the specific test that failed above.")
+        print("\nSome tests failed. Check the specific test that failed above.")
 
 if __name__ == "__main__":
     main() 

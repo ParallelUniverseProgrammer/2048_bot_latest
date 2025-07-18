@@ -10,7 +10,7 @@ import sys
 import os
 
 # Add backend to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
 
 from app.utils.action_selection import select_action_with_fallback_for_playback, select_action_with_fallback
 from app.models.game_transformer import GameTransformer

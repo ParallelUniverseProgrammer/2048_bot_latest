@@ -9,7 +9,7 @@ import os
 from unittest.mock import Mock, patch
 
 # Add backend to path
-backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
+backend_path = os.path.join(os.path.dirname(__file__), '..', '..', 'backend')
 sys.path.insert(0, backend_path)
 
 try:

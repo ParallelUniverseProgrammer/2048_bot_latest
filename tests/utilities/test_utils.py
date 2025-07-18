@@ -66,10 +66,20 @@ class TestLogger:
         color_code = self._get_color_code(color)
         reset_code = self._get_color_code('reset')
         
-        if prefix:
-            return f"{color_code}{timestamp} {prefix} {indent}{message}{reset_code}"
-        else:
-            return f"{color_code}{timestamp} {indent}{message}{reset_code}"
+        # Handle Unicode characters safely
+        try:
+            if prefix:
+                formatted = f"{color_code}{timestamp} {prefix} {indent}{message}{reset_code}"
+            else:
+                formatted = f"{color_code}{timestamp} {indent}{message}{reset_code}"
+            return formatted
+        except UnicodeEncodeError:
+            # Fallback to ASCII-safe version
+            safe_message = message.encode('ascii', 'replace').decode('ascii')
+            if prefix:
+                return f"{timestamp} {prefix} {indent}{safe_message}"
+            else:
+                return f"{timestamp} {indent}{safe_message}"
     
     def info(self, message: str):
         """Log an info message"""
@@ -745,7 +755,7 @@ def check_backend_or_exit(exit_code: int = 1, wait_time: int = 30):
 
 # Add mock backend import
 try:
-    from tests.mock_backend import MockBackend
+    from tests.utilities.mock_backend import MockBackend
     MOCK_BACKEND_AVAILABLE = True
 except ImportError:
     MOCK_BACKEND_AVAILABLE = False 

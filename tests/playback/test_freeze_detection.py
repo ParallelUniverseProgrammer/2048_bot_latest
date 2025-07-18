@@ -11,8 +11,8 @@ import time
 from pathlib import Path
 
 # Add project root to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
 
 from backend.app.models.checkpoint_playback import CheckpointPlayback
 from backend.app.models.checkpoint_metadata import CheckpointManager

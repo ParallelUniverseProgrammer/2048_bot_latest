@@ -11,7 +11,13 @@ import websockets
 import requests
 from typing import Dict, Any, List
 import random
-from test_utils import TestLogger, BackendTester, check_backend_or_start_mock
+# Add project root to path
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
+
+from tests.utilities.test_utils import TestLogger, BackendTester, check_backend_or_start_mock
 
 class MobileConnectionTester:
     """Test mobile connection stability and recovery"""
@@ -192,7 +198,7 @@ class MobileConnectionTester:
             mobile_total += 1
             
             recovery_rate = mobile_test["recovery"]["success_rate"]
-            self.logger.log(f"Mobile {mobile_test['user_agent'][:30]}...: Connection {'✅' if mobile_test['connection']['success'] else '❌'}, Recovery: {recovery_rate:.1f}%")
+            self.logger.log(f"Mobile {mobile_test['user_agent'][:30]}...: Connection {'OK' if mobile_test['connection']['success'] else 'FAIL'}, Recovery: {recovery_rate:.1f}%")
         
         self.logger.log(f"Mobile connections: {mobile_success}/{mobile_total} successful")
         

@@ -16,10 +16,11 @@ import json
 from typing import Dict, Any
 
 # Add project root to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
-from tests.mock_backend import MockBackend
-from tests.test_utils import TestLogger
+from tests.utilities.mock_backend import MockBackend
+from tests.utilities.test_utils import TestLogger
 
 class MockBackendTester:
     """Test suite for mock backend server"""
@@ -276,7 +277,7 @@ class MockBackendTester:
     
     def run_all_tests(self):
         """Run all mock backend tests"""
-        self.logger.info("🚀 Starting Mock Backend Test Suite")
+        self.logger.info("Starting Mock Backend Test Suite")
         self.logger.info("=" * 50)
         
         # Start mock server
@@ -298,16 +299,16 @@ class MockBackendTester:
             
             results = {}
             for test_name, test_func in tests:
-                self.logger.info(f"\n🧪 Running {test_name}...")
+                self.logger.info(f"\nRunning {test_name}...")
                 try:
                     result = test_func()
                     results[test_name] = result
                     if result:
-                        self.logger.ok(f"✅ {test_name} passed")
+                        self.logger.ok(f"{test_name} passed")
                     else:
-                        self.logger.error(f"❌ {test_name} failed")
+                        self.logger.error(f"{test_name} failed")
                 except Exception as e:
-                    self.logger.error(f"❌ {test_name} failed with exception: {e}")
+                    self.logger.error(f"{test_name} failed with exception: {e}")
                     results[test_name] = False
             
             # Generate report
@@ -321,23 +322,23 @@ class MockBackendTester:
     
     def generate_report(self, results: Dict[str, bool]):
         """Generate test report"""
-        self.logger.info("\n📊 Mock Backend Test Results")
+        self.logger.info("\nMock Backend Test Results")
         self.logger.info("=" * 50)
         
         passed = sum(results.values())
         total = len(results)
         
         for test_name, result in results.items():
-            status = "✅ PASS" if result else "❌ FAIL"
+            status = "PASS" if result else "FAIL"
             self.logger.info(f"{status} {test_name}")
         
         self.logger.info("-" * 50)
-        self.logger.info(f"📈 Overall Result: {passed}/{total} tests passed")
+        self.logger.info(f"Overall Result: {passed}/{total} tests passed")
         
         if passed == total:
-            self.logger.info("🎉 All mock backend tests passed!")
+            self.logger.info("All mock backend tests passed!")
         else:
-            self.logger.warning(f"⚠️  {total - passed} tests failed")
+            self.logger.warning(f"{total - passed} tests failed")
 
 
 def main():
@@ -347,17 +348,17 @@ def main():
         success = tester.run_all_tests()
         
         if success:
-            print("\n✅ Mock backend is working correctly!")
+            print("\nMock backend is working correctly!")
             print("You can now use the mock backend for offline testing.")
         else:
-            print("\n❌ Mock backend has issues that need to be addressed.")
+            print("\nMock backend has issues that need to be addressed.")
             sys.exit(1)
             
     except KeyboardInterrupt:
-        print("\n⚠️  Tests interrupted by user")
+        print("\nTests interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"❌ Test suite failed: {str(e)}")
+        print(f"Test suite failed: {str(e)}")
         sys.exit(1)
 
 

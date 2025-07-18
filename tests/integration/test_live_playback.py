@@ -33,10 +33,10 @@ import traceback
 from typing import Dict, Any, List, Optional
 
 # Add project root to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
-from test_utils import TestLogger, BackendTester
+from tests.utilities.test_utils import TestLogger, BackendTester
 
 class LivePlaybackTester:
     """Test suite for live checkpoint playback functionality"""
@@ -267,12 +267,12 @@ class LivePlaybackTester:
     
     def run_all_tests(self):
         """Run all live playback tests"""
-        self.logger.info("🚀 Starting Live Playback Test Suite")
+        self.logger.info("Starting Live Playback Test Suite")
         self.logger.info("=" * 50)
         
         # Test backend connectivity first
         if not self.backend.test_connectivity():
-            self.logger.error("❌ Backend connectivity failed - aborting tests")
+            self.logger.error("Backend connectivity failed - aborting tests")
             return
         
         # Run all tests
@@ -287,23 +287,23 @@ class LivePlaybackTester:
     
     def generate_report(self):
         """Generate comprehensive test report"""
-        self.logger.info("📊 Live Playback Test Results")
+        self.logger.info("Live Playback Test Results")
         self.logger.info("=" * 50)
         
         passed = sum(1 for result in self.test_results.values() if result)
         total = len(self.test_results)
         
         for test_name, result in self.test_results.items():
-            status = "✅ PASS" if result else "❌ FAIL"
+            status = "PASS" if result else "FAIL"
             self.logger.info(f"{status} {test_name}")
         
         self.logger.info("-" * 50)
-        self.logger.info(f"📈 Overall Result: {passed}/{total} tests passed")
+        self.logger.info(f"Overall Result: {passed}/{total} tests passed")
         
         if passed == total:
-            self.logger.info("🎉 All live playback tests passed!")
+            self.logger.info("All live playback tests passed!")
         else:
-            self.logger.warning(f"⚠️  {total - passed} tests failed")
+            self.logger.warning(f"{total - passed} tests failed")
         
         # Memory usage summary
         if self.memory_usage:
@@ -311,7 +311,7 @@ class LivePlaybackTester:
             max_memory = max(self.memory_usage)
             avg_memory = sum(self.memory_usage) / len(self.memory_usage)
             
-            self.logger.info(f"💾 Memory Usage: {min_memory:.1f}MB - {max_memory:.1f}MB (avg: {avg_memory:.1f}MB)")
+            self.logger.info(f"Memory Usage: {min_memory:.1f}MB - {max_memory:.1f}MB (avg: {avg_memory:.1f}MB)")
 
 
 def main():
@@ -321,9 +321,9 @@ def main():
         tester.run_all_tests()
         
     except KeyboardInterrupt:
-        print("\n⚠️  Tests interrupted by user")
+        print("\nTests interrupted by user")
     except Exception as e:
-        print(f"❌ Test suite failed: {str(e)}")
+        print(f"Test suite failed: {str(e)}")
         traceback.print_exc()
 
 

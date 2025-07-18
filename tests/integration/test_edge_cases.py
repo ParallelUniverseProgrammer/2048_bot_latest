@@ -13,7 +13,12 @@ import json
 import tempfile
 import os
 from typing import Dict, Any, List
-from test_utils import TestLogger, BackendTester, GameTester, PlaybackTester
+# Add project root to path
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
+
+from tests.utilities.test_utils import TestLogger, BackendTester, GameTester, PlaybackTester
 
 class EdgeCaseTester:
     """Test edge cases and error conditions"""

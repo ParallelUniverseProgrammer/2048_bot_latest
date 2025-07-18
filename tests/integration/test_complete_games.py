@@ -18,7 +18,11 @@ import json
 import sys
 import os
 from typing import Dict, Any, List, Optional
-from test_utils import TestLogger, BackendTester, GameTester, PlaybackTester
+# Add project root to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
+
+from tests.utilities.test_utils import TestLogger, BackendTester, GameTester, PlaybackTester, check_backend_or_start_mock
 
 # Configuration
 BASE_URL = "http://localhost:8000"
@@ -42,7 +46,14 @@ class CheckpointGameTester:
     
     def test_backend_connectivity(self) -> bool:
         """Test that backend is accessible"""
-        return self.backend.test_connectivity()
+        # Try to start mock backend if real backend is not available
+        if not self.backend.test_connectivity():
+            self.logger.info("Real backend not available, attempting to start mock backend...")
+            if check_backend_or_start_mock(port=8000, wait_time=30):
+                return self.backend.test_connectivity()
+            else:
+                return False
+        return True
     
     def get_available_checkpoints(self) -> List[Dict[str, Any]]:
         """Get list of available checkpoints"""

@@ -254,17 +254,17 @@ class PlaybackControlTest:
         try:
             response = requests.get(f"{self.base_url}/health", timeout=5)
             if response.status_code != 200:
-                print("❌ Backend not available")
+                print("Backend not available")
                 return False
         except Exception as e:
-            print(f"❌ Cannot connect to backend: {e}")
+            print(f"Cannot connect to backend: {e}")
             return False
         
-        print("✅ Backend is available")
+        print("Backend is available")
         
         # Find test checkpoint
         if not self.find_test_checkpoint():
-            print("❌ No test checkpoint available")
+            print("No test checkpoint available")
             return False
         
         # Run tests
@@ -285,10 +285,10 @@ class PlaybackControlTest:
         # Summary
         print(f"\n=== Test Summary ===")
         if issues_found:
-            print(f"❌ Issues found: {', '.join(issues_found)}")
+            print(f"Issues found: {', '.join(issues_found)}")
             return False
         else:
-            print("✅ All tests passed")
+            print("All tests passed")
             return True
 
 def main():
@@ -297,10 +297,10 @@ def main():
     success = test.run_all_tests()
     
     if success:
-        print("\n🎉 All playback control tests passed!")
+        print("\nAll playback control tests passed!")
         exit(0)
     else:
-        print("\n💥 Playback control tests failed!")
+        print("\nPlayback control tests failed!")
         exit(1)
 
 if __name__ == "__main__":

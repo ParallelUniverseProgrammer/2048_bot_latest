@@ -6,9 +6,11 @@ Uses the existing test utilities for backend management and testing
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add project root to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
-from test_utils import BackendTester, TestLogger, check_backend_or_start_mock, requires_backend
+from tests.utilities.test_utils import BackendTester, TestLogger, check_backend_or_start_mock, requires_backend
 
 class SpeedControlTester:
     """Test suite for playback speed control functionality"""
@@ -176,12 +178,12 @@ class SpeedControlTester:
     
     def run_all_tests(self):
         """Run all speed control tests"""
-        self.logger.info("🚀 Starting Speed Control Test Suite")
+        self.logger.info("Starting Speed Control Test Suite")
         self.logger.info("=" * 50)
         
         # Test backend connectivity first
         if not self.backend.test_connectivity():
-            self.logger.error("❌ Backend connectivity failed - aborting tests")
+            self.logger.error("Backend connectivity failed - aborting tests")
             return
         
         # Run all tests
@@ -196,21 +198,21 @@ class SpeedControlTester:
     
     def generate_report(self):
         """Generate comprehensive test report"""
-        self.logger.info("📊 Speed Control Test Results")
+        self.logger.info("Speed Control Test Results")
         self.logger.info("=" * 50)
         
         passed = sum(1 for result in self.test_results.values() if result)
         total = len(self.test_results)
         
         for test_name, result in self.test_results.items():
-            status = "✅ PASS" if result else "❌ FAIL"
+            status = "PASS" if result else "FAIL"
             self.logger.info(f"{status} {test_name}")
         
         self.logger.info("")
         if passed == total:
-            self.logger.success(f"🎉 All {total} speed control tests passed!")
+            self.logger.success(f"All {total} speed control tests passed!")
         else:
-            self.logger.error(f"❌ {total - passed}/{total} speed control tests failed")
+            self.logger.error(f"{total - passed}/{total} speed control tests failed")
         
         self.logger.info("")
         self.logger.info("Speed Control Features Tested:")
@@ -224,7 +226,7 @@ def main():
     """Main test runner"""
     # Check if backend is available or start mock backend
     if not check_backend_or_start_mock():
-        print("❌ Failed to start backend for testing")
+        print("Failed to start backend for testing")
         return 1
     
     # Run the test suite
@@ -236,10 +238,10 @@ def main():
     total = len(tester.test_results)
     
     if passed == total:
-        print("\n🎉 All speed control tests completed successfully!")
+        print("\nAll speed control tests completed successfully!")
         return 0
     else:
-        print(f"\n❌ {total - passed}/{total} speed control tests failed")
+        print(f"\n{total - passed}/{total} speed control tests failed")
         return 1
 
 if __name__ == "__main__":

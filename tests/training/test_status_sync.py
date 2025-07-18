@@ -8,7 +8,13 @@ import asyncio
 import json
 import time
 from typing import Dict, Any
-from test_utils import TestLogger, BackendTester, check_backend_or_start_mock
+# Add project root to path
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
+
+from tests.utilities.test_utils import TestLogger, BackendTester, check_backend_or_start_mock
 
 class TrainingStatusSyncTest:
     def __init__(self, backend_url: str = "http://localhost:8000", frontend_url: str = "http://localhost:5173"):

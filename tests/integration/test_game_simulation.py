@@ -13,6 +13,9 @@ from unittest.mock import Mock, patch, MagicMock
 import tempfile
 from pathlib import Path
 
+# Add backend to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
+
 from backend.app.models.checkpoint_playback import CheckpointPlayback
 from backend.app.models.checkpoint_metadata import CheckpointManager
 from backend.app.models.game_transformer import GameTransformer

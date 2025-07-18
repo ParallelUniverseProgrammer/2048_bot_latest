@@ -11,7 +11,13 @@ import requests
 import time
 import json
 from typing import Dict, Any, List
-from test_utils import TestLogger, BackendTester
+# Add project root to path
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
+
+from tests.utilities.test_utils import TestLogger, BackendTester
 
 class FrontendTester:
     """Enhanced frontend testing with automation and detailed instructions"""
