@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { 
   Archive, 
   Play, 
@@ -7,7 +7,6 @@ import {
   Edit, 
   Check, 
   X, 
-  Clock, 
   Zap, 
   Search,
   RefreshCw,
@@ -79,7 +78,6 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   
   // ===== UI STATE =====
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedCheckpoint, setSelectedCheckpoint] = useState<string | null>(null)
   const [editingNickname, setEditingNickname] = useState<string | null>(null)
   const [newNickname, setNewNickname] = useState('')
   const [expandedCheckpoint, setExpandedCheckpoint] = useState<string | null>(null)
@@ -372,9 +370,9 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
    * Get appropriate trend icon based on score performance
    */
   const getScoreTrendIcon = (score: number) => {
-    if (score > 1000) return <TrendingUp className="w-3 h-3 text-green-400" />
-    if (score > 500) return <BarChart3 className="w-3 h-3 text-yellow-400" />
-    return <TrendingDown className="w-3 h-3 text-red-400" />
+    if (score > 1000) return <TrendingUp className="w-4 h-4 text-green-400" />
+    if (score > 500) return <BarChart3 className="w-4 h-4 text-yellow-400" />
+    return <TrendingDown className="w-4 h-4 text-red-400" />
   }
 
   /**
@@ -389,11 +387,6 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       default: return 'text-gray-400'
     }
   }
-
-  /**
-   * Get background color for model size indicator
-   */
-
 
   // ===== ACTION FUNCTIONS =====
   
@@ -488,7 +481,6 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       ]
       
       useTrainingStore.getState().startLoadingOperation('playback', loadingSteps)
-      setSelectedCheckpoint(checkpointId)
       onNavigateToTab?.('game')
       
       await new Promise(resolve => setTimeout(resolve, 100))
@@ -540,50 +532,18 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     )
   }
 
-  // Enhanced stats metrics
-  const statsMetrics = stats ? [
-    {
-      title: 'Total Checkpoints',
-      value: stats.total_checkpoints.toString(),
-      icon: Archive,
-      color: 'text-blue-400',
-      bgColor: 'bg-blue-500/20',
-    },
-    {
-      title: 'Best Score',
-      value: stats.best_score.toLocaleString(),
-      icon: Target,
-      color: 'text-green-400',
-      bgColor: 'bg-green-500/20',
-    },
-    {
-      title: 'Total Size',
-      value: formatFileSize(stats.total_size),
-      icon: Database,
-      color: 'text-purple-400',
-      bgColor: 'bg-purple-500/20',
-    },
-    {
-      title: 'Training Time',
-      value: formatDuration(stats.total_training_time),
-      icon: Clock,
-      color: 'text-orange-400',
-      bgColor: 'bg-orange-500/20',
-    },
-  ] : []
-
   return (
-    <div className="h-full grid grid-rows-[auto_auto_auto_1fr] gap-1 pb-4">
+    <div className="h-full flex flex-col space-y-2 pb-6">
       {/* Error Display */}
       {error && (
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="card-glass p-4 rounded-2xl border border-red-500/50 bg-red-500/10"
+          className="card-glass p-4 rounded-2xl border border-red-500/30 bg-red-500/5 flex-shrink-0"
         >
-          <div className="flex items-center space-x-2">
-            <X className="w-4 h-4 text-red-400 flex-shrink-0" />
-            <span className="text-red-400 text-sm flex-1">{error}</span>
+          <div className="flex items-center space-x-3">
+            <X className="w-5 h-5 text-red-400 flex-shrink-0" />
+            <span className="text-red-300 text-sm flex-1">{error}</span>
             <button
               onClick={() => setError(null)}
               className="text-red-400 hover:text-red-300 p-2 rounded-lg hover:bg-red-500/20 transition-colors"
@@ -595,272 +555,230 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         </motion.div>
       )}
 
-      {/* Stats Overview - Compact */}
+      {/* Stats Overview */}
       {stats && (
         <motion.div
-          className="card-glass p-3 rounded-xl"
+          className="card-glass p-4 rounded-2xl flex-shrink-0"
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
         >
-          <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-4 gap-2'}`}>
-            {statsMetrics.map((metric, index) => (
-              <motion.div
-                key={metric.title}
-                className="flex items-center space-x-1.5 p-1.5 bg-gray-800/30 rounded-lg"
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: 0.05 + index * 0.02 }}
-              >
-                <div className={`p-0.5 rounded ${metric.bgColor}`}>
-                  <metric.icon className={`w-2.5 h-2.5 ${metric.color}`} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs text-gray-400 truncate">{metric.title}</div>
-                  <div className={`font-semibold ${metric.color} text-xs truncate`}>{metric.value}</div>
-                </div>
-              </motion.div>
-            ))}
+          <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-4'} gap-3`}>
+            <div className="text-center">
+              <div className="text-lg font-bold text-blue-400">{stats.total_checkpoints}</div>
+              <div className="text-xs text-gray-400">Checkpoints</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold text-green-400">{stats.best_score.toLocaleString()}</div>
+              <div className="text-xs text-gray-400">Best Score</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold text-purple-400">{formatFileSize(stats.total_size)}</div>
+              <div className="text-xs text-gray-400">Total Size</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold text-yellow-400">{formatDuration(stats.total_training_time)}</div>
+              <div className="text-xs text-gray-400">Training Time</div>
+            </div>
           </div>
         </motion.div>
       )}
 
-      {/* Search and Controls - Enhanced */}
+      {/* Search and Controls */}
       <motion.div
-        className="card-glass p-4 rounded-2xl"
-        initial={{ opacity: 0, y: -20 }}
+        className="card-glass p-4 rounded-2xl flex-shrink-0"
+        initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
       >
-        <div className="flex items-center space-x-2 mb-3">
-          <h3 className="text-sm font-semibold flex items-center">
-            <Search className="w-4 h-4 mr-2 text-blue-400" />
-            Search & Filter
-          </h3>
+        {/* Search Bar */}
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search checkpoints..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-gray-700 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            inputMode="text"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck="false"
+            style={{ fontSize: '16px' }}
+          />
         </div>
-        
-        <div className="space-y-3">
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search checkpoints..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-gray-700 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              inputMode="text"
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck="false"
-              style={{ fontSize: '16px' }} // Prevents zoom on iOS
-            />
+
+        {/* Filter and Sort Controls */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          {/* Filter Buttons */}
+          <div className="flex space-x-1">
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'recent', label: 'Recent' },
+              { key: 'high-score', label: 'High Score' }
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setFilterBy(key as any)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  filterBy === key 
+                    ? 'bg-blue-500 text-white' 
+                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-          {/* Filter and Sort Controls */}
-          <div className="flex flex-wrap gap-2">
-            {/* Filter Buttons */}
-            <div className="flex space-x-1">
-              <button
-                onClick={() => setFilterBy('all')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                  filterBy === 'all' ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setFilterBy('recent')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                  filterBy === 'recent' ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                }`}
-              >
-                Recent
-              </button>
-              <button
-                onClick={() => setFilterBy('high-score')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                  filterBy === 'high-score' ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                }`}
-              >
-                High Score
-              </button>
-            </div>
-
-            {/* Sort Controls */}
-            <div className="flex items-center space-x-1 ml-auto">
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'date' | 'score' | 'episode' | 'size')}
-                className="bg-gray-700 text-white rounded-lg px-2 py-1.5 text-xs border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="date">Date</option>
-                <option value="score">Score</option>
-                <option value="episode">Episode</option>
-                <option value="size">Size</option>
-              </select>
-                          <button
+          {/* Sort Controls */}
+          <div className="flex items-center space-x-1 ml-auto">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="bg-gray-700 text-white rounded-lg px-2 py-1.5 text-xs border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="date">Date</option>
+              <option value="score">Score</option>
+              <option value="episode">Episode</option>
+              <option value="size">Size</option>
+            </select>
+            <button
               onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
               className="p-2 bg-gray-700 text-gray-400 rounded-lg hover:bg-gray-600 transition-colors"
               aria-label={`Sort ${sortOrder === 'desc' ? 'ascending' : 'descending'}`}
             >
               {sortOrder === 'desc' ? <SortDesc className="w-3 h-3" /> : <SortAsc className="w-3 h-3" />}
             </button>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => loadCheckpoints()}
-              className="flex items-center space-x-2 px-3 py-1.5 bg-gray-700 text-gray-400 rounded-lg hover:bg-gray-600 transition-colors text-sm"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>Refresh</span>
-            </button>
-            <button
-              onClick={() => setShowConfigPanel(!showConfigPanel)}
-              className="flex items-center space-x-2 px-3 py-1.5 bg-gray-700 text-gray-400 rounded-lg hover:bg-gray-600 transition-colors text-sm"
-            >
-              <Settings className="w-4 h-4" />
-              <span>Config</span>
-            </button>
           </div>
         </div>
 
-        {/* Configuration Panel - Integrated into search section */}
-        <AnimatePresence mode="wait">
-          {showConfigPanel && (
-            <motion.div
-              className="mt-3"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ 
-                type: "spring",
-                damping: 25,
-                stiffness: 150,
-                duration: 0.4
-              }}
-            >
-              <div className="card-glass p-4 rounded-2xl">
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ 
-                    type: "spring",
-                    damping: 25,
-                    stiffness: 150,
-                    duration: 0.3,
-                    delay: 0.1
+        {/* Action Buttons */}
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => loadCheckpoints()}
+            className="flex items-center space-x-2 px-3 py-1.5 bg-gray-700 text-gray-400 rounded-lg hover:bg-gray-600 transition-colors text-sm"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Refresh</span>
+          </button>
+          <button
+            onClick={() => setShowConfigPanel(!showConfigPanel)}
+            className="flex items-center space-x-2 px-3 py-1.5 bg-gray-700 text-gray-400 rounded-lg hover:bg-gray-600 transition-colors text-sm"
+          >
+            <Settings className="w-4 h-4" />
+            <span>Configuration</span>
+          </button>
+        </div>
+
+        {/* Configuration Panel */}
+        {showConfigPanel && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-4 pt-4 border-t border-gray-700"
+          >
+            <h3 className="text-sm font-semibold text-white mb-3 flex items-center">
+              <Settings className="w-4 h-4 mr-2 text-blue-400" />
+              Checkpoint Configuration
+            </h3>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">
+                  Checkpoint Interval (episodes)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  value={checkpointIntervalInput}
+                  onChange={(e) => handleCheckpointIntervalChange(e.target.value)}
+                  onBlur={handleCheckpointIntervalBlur}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.currentTarget.blur()
+                    }
                   }}
-                >
-                  <h3 className="text-sm font-semibold mb-3 flex items-center">
-                    <Settings className="w-4 h-4 mr-2 text-blue-400" />
-                    Checkpoint Configuration
-                  </h3>
-              
-                  <div className="space-y-3 min-h-0">
-                    <div>
-                      <label className="block text-xs text-gray-400 mb-1">
-                        Checkpoint Interval (episodes)
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="1000"
-                        value={checkpointIntervalInput}
-                        onChange={(e) => handleCheckpointIntervalChange(e.target.value)}
-                        onBlur={handleCheckpointIntervalBlur}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.currentTarget.blur()
-                          }
-                        }}
-                        className={`w-full px-3 py-2 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
-                          checkpointIntervalError ? 'ring-2 ring-red-500' : ''
-                        }`}
-                        inputMode="numeric"
-                        autoComplete="off"
-                        autoCorrect="off"
-                        autoCapitalize="off"
-                        spellCheck="false"
-                        style={{ fontSize: '16px' }} // Prevents zoom on iOS
-                      />
-                      {checkpointIntervalError ? (
-                        <p className="text-xs text-red-400 mt-1">{checkpointIntervalError}</p>
-                      ) : (
-                        <p className="text-xs text-gray-500 mt-1">
-                          Save a checkpoint every {checkpointInterval} episodes
-                        </p>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <label className="text-xs text-gray-400 block">Long Run Mode</label>
-                        <p className="text-xs text-gray-500">
-                          Only keep the latest checkpoint from this training run
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => setLongRunMode(!longRunMode)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          longRunMode ? 'bg-blue-500' : 'bg-gray-600'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            longRunMode ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                    
-                    <div className="flex space-x-2 pt-2">
-                      <button
-                        onClick={saveCheckpointConfig}
-                        disabled={configLoading}
-                        className="flex-1 flex items-center justify-center space-x-2 bg-blue-500 text-white rounded-xl py-2 text-sm font-medium disabled:opacity-50"
-                      >
-                        {configLoading ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Check className="w-4 h-4" />
-                        )}
-                        <span>{configLoading ? 'Saving...' : 'Save Configuration'}</span>
-                      </button>
-                      <button
-                        onClick={() => setShowConfigPanel(false)}
-                        className="flex items-center justify-center bg-gray-700 text-gray-400 rounded-xl py-2 px-3 text-sm font-medium hover:bg-gray-600 transition-colors"
-                        aria-label="Close configuration"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
+                  className={`w-full px-3 py-2 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
+                    checkpointIntervalError ? 'ring-2 ring-red-500' : ''
+                  }`}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck="false"
+                  style={{ fontSize: '16px' }}
+                />
+                {checkpointIntervalError ? (
+                  <p className="text-xs text-red-400 mt-1">{checkpointIntervalError}</p>
+                ) : (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Save a checkpoint every {checkpointInterval} episodes
+                  </p>
+                )}
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-xs text-gray-400 block">Long Run Mode</label>
+                  <p className="text-xs text-gray-500">
+                    Only keep the latest checkpoint from this training run
+                  </p>
+                </div>
+                <button
+                  onClick={() => setLongRunMode(!longRunMode)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    longRunMode ? 'bg-blue-500' : 'bg-gray-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      longRunMode ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              
+              <div className="flex space-x-2 pt-2">
+                <button
+                  onClick={saveCheckpointConfig}
+                  disabled={configLoading}
+                  className="flex-1 flex items-center justify-center space-x-2 bg-blue-500 text-white rounded-xl py-2 text-sm font-medium disabled:opacity-50 hover:bg-blue-600 transition-colors"
+                >
+                  {configLoading ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4" />
+                  )}
+                  <span>{configLoading ? 'Saving...' : 'Save Configuration'}</span>
+                </button>
+                <button
+                  onClick={() => setShowConfigPanel(false)}
+                  className="flex items-center justify-center bg-gray-700 text-gray-400 rounded-xl py-2 px-3 text-sm font-medium hover:bg-gray-600 transition-colors"
+                  aria-label="Close configuration"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
       </motion.div>
 
-      {/* Checkpoints List - Redesigned */}
+      {/* Checkpoints List */}
       <div className="flex-1 overflow-y-auto space-y-2">
         {filteredAndSortedCheckpoints.map((checkpoint: Checkpoint, index: number) => (
           <motion.div
             key={checkpoint.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: index * 0.05 }}
-            className={`card-glass rounded-2xl p-4 ${
-              selectedCheckpoint === checkpoint.id ? 'ring-2 ring-blue-500' : ''
-            }`}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="card-glass rounded-2xl p-4"
           >
-            {/* Header with Score and Model Info */}
+            {/* Header */}
             <div className="flex items-start justify-between mb-3">
               <div className="flex-1 min-w-0">
                 {editingNickname === checkpoint.id ? (
@@ -877,7 +795,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                       autoCorrect="off"
                       autoCapitalize="off"
                       spellCheck="false"
-                      style={{ fontSize: '16px' }} // Prevents zoom on iOS
+                      style={{ fontSize: '16px' }}
                     />
                     <button
                       onClick={() => updateNickname(checkpoint.id, newNickname)}
@@ -913,7 +831,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                   </div>
                 )}
                 
-                {/* Quick Stats Row */}
+                {/* Quick Stats */}
                 <div className="flex items-center space-x-3 mt-2 text-xs">
                   <div className="flex items-center space-x-1">
                     <Target className="w-3 h-3 text-green-400" />
@@ -959,8 +877,8 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
               </div>
             </div>
 
-            {/* Action Buttons - Enhanced */}
-            <div className="flex space-x-2 mt-3">
+            {/* Action Buttons */}
+            <div className="flex space-x-2">
               <button
                 onClick={() => startPlayback(checkpoint.id)}
                 className="flex-1 flex items-center justify-center space-x-2 bg-green-500/20 text-green-400 rounded-xl py-2.5 text-sm font-medium hover:bg-green-500/30 transition-colors"
@@ -984,98 +902,77 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
               </button>
             </div>
 
-            {/* Expanded Details - Enhanced */}
-            <AnimatePresence mode="wait">
-              {expandedCheckpoint === checkpoint.id && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ 
-                    type: "spring",
-                    damping: 25,
-                    stiffness: 150,
-                    duration: 0.4
-                  }}
-                  className="mt-3 pt-3 border-t border-gray-700 overflow-hidden"
-                >
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ 
-                      type: "spring",
-                      damping: 25,
-                      stiffness: 150,
-                      duration: 0.3,
-                      delay: 0.1
-                    }}
-                  >
-                    <div className="grid grid-cols-2 gap-4 text-xs">
-                      <div>
-                        <div className="text-gray-400 mb-2 flex items-center">
-                          <Layers className="w-3 h-3 mr-1" />
-                          Model Config
-                        </div>
-                        <div className="space-y-1.5">
-                          <div className="flex justify-between">
-                            <span>Experts:</span>
-                            <span className="text-white font-medium">{checkpoint.model_config.n_experts}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Layers:</span>
-                            <span className="text-white font-medium">{checkpoint.model_config.n_layers}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Dimensions:</span>
-                            <span className="text-white font-medium">{checkpoint.model_config.d_model}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Heads:</span>
-                            <span className="text-white font-medium">{checkpoint.model_config.n_heads}</span>
-                          </div>
-                        </div>
+            {/* Expanded Details */}
+            {expandedCheckpoint === checkpoint.id && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-3 pt-3 border-t border-gray-700"
+              >
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <div className="text-gray-400 mb-2 flex items-center">
+                      <Layers className="w-3 h-3 mr-1" />
+                      Model Config
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between">
+                        <span>Experts:</span>
+                        <span className="text-white font-medium">{checkpoint.model_config.n_experts}</span>
                       </div>
-                      <div>
-                        <div className="text-gray-400 mb-2 flex items-center">
-                          <Activity className="w-3 h-3 mr-1" />
-                          Performance
-                        </div>
-                        <div className="space-y-1.5">
-                          <div className="flex justify-between">
-                            <span>Avg Score:</span>
-                            <span className="text-white font-medium">{checkpoint.performance_metrics.avg_score.toFixed(0)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Final Loss:</span>
-                            <span className="text-white font-medium">{checkpoint.performance_metrics.final_loss.toFixed(3)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Speed:</span>
-                            <span className="text-white font-medium">{checkpoint.performance_metrics.training_speed.toFixed(1)} ep/min</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Duration:</span>
-                            <span className="text-white font-medium">{formatDuration(checkpoint.training_duration)}</span>
-                          </div>
-                        </div>
+                      <div className="flex justify-between">
+                        <span>Layers:</span>
+                        <span className="text-white font-medium">{checkpoint.model_config.n_layers}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Dimensions:</span>
+                        <span className="text-white font-medium">{checkpoint.model_config.d_model}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Heads:</span>
+                        <span className="text-white font-medium">{checkpoint.model_config.n_heads}</span>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-700">
-                      <div className="flex items-center space-x-1 text-xs text-gray-400">
-                        <Calendar className="w-3 h-3" />
-                        <span>{new Date(checkpoint.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <div>
+                    <div className="text-gray-400 mb-2 flex items-center">
+                      <Activity className="w-3 h-3 mr-1" />
+                      Performance
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between">
+                        <span>Avg Score:</span>
+                        <span className="text-white font-medium">{checkpoint.performance_metrics.avg_score.toFixed(0)}</span>
                       </div>
-                      <div className="flex items-center space-x-1 text-xs text-gray-400">
-                        <Database className="w-3 h-3" />
-                        <span>{formatFileSize(checkpoint.file_size)}</span>
+                      <div className="flex justify-between">
+                        <span>Final Loss:</span>
+                        <span className="text-white font-medium">{checkpoint.performance_metrics.final_loss.toFixed(3)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Speed:</span>
+                        <span className="text-white font-medium">{checkpoint.performance_metrics.training_speed.toFixed(1)} ep/min</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Duration:</span>
+                        <span className="text-white font-medium">{formatDuration(checkpoint.training_duration)}</span>
                       </div>
                     </div>
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  </div>
+                </div>
+                
+                <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-700">
+                  <div className="flex items-center space-x-1 text-xs text-gray-400">
+                    <Calendar className="w-3 h-3" />
+                    <span>{new Date(checkpoint.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex items-center space-x-1 text-xs text-gray-400">
+                    <Database className="w-3 h-3" />
+                    <span>{formatFileSize(checkpoint.file_size)}</span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
           </motion.div>
         ))}
 

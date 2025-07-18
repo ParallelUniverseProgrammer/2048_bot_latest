@@ -58,7 +58,7 @@ export default defineConfig({
   },
   define: {
     global: 'globalThis',
-    __BACKEND_URL__: JSON.stringify('https://all-dash-allocated-editors.trycloudflare.com')
+    __BACKEND_URL__: JSON.stringify('https://slovak-include-reliable-nc.trycloudflare.com')
   },
   // Build optimizations for mobile
   build: {

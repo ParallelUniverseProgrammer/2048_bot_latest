@@ -1,6 +1,6 @@
 # 🔢 2048 Bot: Real-Time AI Training & Visualization
 
-> A high-performance, real-time platform for training a Mixture-of-Experts (MoE) Transformer to master the game of 2048.
+> A high-performance, real-time platform for training a Mixture-of-Experts (MoE) Transformer to master the game of 2048. Features a unified design system with mobile-first responsive layout, consistent component patterns, and smooth animations powered by Framer Motion.
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/) [![Node.js 18+](https://img.shields.io/badge/node.js-18+-green.svg)](https://nodejs.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Status: Active Development](https://img.shields.io/badge/Status-Active%20Development-orange.svg)](https://github.com/krdge/2048_bot)
 
@@ -9,6 +9,10 @@
 ---
 
 ## ✨ What's New?
+
+• **🎨 Unified Design System** – Comprehensive style guide implementation with consistent component patterns, standardized animations, and unified color palette. All components now follow the same layout structure, button patterns, and visual hierarchy for a cohesive experience.
+
+• **🎯 Component Pattern Standardization** – CheckpointManager, GameBoard, and TrainingDashboard now share identical layout architecture with consistent card-glass styling, standardized spacing, and unified animation system using Framer Motion.
 
 • **🎨 Redesigned Training Dashboard** – Streamlined controls with smart button logic, compact charts, and unified metrics display. All functionality preserved in a mobile-optimized layout that fits perfectly on any screen size.
 

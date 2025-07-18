@@ -7,12 +7,13 @@
 ## 📋 Table of Contents
 1. [Design Principles](#design-principles)
 2. [UI/UX Guidelines](#uiux-guidelines)
-3. [Frontend Development](#frontend-development)
-4. [Backend Development](#backend-development)
-5. [Mobile-First Approach](#mobile-first-approach)
-6. [Performance Guidelines](#performance-guidelines)
-7. [Testing Standards](#testing-standards)
-8. [Documentation](#documentation)
+3. [Component Patterns](#component-patterns)
+4. [Frontend Development](#frontend-development)
+5. [Backend Development](#backend-development)
+6. [Mobile-First Approach](#mobile-first-approach)
+7. [Performance Guidelines](#performance-guidelines)
+8. [Testing Standards](#testing-standards)
+9. [Documentation](#documentation)
 
 ---
 
@@ -28,11 +29,13 @@
 ### 🎨 Visual Identity
 - **Dark Theme**: Primary dark background with glass-morphism effects
 - **Color Palette**: 
-  - Primary: Blue (#3b82f6)
-  - Success: Green (#22c55e)
-  - Warning: Yellow (#f59e0b)
-  - Error: Red (#ef4444)
-  - Purple: (#a855f7) for special features
+  - Primary: Blue (#3b82f6) - `text-blue-400`
+  - Success: Green (#22c55e) - `text-green-400`
+  - Warning: Yellow (#f59e0b) - `text-yellow-400`
+  - Error: Red (#ef4444) - `text-red-400`
+  - Purple: (#a855f7) - `text-purple-400` for special features
+  - Orange: (#f97316) - `text-orange-400` for time/metrics
+  - Cyan: (#06b6d4) - `text-cyan-400` for technical data
 - **Typography**: Clean, readable fonts with proper hierarchy
 - **Spacing**: Consistent 4px grid system (0.25rem increments)
 
@@ -57,6 +60,185 @@
 - **Colors**: Consistent color coding for different data types
 - **Interactions**: Double-tap to expand, hover for details
 - **Loading States**: Smooth transitions and progress indicators
+
+---
+
+## Component Patterns
+
+### 🏗️ Layout Structure
+All main components should follow this consistent layout pattern:
+
+```tsx
+// Standard component layout
+<div className="h-full flex flex-col space-y-2 pb-6">
+  {/* Error Display */}
+  {error && (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="card-glass p-4 rounded-2xl border border-red-500/30 bg-red-500/5 flex-shrink-0"
+    >
+      {/* Error content */}
+    </motion.div>
+  )}
+
+  {/* Stats/Overview Section */}
+  <motion.div
+    className="card-glass p-4 rounded-2xl flex-shrink-0"
+    initial={{ opacity: 0, y: -10 }}
+    animate={{ opacity: 1, y: 0 }}
+  >
+    {/* Stats content */}
+  </motion.div>
+
+  {/* Main Content Section */}
+  <motion.div
+    className="card-glass p-4 rounded-2xl flex-shrink-0"
+    initial={{ opacity: 0, y: -10 }}
+    animate={{ opacity: 1, y: 0 }}
+  >
+    {/* Main content */}
+  </motion.div>
+
+  {/* Scrollable List/Content */}
+  <div className="flex-1 overflow-y-auto space-y-2">
+    {/* List items */}
+  </div>
+</div>
+```
+
+### 🎨 Animation System
+Use simple, consistent animations across all components:
+
+```tsx
+// Standard animation patterns
+const standardAnimations = {
+  // Card entrance
+  card: {
+    initial: { opacity: 0, y: -10 },
+    animate: { opacity: 1, y: 0 },
+    transition: { duration: 0.3 }
+  },
+  
+  // Error display
+  error: {
+    initial: { opacity: 0, scale: 0.95 },
+    animate: { opacity: 1, scale: 1 },
+    transition: { duration: 0.2 }
+  },
+  
+  // List items
+  item: {
+    initial: { opacity: 0, scale: 0.95 },
+    animate: { opacity: 1, scale: 1 },
+    transition: { delay: index * 0.05 },
+    whileHover: { scale: 1.02 },
+    whileTap: { scale: 0.98 }
+  },
+  
+  // Expand/collapse
+  expand: {
+    initial: { opacity: 0, height: 0 },
+    animate: { opacity: 1, height: 'auto' },
+    exit: { opacity: 0, height: 0 },
+    transition: { duration: 0.3, ease: "easeInOut" }
+  }
+}
+```
+
+### 🎯 Button Patterns
+Consistent button styling across components:
+
+```tsx
+// Primary action buttons
+<button className="flex-1 flex items-center justify-center space-x-2 bg-green-500/20 text-green-400 rounded-xl py-2.5 text-sm font-medium hover:bg-green-500/30 transition-colors">
+  <Icon className="w-4 h-4" />
+  <span>Action</span>
+</button>
+
+// Secondary action buttons
+<button className="flex items-center justify-center bg-gray-700 text-gray-400 rounded-lg px-3 py-1.5 hover:bg-gray-600 transition-colors text-sm">
+  <Icon className="w-4 h-4" />
+  <span>Action</span>
+</button>
+
+// Danger action buttons
+<button className="flex items-center justify-center bg-red-500/20 text-red-400 rounded-xl py-2.5 px-3 text-sm font-medium hover:bg-red-500/30 transition-colors">
+  <Icon className="w-4 h-4" />
+</button>
+```
+
+### 📊 Stats Display Pattern
+Consistent stats/metrics display:
+
+```tsx
+// Stats grid pattern
+<div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-4'} gap-3`}>
+  <div className="text-center">
+    <div className="text-lg font-bold text-blue-400">{value}</div>
+    <div className="text-xs text-gray-400">{label}</div>
+  </div>
+</div>
+
+// Compact metrics pattern
+<div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-4 gap-2'}`}>
+  {metrics.map((metric, index) => (
+    <motion.div
+      key={metric.title}
+      className="flex items-center space-x-2 p-2 bg-gray-800/30 rounded-xl"
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.5, delay: 0.2 + index * 0.03 }}
+    >
+      <div className={`p-1 rounded ${metric.bgColor}`}>
+        <metric.icon className={`w-3 h-3 ${metric.color}`} />
+      </div>
+      <div className="min-w-0">
+        <div className="text-xs text-gray-400 font-medium truncate">{metric.title}</div>
+        <div className={`font-bold ${metric.color} text-sm truncate`}>{metric.value}</div>
+      </div>
+    </motion.div>
+  ))}
+</div>
+```
+
+### 🔍 Search and Filter Pattern
+Consistent search and filter interface:
+
+```tsx
+// Search bar pattern
+<div className="relative mb-4">
+  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+  <input
+    type="text"
+    placeholder="Search..."
+    className="w-full pl-10 pr-4 py-2.5 bg-gray-700 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+    inputMode="text"
+    autoComplete="off"
+    autoCorrect="off"
+    autoCapitalize="off"
+    spellCheck="false"
+    style={{ fontSize: '16px' }}
+  />
+</div>
+
+// Filter buttons pattern
+<div className="flex space-x-1">
+  {filters.map(({ key, label }) => (
+    <button
+      key={key}
+      onClick={() => setFilterBy(key)}
+      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+        filterBy === key 
+          ? 'bg-blue-500 text-white' 
+          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+      }`}
+    >
+      {label}
+    </button>
+  ))}
+</div>
+```
 
 ---
 
@@ -304,6 +486,8 @@ class TestTrainingAPI:
 .text-warning    /* Yellow */
 .text-error      /* Red */
 .text-purple     /* Purple */
+.text-orange     /* Orange */
+.text-cyan       /* Cyan */
 ```
 
 ### Spacing Scale
@@ -338,6 +522,15 @@ const isMobile = displayMode === 'mobile'
 const handleTouchEnd = (e: React.TouchEvent) => {
   // Touch logic
 }
+
+// Animation patterns
+<motion.div
+  initial={{ opacity: 0, y: -10 }}
+  animate={{ opacity: 1, y: 0 }}
+  className="card-glass p-4 rounded-2xl flex-shrink-0"
+>
+  {/* Content */}
+</motion.div>
 ```
 
 ---
@@ -347,9 +540,10 @@ const handleTouchEnd = (e: React.TouchEvent) => {
 When contributing to the project:
 
 1. **Follow the Style Guide**: Adhere to all guidelines in this document
-2. **Test Thoroughly**: Ensure all changes work on mobile and desktop
-3. **Document Changes**: Update documentation for any new features
-4. **Performance**: Consider the impact on bundle size and performance
-5. **Accessibility**: Ensure changes maintain accessibility standards
+2. **Use Component Patterns**: Follow established patterns for consistency
+3. **Test Thoroughly**: Ensure all changes work on mobile and desktop
+4. **Document Changes**: Update documentation for any new features
+5. **Performance**: Consider the impact on bundle size and performance
+6. **Accessibility**: Ensure changes maintain accessibility standards
 
 Remember: **Mobile-first, performance-focused, and user-centered design** should guide all decisions! 🎯 
