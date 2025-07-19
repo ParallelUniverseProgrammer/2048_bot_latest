@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Activity, Brain, GamepadIcon, Archive } from 'lucide-react'
+import { Activity, Brain, GamepadIcon, Archive, Palette } from 'lucide-react'
 
 import TrainingDashboard from './components/TrainingDashboard'
 import GameBoard from './components/GameBoard'
 import ConnectionStatus from './components/ConnectionStatus'
 
 import CheckpointManager from './components/CheckpointManager'
+import ModelStudioTab from './components/ModelStudioTab'
 import TrainingProgressBar from './components/TrainingProgressBar'
 import { useTrainingStore } from './stores/trainingStore'
 import { useWebSocket } from './utils/websocket'
@@ -14,7 +15,7 @@ import { useDeviceDetection } from './utils/deviceDetection'
 import config from './utils/config'
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'game' | 'checkpoints'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'game' | 'checkpoints' | 'model-studio'>('dashboard')
   const [showIOSTooltip, setShowIOSTooltip] = useState(false)
   
   // Intelligent device detection
@@ -81,7 +82,7 @@ const App: React.FC = () => {
   
   // Navigation handler for child components
   const handleNavigateToTab = (tab: string) => {
-    const validTabs = ['dashboard', 'game', 'checkpoints'] as const
+    const validTabs = ['dashboard', 'game', 'checkpoints', 'model-studio'] as const
     if (validTabs.includes(tab as any)) {
       setActiveTab(tab as typeof activeTab)
     }
@@ -91,6 +92,7 @@ const App: React.FC = () => {
     { id: 'dashboard', label: 'Training', icon: Activity },
     { id: 'game', label: 'Game', icon: GamepadIcon },
     { id: 'checkpoints', label: 'Checkpoints', icon: Archive },
+    { id: 'model-studio', label: 'Studio', icon: Palette },
   ]
 
   return (
@@ -290,6 +292,7 @@ const App: React.FC = () => {
             {activeTab === 'dashboard' && <TrainingDashboard />}
             {activeTab === 'game' && <GameBoard />}
             {activeTab === 'checkpoints' && <CheckpointManager onNavigateToTab={handleNavigateToTab} />}
+            {activeTab === 'model-studio' && <ModelStudioTab />}
           </motion.div>
         </AnimatePresence>
       </motion.main>

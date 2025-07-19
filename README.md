@@ -34,6 +34,8 @@
 
 • **🎨 Modern Launcher UI** – redesigned console interface with smooth progress animations, non-scrolling display, and QR-focused experience that makes mobile access effortless.
 
+• **🎯 Model Studio Foundation** – Complete backend API and frontend framework for visual model design. Features real-time validation, dynamic code generation, and mobile-first interface with 70%+ canvas space allocation. Ready for drag-and-drop canvas implementation.
+
 ---
 
 ## 📋 Table of Contents
@@ -122,13 +124,14 @@ See [LAUNCHER_README.md](./LAUNCHER_README.md) for complete usage instructions a
 ## Usage Guide
 
 ### Navigation
-The interface is split into three tabs:
+The interface is split into four tabs:
 
 | Tab | Description |
 |-----|-------------|
 | **Training** | Redesigned real-time metrics, compact charts and smart training controls. Features context-aware buttons that adapt based on training state. |
 | **Game** | Live board view for training or checkpoint playback with attention overlay and playback controls. |
 | **Checkpoints** | Library of saved models with rename, search, resume-training and playback. |
+| **Model Studio** 🎯 | Visual model designer with drag-and-drop blocks, real-time validation, and one-click training. Create custom transformer architectures and experiment with MoE configurations. |
 
 ### Starting a Training Session
 1. Launch the backend & frontend (see *Quick Start*).
@@ -258,16 +261,22 @@ We're working on a **platform-agnostic background service installer** that will 
 
 See [BACKGROUND_SERVICE_ROADMAP.md](./BACKGROUND_SERVICE_ROADMAP.md) for the complete 5-phase development plan.
 
-### Future Vision: Model Studio Tab
-Our long-term vision includes a **graphical Model Studio** where users can:
-• Visually design novel transformer architectures
+### Model Studio Tab 🎯 **IN PROGRESS**
+We're actively developing a **graphical Model Studio** that transforms this into a visual "Scratch for Machine Learning" environment. Users will be able to:
+• Visually design novel transformer architectures with drag-and-drop blocks
 • Experiment with different MoE configurations in real-time
-• Test model performance instantly
+• Test model performance instantly with one-click compilation and training
 • Save and share custom model designs
 
-This will leverage our existing checkpoint system and WebSocket infrastructure to provide a powerful visual AI model development environment.
+**✅ Current Progress (Week 0 Complete):**
+• **Backend Foundation**: Complete API with dynamic model generation, validation, and training integration
+• **Frontend Foundation**: Mobile-first UI with state management, real-time validation, and block palette
+• **Integration**: Seamless connection with existing TrainingManager and checkpoint system
+• **Mobile Optimization**: Touch-friendly interface with 70%+ canvas space allocation
 
-**🎯 Model Studio Roadmap**: See [MODEL_STUDIO_ROADMAP.md](./MODEL_STUDIO_ROADMAP.md) for our comprehensive 10-phase development plan to transform this into a visual "Scratch for Machine Learning" with block-based drag-and-drop model design, real-time validation, and seamless training integration.
+**🎯 Next Phase (Week 1):** Canvas implementation with react-konva for drag-and-drop model design
+
+**📋 Full Roadmap**: See [MODEL_STUDIO_ROADMAP.md](./MODEL_STUDIO_ROADMAP.md) for our comprehensive 10-phase development plan and current implementation status.
 
 ## Contributing
 

@@ -17,6 +17,7 @@ from pydantic import BaseModel
 import uvicorn
 
 from app.api.websocket_manager import WebSocketManager
+from app.api.design_router import router as design_router
 from app.training.training_manager import TrainingManager
 from app.training.ppo_trainer import PPOTrainer
 from app.models.checkpoint_playback import CheckpointPlayback
@@ -25,6 +26,9 @@ import logging
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
 app = FastAPI(title="2048 Bot Training API", version="1.0.0")
+
+# Include design router
+app.include_router(design_router)
 
 # Enable CORS for frontend
 import os
