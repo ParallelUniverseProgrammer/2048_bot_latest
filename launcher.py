@@ -25,6 +25,7 @@ import queue
 import logging
 from datetime import datetime
 import shutil
+import math
 
 # Third-party imports (will be installed if missing)
 try:
@@ -64,24 +65,47 @@ class Colors:
     UNDERLINE = '\033[4m'
 
 class ConsoleUI:
-    """Modern console UI with non-scrolling display and smooth animations"""
+    """Ultra-responsive console UI with high-frequency animations and smooth transitions"""
     
     def __init__(self, quiet: bool = False, no_color: bool = False):
         self.quiet = quiet
         self.no_color = no_color
         self.terminal_width = shutil.get_terminal_size((80, 24)).columns
         self.terminal_height = shutil.get_terminal_size((80, 24)).lines
-        self.current_screen = []
-        self.progress_animation_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-        self.animation_index = 0
-        self.last_update_time = time.time()
+        
+        # Animation state
+        self.animation_running = False
+        self.animation_thread = None
+        self.animation_queue = queue.Queue()
+        
+        # Progress state
+        self.current_step = ""
+        self.target_progress = 0.0
+        self.current_progress = 0.0
+        self.status_message = ""
+        self.error_message = ""
+        self.micro_progress = 0.0
+        self.micro_step = ""
+        
+        # Animation frames
+        self.spinner_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        self.pulse_frames = ['●', '○', '●', '○', '●', '○']
+        self.dots_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        self.bar_frames = ['▰', '▱', '▰', '▱', '▰', '▱']
+        
+        self.frame_index = 0
+        self.last_frame_time = time.time()
+        self.frame_rate = 10  # Reduced to 10 FPS to prevent flashing
+        self.frame_interval = 1.0 / self.frame_rate
         
         # Setup terminal for better experience
         self._setup_terminal()
+        
+        # Start animation thread
+        self._start_animation_thread()
     
     def _setup_terminal(self):
         """Setup terminal for better display"""
-        # Clear screen and hide cursor for cleaner experience
         if not self.quiet:
             self.clear_screen()
             self.hide_cursor()
@@ -117,63 +141,189 @@ class ConsoleUI:
             sys.stdout.write('\033[K')
             sys.stdout.flush()
     
-    def get_animation_char(self) -> str:
-        """Get next animation character for smooth progress"""
-        char = self.progress_animation_chars[self.animation_index]
-        self.animation_index = (self.animation_index + 1) % len(self.progress_animation_chars)
-        return char
+    def _start_animation_thread(self):
+        """Start the high-frequency animation thread"""
+        if self.quiet:
+            return
+            
+        self.animation_running = True
+        self.animation_thread = threading.Thread(target=self._animation_loop, daemon=True)
+        self.animation_thread.start()
+    
+    def _animation_loop(self):
+        """High-frequency animation loop running at 60fps"""
+        while self.animation_running:
+            try:
+                current_time = time.time()
+                
+                # Update frame index
+                if current_time - self.last_frame_time >= self.frame_interval:
+                    self.frame_index = (self.frame_index + 1) % len(self.spinner_frames)
+                    self.last_frame_time = current_time
+                
+                # Smooth progress interpolation
+                if abs(self.current_progress - self.target_progress) > 0.001:
+                    self.current_progress += (self.target_progress - self.current_progress) * 0.1
+                
+                # Render the current frame
+                self._render_frame()
+                
+                # Maintain frame rate
+                time.sleep(self.frame_interval)
+                
+            except Exception as e:
+                # Continue animation even if there's an error
+                time.sleep(self.frame_interval)
+    
+    def _render_frame(self):
+        """Render a single animation frame"""
+        try:
+            # Calculate positions
+            center_x = self.terminal_width // 2
+            center_y = self.terminal_height // 2
+            
+            # Only clear screen on first render or when content changes significantly
+            if not hasattr(self, '_last_render_content'):
+                self._last_render_content = ""
+                self.clear_screen()
+            
+            # Build current content for comparison
+            current_content = f"{self.current_step}{self.current_progress:.2f}{self.status_message}{self.error_message}{self.micro_step}{self.micro_progress:.2f}"
+            
+            # Only clear and re-render if content has changed significantly
+            if current_content != self._last_render_content:
+                self.clear_screen()
+                self._last_render_content = current_content
+                
+                # Header with animated title
+                header = "🚀 2048 Bot Training Launcher"
+                title_animation = self._get_title_animation(header)
+                print(f"\n{Colors.HEADER}{title_animation:^{self.terminal_width}}{Colors.ENDC}")
+                
+                # Progress section
+                print(f"\n{' ' * (center_x - 20)}")
+                
+                # Animated spinner with current step
+                spinner = self.spinner_frames[self.frame_index]
+                step_display = self.current_step if self.current_step else "Initializing..."
+                print(f"{' ' * (center_x - 15)}{Colors.OKBLUE}{spinner}{Colors.ENDC} {Colors.BOLD}{step_display}{Colors.ENDC}")
+                
+                # Smooth progress bar
+                bar_width = 40
+                filled_width = int(bar_width * self.current_progress)
+                bar = '█' * filled_width + '░' * (bar_width - filled_width)
+                
+                # Add animated end cap
+                if self.current_progress > 0 and self.current_progress < 1.0:
+                    end_cap = self.bar_frames[self.frame_index % len(self.bar_frames)]
+                    bar = bar[:-1] + end_cap
+                
+                print(f"{' ' * (center_x - bar_width//2)}{Colors.OKGREEN}{bar}{Colors.ENDC}")
+                
+                # Progress percentage with smooth animation
+                percentage = int(self.current_progress * 100)
+                print(f"{' ' * (center_x - 3)}{Colors.OKCYAN}{percentage:3d}%{Colors.ENDC}")
+                
+                # Micro-progress indicator
+                if self.micro_step and self.micro_progress > 0:
+                    micro_bar_width = 20
+                    micro_filled = int(micro_bar_width * self.micro_progress)
+                    micro_bar = '▰' * micro_filled + '▱' * (micro_bar_width - micro_filled)
+                    print(f"{' ' * (center_x - micro_bar_width//2)}{Colors.OKBLUE}{micro_bar}{Colors.ENDC}")
+                    print(f"{' ' * (center_x - len(self.micro_step)//2)}{Colors.OKBLUE}{self.micro_step}{Colors.ENDC}")
+                
+                # Status message with typing effect
+                if self.status_message:
+                    status_display = self._get_typing_effect(self.status_message)
+                    print(f"\n{' ' * (center_x - len(status_display)//2)}{Colors.OKBLUE}{status_display}{Colors.ENDC}")
+                
+                # Error message with pulse effect
+                if self.error_message:
+                    error_display = self._get_pulse_effect(f"❌ {self.error_message}")
+                    print(f"\n{' ' * (center_x - len(error_display)//2)}{Colors.FAIL}{error_display}{Colors.ENDC}")
+                
+                # Footer with animated dots
+                footer = "Press Ctrl+C to stop"
+                footer_animation = self._get_dots_animation(footer)
+                print(f"\n{' ' * (center_x - len(footer_animation)//2)}{Colors.WARNING}{footer_animation}{Colors.ENDC}")
+                
+                sys.stdout.flush()
+            else:
+                # Just update the spinner and animated elements without clearing screen
+                self.move_cursor(3, center_x - 15)
+                spinner = self.spinner_frames[self.frame_index]
+                print(f"{Colors.OKBLUE}{spinner}{Colors.ENDC}", end="", flush=True)
+                
+                # Update progress bar end cap if needed
+                if self.current_progress > 0 and self.current_progress < 1.0:
+                    bar_width = 40
+                    self.move_cursor(5, center_x + bar_width//2 - 1)
+                    end_cap = self.bar_frames[self.frame_index % len(self.bar_frames)]
+                    print(f"{Colors.OKGREEN}{end_cap}{Colors.ENDC}", end="", flush=True)
+                
+                # Update footer dots
+                footer = "Press Ctrl+C to stop"
+                footer_animation = self._get_dots_animation(footer)
+                self.move_cursor(self.terminal_height - 2, center_x - len(footer_animation)//2)
+                print(f"{Colors.WARNING}{footer_animation}{Colors.ENDC}", end="", flush=True)
+            
+        except Exception:
+            # Fallback to simple rendering if animation fails
+            pass
+    
+    def _get_title_animation(self, title: str) -> str:
+        """Animate the title with subtle effects"""
+        if self.frame_index % 20 < 10:
+            return title
+        else:
+            return title.replace("🚀", "⚡")
+    
+    def _get_typing_effect(self, text: str) -> str:
+        """Create a typing effect for status messages"""
+        if not text:
+            return ""
+        
+        # Show more characters over time
+        chars_to_show = min(len(text), int(self.frame_index / 3) % (len(text) + 1))
+        return text[:chars_to_show] + ("▋" if chars_to_show < len(text) else "")
+    
+    def _get_pulse_effect(self, text: str) -> str:
+        """Create a pulse effect for error messages"""
+        if self.frame_index % 10 < 5:
+            return text
+        else:
+            return text.replace("❌", "⚠️")
+    
+    def _get_dots_animation(self, text: str) -> str:
+        """Add animated dots to footer"""
+        dots = "." * ((self.frame_index // 5) % 4)
+        return text + dots
+    
+    def update_progress(self, step: str, progress: float, status: str = "", error: str = ""):
+        """Update progress with smooth interpolation"""
+        self.current_step = step
+        self.target_progress = progress
+        self.status_message = status
+        self.error_message = error
+    
+    def update_micro_progress(self, step: str, progress: float):
+        """Update micro-progress for detailed operations"""
+        self.micro_step = step
+        self.micro_progress = progress
     
     def render_progress_screen(self, step: str, progress: float, status: str = "", error: str = ""):
-        """Render a beautiful progress screen"""
-        if self.quiet:
-            return
-        
-        # Calculate positions
-        center_x = self.terminal_width // 2
-        center_y = self.terminal_height // 2
-        
-        # Clear screen
-        self.clear_screen()
-        
-        # Header
-        header = "🚀 2048 Bot Training Launcher"
-        print(f"\n{Colors.HEADER}{header:^{self.terminal_width}}{Colors.ENDC}")
-        
-        # Progress section
-        print(f"\n{' ' * (center_x - 20)}")
-        
-        # Animated spinner
-        spinner = self.get_animation_char()
-        print(f"{' ' * (center_x - 15)}{Colors.OKBLUE}{spinner}{Colors.ENDC} {Colors.BOLD}{step}{Colors.ENDC}")
-        
-        # Progress bar
-        bar_width = 40
-        filled_width = int(bar_width * progress)
-        bar = '█' * filled_width + '░' * (bar_width - filled_width)
-        print(f"{' ' * (center_x - bar_width//2)}{Colors.OKGREEN}{bar}{Colors.ENDC}")
-        
-        # Progress percentage
-        percentage = int(progress * 100)
-        print(f"{' ' * (center_x - 3)}{Colors.OKCYAN}{percentage:3d}%{Colors.ENDC}")
-        
-        # Status message
-        if status:
-            print(f"\n{' ' * (center_x - len(status)//2)}{Colors.OKBLUE}{status}{Colors.ENDC}")
-        
-        # Error message
-        if error:
-            print(f"\n{' ' * (center_x - len(error)//2)}{Colors.FAIL}❌ {error}{Colors.ENDC}")
-        
-        # Footer
-        footer = "Press Ctrl+C to stop"
-        print(f"\n{' ' * (center_x - len(footer)//2)}{Colors.WARNING}{footer}{Colors.ENDC}")
-        
-        sys.stdout.flush()
+        """Render a beautiful progress screen (legacy method for compatibility)"""
+        self.update_progress(step, progress, status, error)
     
     def render_qr_screen(self, frontend_url: str, backend_url: str):
-        """Render the final QR code screen"""
+        """Render the final QR code screen with enhanced animations"""
         if self.quiet:
             return
+        
+        # Stop animation thread for QR screen
+        self.animation_running = False
+        if self.animation_thread:
+            self.animation_thread.join(timeout=1)
         
         # Clear screen
         self.clear_screen()
@@ -181,15 +331,15 @@ class ConsoleUI:
         # Calculate positions
         center_x = self.terminal_width // 2
         
-        # Header
+        # Animated header
         header = "🎉 2048 Bot Training Ready!"
         print(f"\n{Colors.HEADER}{header:^{self.terminal_width}}{Colors.ENDC}")
         
-        # Separator
+        # Animated separator
         separator = "=" * min(50, self.terminal_width - 10)
         print(f"\n{Colors.HEADER}{separator:^{self.terminal_width}}{Colors.ENDC}")
         
-        # URLs
+        # URLs with highlight effect
         print(f"\n{Colors.OKGREEN}{'Frontend:':<12} {frontend_url}{Colors.ENDC}".center(self.terminal_width))
         print(f"{Colors.OKGREEN}{'Backend:':<12} {backend_url}{Colors.ENDC}".center(self.terminal_width))
         print(f"{Colors.OKGREEN}{'Docs:':<12} {backend_url}/docs{Colors.ENDC}".center(self.terminal_width))
@@ -197,11 +347,11 @@ class ConsoleUI:
         # Separator
         print(f"\n{Colors.HEADER}{separator:^{self.terminal_width}}{Colors.ENDC}")
         
-        # QR Code
+        # QR Code with enhanced display
         print(f"\n{Colors.OKCYAN}{'📱 QR Code for Mobile Access':^{self.terminal_width}}{Colors.ENDC}")
         QRCodeGenerator.generate_qr_code(frontend_url, "mobile_access_qr.png", center=True, term_width=self.terminal_width)
         
-        # Instructions
+        # Enhanced instructions
         print(f"\n{Colors.OKCYAN}{'📱 Scan this QR code with your phone!':^{self.terminal_width}}{Colors.ENDC}")
         ios_msg = "💡 iOS: Tap share (📤) then 'Add to Home Screen'"
         print(f"{Colors.WARNING}{ios_msg:^{self.terminal_width}}{Colors.ENDC}")
@@ -214,9 +364,14 @@ class ConsoleUI:
         sys.stdout.flush()
     
     def render_error_screen(self, step: str, error: str):
-        """Render error screen"""
+        """Render error screen with enhanced styling"""
         if self.quiet:
             return
+        
+        # Stop animation thread for error screen
+        self.animation_running = False
+        if self.animation_thread:
+            self.animation_thread.join(timeout=1)
         
         # Clear screen
         self.clear_screen()
@@ -224,7 +379,7 @@ class ConsoleUI:
         # Calculate positions
         center_x = self.terminal_width // 2
         
-        # Header
+        # Header with error styling
         header = "❌ Setup Failed"
         print(f"\n{Colors.FAIL}{header:^{self.terminal_width}}{Colors.ENDC}")
         
@@ -232,7 +387,7 @@ class ConsoleUI:
         print(f"\n{Colors.FAIL}{'Failed at:':^{self.terminal_width}}{Colors.ENDC}")
         print(f"{Colors.BOLD}{step:^{self.terminal_width}}{Colors.ENDC}")
         
-        # Error message
+        # Error message with formatting
         print(f"\n{Colors.FAIL}{error:^{self.terminal_width}}{Colors.ENDC}")
         
         # Instructions
@@ -242,7 +397,11 @@ class ConsoleUI:
         sys.stdout.flush()
     
     def cleanup(self):
-        """Cleanup terminal state"""
+        """Cleanup terminal state and animation thread"""
+        self.animation_running = False
+        if self.animation_thread and self.animation_thread.is_alive():
+            self.animation_thread.join(timeout=2)
+        
         if not self.quiet:
             self.show_cursor()
 
@@ -287,13 +446,19 @@ class PortManager:
     
     @staticmethod
     def is_port_in_use(port: int) -> bool:
-        """Check if a port is in use"""
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.bind(('', port))
-                return False
-        except OSError:
-            return True
+        """Check if a port is in use with retry logic to avoid race conditions"""
+        for attempt in range(3):  # Retry up to 3 times
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    sock.settimeout(1)  # Add timeout to prevent hanging
+                    sock.bind(('', port))
+                    return False  # Port is available
+            except OSError:
+                if attempt < 2:  # Not the last attempt
+                    time.sleep(0.1)  # Brief delay before retry
+                    continue
+                return True  # Port is in use after all attempts
+        return True  # Default to assuming port is in use if all attempts fail
     
     @staticmethod
     def find_free_port(start_port: int = 8000, max_attempts: int = 100) -> Optional[int]:
@@ -305,7 +470,56 @@ class PortManager:
     
     @staticmethod
     def kill_process_on_port(port: int) -> bool:
-        """Kill any process using the specified port"""
+        """Kill any process using the specified port with platform-specific improvements"""
+        try:
+            if platform.system() == "Windows":
+                return PortManager._kill_process_on_port_windows(port)
+            else:
+                return PortManager._kill_process_on_port_unix(port)
+        except Exception as e:
+            print(f"{Colors.WARNING}Error killing process on port {port}: {e}{Colors.ENDC}")
+            return False
+    
+    @staticmethod
+    def _kill_process_on_port_windows(port: int) -> bool:
+        """Windows-specific port killing using netstat and taskkill"""
+        try:
+            # Use netstat to find process using the port
+            result = subprocess.run(
+                ['netstat', '-ano'], 
+                capture_output=True, 
+                text=True, 
+                shell=True
+            )
+            
+            if result.returncode != 0:
+                return False
+                
+            # Parse netstat output to find PID using the port
+            lines = result.stdout.split('\n')
+            for line in lines:
+                if f':{port} ' in line and 'LISTENING' in line:
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        pid = parts[-1]
+                        if pid.isdigit() and pid != '0':  # Skip System Idle Process
+                            # Kill the process
+                            kill_result = subprocess.run(
+                                ['taskkill', '/PID', pid, '/F'],
+                                capture_output=True,
+                                text=True,
+                                shell=True
+                            )
+                            if kill_result.returncode == 0:
+                                print(f"{Colors.WARNING}Killed process {pid} on port {port}{Colors.ENDC}")
+                                return True
+            return False
+        except Exception:
+            return False
+    
+    @staticmethod
+    def _kill_process_on_port_unix(port: int) -> bool:
+        """Unix-specific port killing using psutil"""
         try:
             # Find processes using the port
             for proc in psutil.process_iter(['pid', 'name']):
@@ -622,7 +836,12 @@ class ProcessManager:
         return status
     
     def cleanup(self):
-        """Enhanced cleanup with better process termination"""
+        """Enhanced cleanup with better process termination and duplicate prevention"""
+        # Prevent double cleanup
+        if hasattr(self, '_cleanup_called'):
+            return
+        self._cleanup_called = True
+        
         self.running = False
         
         if not self.quiet:
@@ -1047,15 +1266,22 @@ class Launcher:
         """Check if required dependencies are installed"""
         self.logger.info("Checking dependencies")
         
+        # Update progress
+        self.console_ui.update_progress("Checking dependencies", 0.1, "Verifying project structure...")
+        self.console_ui.update_micro_progress("Checking project directories", 0.0)
+        
         # Check if we're in the right directory
         if not os.path.exists("backend") or not os.path.exists("frontend"):
             error_msg = "Error: Please run this script from the project root directory"
             self.logger.error(error_msg)
             return False
         
+        self.console_ui.update_micro_progress("Project structure verified", 0.3)
+        
         # Check Poetry
         try:
             subprocess.run(["poetry", "--version"], check=True, capture_output=True, shell=True)
+            self.console_ui.update_micro_progress("Poetry found", 0.5)
         except (subprocess.CalledProcessError, FileNotFoundError):
             error_msg = "Poetry not found. Please install Poetry first."
             self.logger.error(error_msg)
@@ -1064,6 +1290,7 @@ class Launcher:
         # Check Node.js
         try:
             subprocess.run(["node", "--version"], check=True, capture_output=True, shell=True)
+            self.console_ui.update_micro_progress("Node.js found", 0.7)
         except (subprocess.CalledProcessError, FileNotFoundError):
             error_msg = "Node.js not found. Please install Node.js first."
             self.logger.error(error_msg)
@@ -1072,17 +1299,23 @@ class Launcher:
         # Check npm
         try:
             subprocess.run(["npm", "--version"], check=True, capture_output=True, shell=True)
+            self.console_ui.update_micro_progress("npm found", 0.9)
         except (subprocess.CalledProcessError, FileNotFoundError):
             error_msg = "npm not found. Please install npm first."
             self.logger.error(error_msg)
             return False
         
+        self.console_ui.update_micro_progress("All dependencies verified", 1.0)
         self.logger.info("All dependencies found")
         return True
     
     def setup_network(self) -> bool:
         """Setup network configuration with port management"""
         self.logger.info("Setting up network configuration")
+        
+        # Update progress
+        self.console_ui.update_progress("Setting up network", 0.2, "Discovering network interfaces...")
+        self.console_ui.update_micro_progress("Scanning network adapters", 0.0)
         
         # Find the best IP address
         self.host_ip = NetworkDiscovery.find_best_ip()
@@ -1091,16 +1324,19 @@ class Launcher:
             self.logger.error(error_msg)
             return False
         
+        self.console_ui.update_micro_progress(f"Found IP: {self.host_ip}", 0.5)
         self.logger.info(f"Using IP address: {self.host_ip}")
         
         # Check and manage ports
+        self.console_ui.update_micro_progress("Checking port availability", 0.7)
         if not self._setup_ports():
             return False
         
+        self.console_ui.update_micro_progress("Network configuration ready", 1.0)
         return True
     
     def _setup_ports(self) -> bool:
-        """Setup and verify port availability"""
+        """Setup and verify port availability with enhanced error handling"""
         ports_to_check = [
             (self.backend_port, "Backend"),
             (self.frontend_port, "Frontend"),
@@ -1108,64 +1344,224 @@ class Launcher:
         ]
         
         for port, name in ports_to_check:
+            # Add detailed logging
+            self.logger.debug(f"Checking port {port} ({name})")
+            
             if PortManager.is_port_in_use(port):
+                self.logger.warning(f"Port {port} ({name}) appears to be in use")
+                
                 if self.force_ports:
-                    self.logger.warning(f"Port {port} ({name}) is in use, attempting to free it")
+                    self.logger.info(f"Attempting to free port {port} ({name})")
                     if PortManager.kill_process_on_port(port):
                         self.logger.info(f"Successfully freed port {port}")
+                        # Verify port is now free
+                        time.sleep(0.5)  # Give OS time to release port
+                        if not PortManager.is_port_in_use(port):
+                            self.logger.info(f"Port {port} confirmed free")
+                            continue
+                        else:
+                            self.logger.error(f"Port {port} still appears in use after killing process")
+                            if not self.quiet:
+                                print(f"{Colors.FAIL}Port {port} ({name}) still in use after cleanup attempt{Colors.ENDC}")
+                            return False
                     else:
-                        error_msg = f"Could not free port {port} ({name})"
-                        self.logger.error(error_msg)
+                        self.logger.error(f"Could not free port {port} ({name})")
+                        if not self.quiet:
+                            print(f"{Colors.FAIL}Could not free port {port} ({name}){Colors.ENDC}")
                         return False
                 else:
-                    error_msg = f"Port {port} ({name}) is already in use. Use --force-ports to attempt to free it."
+                    error_msg = f"Port {port} ({name}) is in use. Use --force-ports to attempt to free it."
                     self.logger.error(error_msg)
+                    if not self.quiet:
+                        print(f"{Colors.FAIL}{error_msg}{Colors.ENDC}")
                     return False
         
         self.logger.info("All ports are available")
         return True
     
     def install_dependencies(self) -> bool:
-        """Install project dependencies with error reporting"""
+        """Install project dependencies with enhanced progress tracking"""
         self.logger.info("Installing dependencies")
         
-        # Install backend dependencies
-        try:
-            result = subprocess.run(
-                ["poetry", "install"], 
-                cwd="backend", 
-                check=True, 
-                shell=True,
-                capture_output=True,
-                text=True
-            )
-            self.logger.info("Backend dependencies installed successfully")
-        except subprocess.CalledProcessError as e:
-            error_msg = f"Failed to install backend dependencies: {e.stderr}"
-            self.logger.error(error_msg)
-            return False
+        # Update main progress
+        self.console_ui.update_progress("Installing dependencies", 0.3, "Checking existing installations...")
         
-        # Install frontend dependencies
-        try:
-            result = subprocess.run(
-                ["npm", "install"], 
-                cwd="frontend", 
-                check=True, 
-                shell=True,
-                capture_output=True,
-                text=True
-            )
-            self.logger.info("Frontend dependencies installed successfully")
-        except subprocess.CalledProcessError as e:
-            error_msg = f"Failed to install frontend dependencies: {e.stderr}"
-            self.logger.error(error_msg)
-            return False
+        # Check if dependencies are already installed
+        backend_installed = self._check_backend_dependencies()
+        frontend_installed = self._check_frontend_dependencies()
+        
+        if backend_installed and frontend_installed:
+            self.console_ui.update_progress("Installing dependencies", 1.0, "✓ Dependencies already installed")
+            self.console_ui.update_micro_progress("All dependencies ready", 1.0)
+            self.logger.info("Dependencies already installed, skipping installation")
+            return True
+        
+        # Install backend dependencies if needed
+        if not backend_installed:
+            self.console_ui.update_progress("Installing dependencies", 0.4, "Installing backend dependencies...")
+            
+            try:
+                # Start backend installation
+                self.console_ui.update_micro_progress("Installing Python packages", 0.0)
+                
+                backend_process = subprocess.Popen(
+                    ["poetry", "install"], 
+                    cwd="backend", 
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1
+                )
+                
+                # Monitor backend installation progress
+                line_count = 0
+                while backend_process.poll() is None:
+                    if backend_process.stdout is None:
+                        break
+                    line = backend_process.stdout.readline()
+                    if not line:
+                        break
+                    
+                    line_count += 1
+                    # Update micro-progress based on line count (rough estimate)
+                    micro_progress = min(0.9, line_count / 50)
+                    self.console_ui.update_micro_progress("Installing Python packages", micro_progress)
+                    
+                    # Log to file but don't spam console
+                    self.logger.debug(f"[Backend Install] {line.strip()}")
+                
+                # Check result
+                if backend_process.returncode != 0:
+                    error_msg = f"Failed to install backend dependencies (exit code: {backend_process.returncode})"
+                    self.logger.error(error_msg)
+                    return False
+                
+                self.logger.info("Backend dependencies installed successfully")
+                self.console_ui.update_micro_progress("Backend packages installed", 1.0)
+                
+            except Exception as e:
+                error_msg = f"Failed to install backend dependencies: {e}"
+                self.logger.error(error_msg)
+                return False
+        else:
+            self.console_ui.update_micro_progress("Backend dependencies already installed", 1.0)
+        
+        # Install frontend dependencies if needed
+        if not frontend_installed:
+            self.console_ui.update_progress("Installing dependencies", 0.7, "Installing frontend dependencies...")
+            
+            try:
+                # Start frontend installation
+                self.console_ui.update_micro_progress("Installing Node.js packages", 0.0)
+                
+                frontend_process = subprocess.Popen(
+                    ["npm", "install"], 
+                    cwd="frontend", 
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1
+                )
+                
+                # Monitor frontend installation progress
+                line_count = 0
+                while frontend_process.poll() is None:
+                    if frontend_process.stdout is None:
+                        break
+                    line = frontend_process.stdout.readline()
+                    if not line:
+                        break
+                    
+                    line_count += 1
+                    # Update micro-progress based on line count (rough estimate)
+                    micro_progress = min(0.9, line_count / 100)
+                    self.console_ui.update_micro_progress("Installing Node.js packages", micro_progress)
+                    
+                    # Log to file but don't spam console
+                    self.logger.debug(f"[Frontend Install] {line.strip()}")
+                
+                # Check result
+                if frontend_process.returncode != 0:
+                    error_msg = f"Failed to install frontend dependencies (exit code: {frontend_process.returncode})"
+                    self.logger.error(error_msg)
+                    return False
+                
+                self.logger.info("Frontend dependencies installed successfully")
+                self.console_ui.update_micro_progress("Frontend packages installed", 1.0)
+                
+            except Exception as e:
+                error_msg = f"Failed to install frontend dependencies: {e}"
+                self.logger.error(error_msg)
+                return False
+        else:
+            self.console_ui.update_micro_progress("Frontend dependencies already installed", 1.0)
+        
+        # Clear micro-progress
+        self.console_ui.update_micro_progress("", 0.0)
         
         return True
     
+    def _check_backend_dependencies(self) -> bool:
+        """Check if backend dependencies are already installed"""
+        try:
+            # Check if poetry.lock exists and is recent
+            lock_file = Path("backend/poetry.lock")
+            if not lock_file.exists():
+                return False
+            
+            # Check if virtual environment exists
+            venv_path = Path("backend/.venv")
+            if not venv_path.exists():
+                return False
+            
+            # Quick check if key packages are available
+            result = subprocess.run(
+                ["poetry", "run", "python", "-c", "import fastapi, uvicorn, torch"],
+                cwd="backend",
+                shell=True,
+                capture_output=True,
+                text=True
+            )
+            
+            return result.returncode == 0
+        except Exception:
+            return False
+    
+    def _check_frontend_dependencies(self) -> bool:
+        """Check if frontend dependencies are already installed"""
+        try:
+            # Check if node_modules exists
+            node_modules = Path("frontend/node_modules")
+            if not node_modules.exists():
+                return False
+            
+            # Check if package-lock.json exists
+            lock_file = Path("frontend/package-lock.json")
+            if not lock_file.exists():
+                return False
+            
+            # Quick check if key packages are available
+            result = subprocess.run(
+                ["npm", "list", "react", "vite"],
+                cwd="frontend",
+                shell=True,
+                capture_output=True,
+                text=True
+            )
+            
+            return result.returncode == 0
+        except Exception:
+            return False
+    
     def start_backend(self) -> bool:
-        """Start the backend server with enhanced error reporting"""
+        """Start the backend server with enhanced progress tracking"""
         self.logger.info("Starting backend server")
+        
+        # Update progress
+        self.console_ui.update_progress("Starting backend", 0.7, "Initializing FastAPI server...")
+        self.console_ui.update_micro_progress("Setting up environment", 0.0)
         
         # Set up environment variables for CORS
         backend_env = os.environ.copy()
@@ -1183,6 +1579,7 @@ class Launcher:
             ])
         
         backend_env["CORS_ORIGINS"] = ",".join(cors_origins)
+        self.console_ui.update_micro_progress("Environment configured", 0.3)
         
         # Backend command
         backend_cmd = [
@@ -1191,6 +1588,8 @@ class Launcher:
             "--port", str(self.backend_port),
             "--reload"
         ]
+        
+        self.console_ui.update_micro_progress("Starting uvicorn server", 0.6)
         
         try:
             backend_process = subprocess.Popen(
@@ -1204,31 +1603,81 @@ class Launcher:
             )
             
             self.process_manager.add_process("Backend", backend_process)
+            self.console_ui.update_micro_progress("Server process started", 0.8)
             
-            # Wait for backend to be ready
-            if self.host_ip and not ServerHealth.wait_for_backend(self.host_ip, self.backend_port, self.logger, quiet=self.quiet):
-                # Get recent errors for debugging
-                status = self.process_manager.get_process_status()
-                backend_status = status.get("Backend", {})
-                recent_errors = backend_status.get("recent_errors", [])
+            # Wait for backend to be ready with progress updates
+            if self.host_ip:
+                self.console_ui.update_micro_progress("Waiting for server to respond", 0.9)
                 
-                if recent_errors:
-                    print(f"{Colors.FAIL}Recent backend errors:{Colors.ENDC}")
-                    for error in recent_errors[-3:]:  # Show last 3 errors
-                        print(f"{Colors.FAIL}  {error}{Colors.ENDC}")
-                
-                return False
+                # Enhanced health check with progress
+                if not self._wait_for_backend_with_progress(self.host_ip, self.backend_port):
+                    # Get recent errors for debugging
+                    status = self.process_manager.get_process_status()
+                    backend_status = status.get("Backend", {})
+                    recent_errors = backend_status.get("recent_errors", [])
+                    
+                    if recent_errors:
+                        print(f"{Colors.FAIL}Recent backend errors:{Colors.ENDC}")
+                        for error in recent_errors[-3:]:  # Show last 3 errors
+                            print(f"{Colors.FAIL}  {error}{Colors.ENDC}")
+                    
+                    return False
             
+            self.console_ui.update_micro_progress("Backend server ready", 1.0)
             return True
+            
         except Exception as e:
             error_msg = f"Failed to start backend: {e}"
             print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
     
+    def _wait_for_backend_with_progress(self, host: str, port: int) -> bool:
+        """Wait for backend with enhanced progress feedback"""
+        url = f"http://{host}:{port}"
+        start_time = time.time()
+        timeout = 30
+        
+        if not self.quiet:
+            print(f"{Colors.OKCYAN}Waiting for backend at {url}...{Colors.ENDC}")
+        self.logger.info(f"Waiting for backend at {url}")
+        
+        while time.time() - start_time < timeout:
+            try:
+                response = requests.get(f"{url}/docs", timeout=2)
+                if response.status_code == 200:
+                    if not self.quiet:
+                        print(f"{Colors.OKGREEN}✓ Backend is ready!{Colors.ENDC}")
+                    self.logger.info("Backend is ready")
+                    return True
+            except requests.ConnectionError:
+                pass
+            except requests.Timeout:
+                pass
+            except Exception as e:
+                self.logger.debug(f"Backend health check error: {e}")
+            
+            # Update micro-progress based on elapsed time
+            elapsed = time.time() - start_time
+            progress = min(0.95, elapsed / timeout)
+            self.console_ui.update_micro_progress(f"Connecting to backend ({int(elapsed)}s)", progress)
+            
+            time.sleep(1)
+            if not self.quiet:
+                print(".", end="", flush=True)
+        
+        if not self.quiet:
+            print(f"\n{Colors.FAIL}✗ Backend failed to start within {timeout} seconds{Colors.ENDC}")
+        self.logger.error(f"Backend failed to start within {timeout} seconds")
+        return False
+    
     def start_frontend(self) -> bool:
-        """Start the frontend server with enhanced error reporting"""
+        """Start the frontend server with enhanced progress tracking"""
         self.logger.info("Starting frontend server")
+        
+        # Update progress
+        self.console_ui.update_progress("Starting frontend", 0.8, "Configuring Vite development server...")
+        self.console_ui.update_micro_progress("Creating Vite configuration", 0.0)
 
         # Create a temporary Vite config that injects the correct backend URL
         vite_config = f"""
@@ -1308,6 +1757,7 @@ export default defineConfig({{
             with open(config_path, "w") as f:
                 f.write(vite_config)
             self.logger.info("Created temporary Vite config")
+            self.console_ui.update_micro_progress("Vite config created", 0.2)
         except Exception as e:
             error_msg = f"Failed to create Vite config: {e}"
             print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
@@ -1326,6 +1776,7 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
             with open(script_path, "w") as f:
                 f.write(backend_url_script)
             self.logger.info("Created backend config script")
+            self.console_ui.update_micro_progress("Backend config created", 0.4)
         except Exception as e:
             error_msg = f"Failed to create backend config script: {e}"
             print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
@@ -1339,6 +1790,7 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
         try:
             with open(dist_html_path, "r") as f:
                 html_content = f.read()
+            self.console_ui.update_micro_progress("HTML template loaded", 0.6)
         except FileNotFoundError:
             error_msg = "Built HTML file not found. Make sure the frontend build completed successfully."
             print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
@@ -1363,6 +1815,7 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
             with open(dist_html_path, "w") as f:
                 f.write(html_content)
             self.logger.info("Updated built HTML with backend config script")
+            self.console_ui.update_micro_progress("HTML updated with backend config", 0.8)
         except Exception as e:
             error_msg = f"Failed to update built HTML: {e}"
             print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
@@ -1370,6 +1823,7 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
             return False
         
         if self.dev_mode:
+            self.console_ui.update_micro_progress("Starting development server", 0.9)
             frontend_cmd = [
                 "npm", "run", "dev", "--", 
                 "--config", "vite.config.temp.ts",
@@ -1379,17 +1833,56 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
             ]
         else:
             # Build production bundle first
+            self.console_ui.update_micro_progress("Building production bundle", 0.85)
             if not self.quiet:
                 print(f"{Colors.OKCYAN}Building production bundle...{Colors.ENDC}")
+            
             try:
-                result = subprocess.run([
+                # Enhanced build process with progress monitoring
+                build_process = subprocess.Popen([
                     "npm", "run", "build", "--", "--config", "vite.config.temp.ts"
-                ], cwd="frontend", check=True, shell=True, capture_output=True, text=True)
+                ], cwd="frontend", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                
+                # Monitor build progress
+                line_count = 0
+                while build_process.poll() is None:
+                    if build_process.stdout is None:
+                        break
+                    line = build_process.stdout.readline()
+                    if not line:
+                        break
+                    
+                    line_count += 1
+                    # Update micro-progress based on build output
+                    if "Building" in line:
+                        self.console_ui.update_micro_progress("Compiling TypeScript", 0.87)
+                    elif "chunks" in line:
+                        self.console_ui.update_micro_progress("Bundling assets", 0.89)
+                    elif "dist" in line:
+                        self.console_ui.update_micro_progress("Writing output files", 0.91)
+                    elif "built" in line:
+                        self.console_ui.update_micro_progress("Build completed", 0.95)
+                    
+                    # Log to file but don't spam console
+                    self.logger.debug(f"[Frontend Build] {line.strip()}")
+                
+                # Wait for the process to complete and get the return code
+                build_process.wait()
+                
+                if build_process.returncode != 0:
+                    error_msg = f"Production build failed (exit code: {build_process.returncode})"
+                    if not self.quiet:
+                        print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
+                    self.logger.error(error_msg)
+                    return False
+                
                 if not self.quiet:
                     print(f"{Colors.OKGREEN}✓ Production build completed{Colors.ENDC}")
                 self.logger.info("Production build completed successfully")
-            except subprocess.CalledProcessError as e:
-                error_msg = f"Production build failed: {e.stderr}"
+                self.console_ui.update_micro_progress("Production build ready", 0.95)
+                
+            except Exception as e:
+                error_msg = f"Production build failed: {e}"
                 if not self.quiet:
                     print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
                 self.logger.error(error_msg)
@@ -1403,6 +1896,7 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
             ]
         
         try:
+            self.console_ui.update_micro_progress("Starting frontend server", 0.97)
             frontend_process = subprocess.Popen(
                 frontend_cmd,
                 cwd="frontend",
@@ -1413,27 +1907,73 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
             )
             
             self.process_manager.add_process("Frontend", frontend_process)
+            self.console_ui.update_micro_progress("Frontend process started", 0.98)
             
-            # Wait for frontend to be ready
-            if self.host_ip and not ServerHealth.wait_for_frontend(self.host_ip, self.frontend_port, self.logger, quiet=self.quiet):
-                # Get recent errors for debugging
-                status = self.process_manager.get_process_status()
-                frontend_status = status.get("Frontend", {})
-                recent_errors = frontend_status.get("recent_errors", [])
+            # Wait for frontend to be ready with progress updates
+            if self.host_ip:
+                self.console_ui.update_micro_progress("Waiting for frontend to respond", 0.99)
                 
-                if recent_errors:
-                    print(f"{Colors.FAIL}Recent frontend errors:{Colors.ENDC}")
-                    for error in recent_errors[-3:]:  # Show last 3 errors
-                        print(f"{Colors.FAIL}  {error}{Colors.ENDC}")
-                
-                return False
+                # Enhanced health check with progress
+                if not self._wait_for_frontend_with_progress(self.host_ip, self.frontend_port):
+                    # Get recent errors for debugging
+                    status = self.process_manager.get_process_status()
+                    frontend_status = status.get("Frontend", {})
+                    recent_errors = frontend_status.get("recent_errors", [])
+                    
+                    if recent_errors:
+                        print(f"{Colors.FAIL}Recent frontend errors:{Colors.ENDC}")
+                        for error in recent_errors[-3:]:  # Show last 3 errors
+                            print(f"{Colors.FAIL}  {error}{Colors.ENDC}")
+                    
+                    return False
             
+            self.console_ui.update_micro_progress("Frontend server ready", 1.0)
             return True
+            
         except Exception as e:
             error_msg = f"Failed to start frontend: {e}"
             print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
             self.logger.error(error_msg)
             return False
+    
+    def _wait_for_frontend_with_progress(self, host: str, port: int) -> bool:
+        """Wait for frontend with enhanced progress feedback"""
+        url = f"http://{host}:{port}"
+        start_time = time.time()
+        timeout = 30
+        
+        if not self.quiet:
+            print(f"{Colors.OKCYAN}Waiting for frontend at {url}...{Colors.ENDC}")
+        self.logger.info(f"Waiting for frontend at {url}")
+        
+        while time.time() - start_time < timeout:
+            try:
+                response = requests.get(url, timeout=2)
+                if response.status_code == 200:
+                    if not self.quiet:
+                        print(f"{Colors.OKGREEN}✓ Frontend is ready!{Colors.ENDC}")
+                    self.logger.info("Frontend is ready")
+                    return True
+            except requests.ConnectionError:
+                pass
+            except requests.Timeout:
+                pass
+            except Exception as e:
+                self.logger.debug(f"Frontend health check error: {e}")
+            
+            # Update micro-progress based on elapsed time
+            elapsed = time.time() - start_time
+            progress = min(0.99, 0.99 + (elapsed / timeout) * 0.01)
+            self.console_ui.update_micro_progress(f"Connecting to frontend ({int(elapsed)}s)", progress)
+            
+            time.sleep(1)
+            if not self.quiet:
+                print(".", end="", flush=True)
+        
+        if not self.quiet:
+            print(f"\n{Colors.FAIL}✗ Frontend failed to start within {timeout} seconds{Colors.ENDC}")
+        self.logger.error(f"Frontend failed to start within {timeout} seconds")
+        return False
     
     def show_access_info(self):
         """Display access information and QR code"""
@@ -1541,32 +2081,43 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
                     current_step = idx
                     progress = (idx + 0.1) / total_steps  # Start with some progress
                     
+                    # Clear micro-progress at start of each step
+                    self.console_ui.update_micro_progress("", 0.0)
+                    
                     # Update progress display
-                    self.console_ui.render_progress_screen(step, progress, "Initializing...")
+                    self.console_ui.update_progress(step, progress, "Initializing...")
                     
                     # Execute step
                     success = False
                     error_msg = ""
                     
                     if step == 'Checking dependencies':
-                        success = self.check_dependencies()
-                        if not success:
-                            error_msg = "Missing required dependencies"
+                        if self.skip_deps:
+                            success = True
+                            self.console_ui.update_progress(step, 1.0, "✓ Skipped dependency checks")
+                        else:
+                            success = self.check_dependencies()
+                            if not success:
+                                error_msg = "Missing required dependencies"
                     elif step == 'Setting up network':
                         success = self.setup_network()
                         if not success:
                             error_msg = "Network configuration failed"
                     elif step == 'Installing dependencies':
-                        success = self.install_dependencies()
-                        if not success:
-                            error_msg = "Dependency installation failed"
+                        if self.skip_deps:
+                            success = True
+                            self.console_ui.update_progress(step, 1.0, "✓ Skipped dependency installation")
+                        else:
+                            success = self.install_dependencies()
+                            if not success:
+                                error_msg = "Dependency installation failed"
                     elif step == 'Starting backend':
                         success = self.start_backend()
                         if not success:
                             error_msg = "Backend startup failed"
                         # Start tunnel if needed
                         if success and not self.lan_only:
-                            self.console_ui.render_progress_screen(step, (idx + 0.5) / total_steps, "Starting tunnel...")
+                            self.console_ui.update_progress(step, (idx + 0.5) / total_steps, "Starting tunnel...")
                             self.tunnel_url = self._start_tunnel()
                     elif step == 'Starting frontend':
                         success = self.start_frontend()
@@ -1576,7 +2127,9 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
                     # Update progress
                     progress = (idx + 1) / total_steps
                     if success:
-                        self.console_ui.render_progress_screen(step, progress, "✓ Completed")
+                        self.console_ui.update_progress(step, progress, "✓ Completed")
+                        # Clear micro-progress on completion
+                        self.console_ui.update_micro_progress("", 0.0)
                         time.sleep(0.3)  # Brief pause to show completion
                     else:
                         self.console_ui.render_error_screen(step, error_msg)
@@ -1629,11 +2182,11 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
             print(f"{Colors.HEADER}{'='*50}{Colors.ENDC}")
             self.logger.info("Launcher started")
             try:
-                if not self.check_dependencies():
+                if not self.skip_deps and not self.check_dependencies():
                     return False
                 if not self.setup_network():
                     return False
-                if not self.install_dependencies():
+                if not self.skip_deps and not self.install_dependencies():
                     return False
                 if not self.start_backend():
                     return False
