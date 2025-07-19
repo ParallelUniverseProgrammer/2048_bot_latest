@@ -418,7 +418,7 @@ async def main():
     with open("training_reconnection_failure_test_results.json", "w") as f:
         json.dump(results, f, indent=2)
     
-    print(f"\nResults saved to training_reconnection_failure_test_results.json")
+    logger.info(f"Results saved to results file")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

@@ -350,9 +350,9 @@ def main():
         tester.run_all_tests()
         
     except KeyboardInterrupt:
-        print("\nTests interrupted by user")
+        logger.warning("Tests interrupted by user")
     except Exception as e:
-        print(f"Test suite failed: {str(e)}")
+        logger.error(f"Test suite failed: {str(e)}")
         traceback.print_exc()
 
 

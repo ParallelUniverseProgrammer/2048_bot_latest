@@ -348,17 +348,17 @@ def main():
         success = tester.run_all_tests()
         
         if success:
-            print("\nMock backend is working correctly!")
-            print("You can now use the mock backend for offline testing.")
+            logger.success("Mock backend is working correctly!")
+            logger.info("You can now use the mock backend for offline testing.")
         else:
-            print("\nMock backend has issues that need to be addressed.")
+            logger.warning("Mock backend has issues that need to be addressed.")
             sys.exit(1)
             
     except KeyboardInterrupt:
-        print("\nTests interrupted by user")
+        logger.warning("Tests interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"Test suite failed: {str(e)}")
+        logger.error(f"Test suite failed: {str(e)}")
         sys.exit(1)
 
 

@@ -419,8 +419,8 @@ class MasterCheckpointTest:
                 absolute_path = checkpoint.get('absolute_path')
                 self.logger.info(f"\n--- Loading checkpoint {idx+1}/{len(checkpoints)}: {checkpoint_id} ---")
                 self.logger.info(f"Absolute path: {absolute_path}")
-                print(f"\n[TEST] Loading checkpoint {idx+1}/{len(checkpoints)}: {checkpoint_id}")
-                print(f"[TEST] Absolute path: {absolute_path}")
+                logger.testing(f"Loading checkpoint {idx+1}/{len(checkpoints)}: {checkpoint_id}")
+                logger.info(f"Absolute path: {absolute_path}")
                 start_time = time.time()
                 try:
                     # POST to load checkpoint
@@ -439,7 +439,7 @@ class MasterCheckpointTest:
                     continue
 
                 # Wait for initializing to become False before checking for training progress
-                print("[TEST] Waiting for backend to finish initializing (timeout: 4 minutes)...")
+                logger.info("Waiting for backend to finish initializing (timeout: 4 minutes)...")
                 spinner = ['|', '/', '-', '\\']
                 spinner_idx = 0
                 elapsed = 0
@@ -453,16 +453,16 @@ class MasterCheckpointTest:
                             status = status_response.json()
                             last_status = status
                             initializing = status.get('initializing', False)
-                            print(f"\r[TEST] Initializing: {initializing}... {spinner[spinner_idx % len(spinner)]} {int(time.time() - initializing_start)}s", end='', flush=True)
+                            logger.progress(f"Initializing: {initializing}... {int(time.time() - initializing_start)}s")
                             spinner_idx += 1
                             if not initializing:
-                                print("\n[TEST] Backend finished initializing.")
+                                logger.ok("Backend finished initializing.")
                                 break
                     except Exception as e:
                         last_status = str(e)
                     time.sleep(2)
                 else:
-                    print(f"\n[TEST] Timeout: Backend did not finish initializing for checkpoint {checkpoint_id} after {initializing_timeout} seconds.")
+                    logger.error(f"Timeout: Backend did not finish initializing for checkpoint {checkpoint_id} after {initializing_timeout} seconds.")
                     self.logger.error(f"Timeout: Backend did not finish initializing for checkpoint {checkpoint_id} after {initializing_timeout} seconds. Last status: {last_status}")
                     results.append((checkpoint_id, False, time.time() - start_time, last_status))
                     continue
@@ -473,11 +473,11 @@ class MasterCheckpointTest:
                     if status_response.status_code == 200:
                         status = status_response.json()
                         initial_episode = status.get('current_episode', 0)
-                        print(f"[TEST] Initial episode count after initializing: {initial_episode}")
+                        logger.info(f"Initial episode count after initializing: {initial_episode}")
                     else:
                         initial_episode = 0
                 except Exception as e:
-                    print(f"[TEST] Could not get initial episode count after initializing: {e}")
+                    logger.error(f"Could not get initial episode count after initializing: {e}")
                     initial_episode = 0
 
                 # Now check for training progress as before
@@ -496,8 +496,8 @@ class MasterCheckpointTest:
                             is_training = status.get('is_training', False)
                             if is_training and current_episode > initial_episode:
                                 elapsed = time.time() - start_time
-                                print(f"\n[TEST] Training started and progressed after {elapsed:.1f} seconds for checkpoint {checkpoint_id}")
-                                print(f"[TEST] Episode progressed from {initial_episode} to {current_episode}")
+                                logger.ok(f"Training started and progressed after {elapsed:.1f} seconds for checkpoint {checkpoint_id}")
+                                logger.info(f"Episode progressed from {initial_episode} to {current_episode}")
                                 self.logger.info(f"Training started and progressed after {elapsed:.1f} seconds for checkpoint {checkpoint_id}")
                                 self.logger.info(f"Episode progressed from {initial_episode} to {current_episode}")
                                 success = True
@@ -507,19 +507,19 @@ class MasterCheckpointTest:
                     spinner_char = spinner[spinner_idx % len(spinner)]
                     spinner_idx += 1
                     waited = int(time.time() - progress_start)
-                    print(f"\r[TEST] Waiting for training progress... {spinner_char} {waited}s", end='', flush=True)
+                    logger.progress(f"Waiting for training progress... {waited}s")
                     time.sleep(2)
                 if not success:
                     elapsed = time.time() - start_time
-                    print(f"\n[TEST] Timeout: Training did not start for checkpoint {checkpoint_id} after {elapsed:.1f} seconds.")
+                    logger.error(f"Timeout: Training did not start for checkpoint {checkpoint_id} after {elapsed:.1f} seconds.")
                     self.logger.error(f"Timeout: Training did not start for checkpoint {checkpoint_id} after {elapsed:.1f} seconds. Last status: {last_status}")
                 results.append((checkpoint_id, success, elapsed, last_status))
 
             # Print summary
-            print("\n=== Checkpoint Loading All Sizes Summary ===")
+            logger.banner("Checkpoint Loading All Sizes Summary")
             for checkpoint_id, success, elapsed, last_status in results:
                 status_str = "PASS" if success else "FAIL"
-                print(f"{status_str}: {checkpoint_id} - {elapsed:.1f}s")
+                logger.info(f"{status_str}: {checkpoint_id} - {elapsed:.1f}s")
             self.logger.ok("Checkpoint Loading All Sizes test complete.")
             return all(r[1] for r in results)
         except Exception as e:

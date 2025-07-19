@@ -337,7 +337,7 @@ class MockBackendHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         """Override log message to use our logger"""
         # Use print for HTTP server logs since TestLogger might not be available in this context
-        print(f"Mock Backend: {format % args}")
+        logger.info(f"Mock Backend: {format % args}")
 
 
 class MockBackend:

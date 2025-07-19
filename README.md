@@ -167,10 +167,11 @@ The launcher automatically creates a Cloudflare Tunnel for internet access:
 
 The test suite now features:
 • **Standardized Logging** – Consistent TestLogger usage across all 68 test files
-• **Zero Major Issues** – All compliance violations resolved (down from 6 major issues)
+• **Zero Major Issues** – All compliance violations resolved (down from 30 minor issues)
 • **Improved Maintainability** – Proper main() functions with return values and exit codes
 • **Enhanced Error Handling** – Standardized error reporting and debugging capabilities
 • **Comprehensive Coverage** – Tests grouped by domain (core, integration, performance, mobile, frontend)
+• **Compliance Checker** – Automated tool to ensure all test files follow standards
 
 ### Running Tests
 
@@ -198,6 +199,22 @@ python tests/performance/test_performance.py
 ```bash
 python tests/compliance_checker.py
 ```
+
+### Pre-Commit Checklist
+
+**Before committing any test changes, always run:**
+
+1. **Compliance Checker** - Ensure your test files follow standards:
+   ```bash
+   python tests/compliance_checker.py
+   ```
+
+2. **Master Test Runner** - Verify your changes work correctly:
+   ```bash
+   python tests/runners/master_test_runner.py --level core
+   ```
+
+This ensures all test files maintain consistency and functionality before being committed to the repository.
 
 ### Test Architecture
 

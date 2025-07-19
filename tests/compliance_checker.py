@@ -25,6 +25,8 @@ from typing import Dict, List, Tuple, Set
 from dataclasses import dataclass
 from enum import Enum
 
+# No external dependencies needed for this utility script
+
 class ComplianceLevel(Enum):
     COMPLIANT = "COMPLIANT"
     MINOR_ISSUES = "MINOR_ISSUES"
@@ -286,22 +288,34 @@ class ComplianceChecker:
 
 def main():
     """Main entry point"""
-    checker = ComplianceChecker()
-    results = checker.check_all_files()
-    checker.print_report(results)
+    print("=" * 60)
+    print("Test Suite Compliance Checker")
+    print("=" * 60)
     
-    # Return appropriate exit code
-    non_compliant_count = sum(1 for compliance in results.values() 
-                             if compliance.compliance_level == ComplianceLevel.NON_COMPLIANT)
-    major_issues_count = sum(1 for compliance in results.values() 
-                            if compliance.compliance_level == ComplianceLevel.MAJOR_ISSUES)
-    
-    if non_compliant_count > 0:
-        sys.exit(1)  # Critical issues
-    elif major_issues_count > 0:
-        sys.exit(2)  # Major issues
-    else:
-        sys.exit(0)  # All good
+    try:
+        checker = ComplianceChecker()
+        results = checker.check_all_files()
+        checker.print_report(results)
+        
+        # Return appropriate exit code
+        non_compliant_count = sum(1 for compliance in results.values() 
+                                 if compliance.compliance_level == ComplianceLevel.NON_COMPLIANT)
+        major_issues_count = sum(1 for compliance in results.values() 
+                                if compliance.compliance_level == ComplianceLevel.MAJOR_ISSUES)
+        
+        if non_compliant_count > 0:
+            print(f"Found {non_compliant_count} non-compliant files")
+            sys.exit(1)  # Critical issues
+        elif major_issues_count > 0:
+            print(f"Found {major_issues_count} files with major issues")
+            sys.exit(2)  # Major issues
+        else:
+            print("All files are compliant!")
+            sys.exit(0)  # All good
+            
+    except Exception as e:
+        print(f"Compliance check failed: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 

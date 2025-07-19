@@ -308,12 +308,67 @@ ERROR: No checkpoints available for testing
 
 When contributing to the test suite:
 
+### 🚨 **MANDATORY PRE-COMMIT CHECKS**
+
+**Before committing ANY test changes, you MUST run both:**
+
+1. **Compliance Checker** - Ensures your test files follow standards:
+   ```bash
+   python tests/compliance_checker.py
+   ```
+   - Must show 0 major issues and 0 non-compliant files
+   - Fix any minor issues before committing
+   - All test files must use TestLogger instead of print()
+
+2. **Master Test Runner** - Verifies your changes work correctly:
+   ```bash
+   python tests/runners/master_test_runner.py --level core
+   ```
+   - Must pass all core functionality tests
+   - Ensures your changes don't break existing functionality
+   - Provides comprehensive validation before commit
+
+### Development Guidelines
+
 1. **Use the master test runner**: Test your changes with `python tests/runners/master_test_runner.py --level core`
 2. Follow the established patterns and conventions
 3. Add comprehensive tests for new functionality
 4. Update documentation as needed
 5. Ensure all tests pass before submitting
 6. Include edge cases and error scenarios
+7. **Always use TestLogger** instead of print() statements
+8. **Include proper main() functions** with `__name__ == "__main__"` guards
+
+## Compliance Checker
+
+The compliance checker (`tests/compliance_checker.py`) is an automated tool that ensures all test files follow the established standards. It checks for:
+
+### Compliance Requirements
+1. **TestLogger Usage** - All output must use TestLogger instead of print()
+2. **Proper Docstrings** - Comprehensive documentation for all test files
+3. **Main Functions** - All test files must have main() functions with `__name__ == "__main__"` guards
+4. **Error Handling** - Proper try/except blocks and graceful error recovery
+5. **Shared Utilities** - Use of common utilities from test_utils
+6. **Standardized Prefixes** - Consistent message prefixes (OK:, ERROR:, WARNING:, etc.)
+
+### Running the Compliance Checker
+```bash
+python tests/compliance_checker.py
+```
+
+### Compliance Levels
+- **COMPLIANT** - File meets all standards
+- **MINOR_ISSUES** - Small issues that should be fixed (print() statements, etc.)
+- **MAJOR_ISSUES** - Significant violations (missing TestLogger, no main function, etc.)
+- **NON_COMPLIANT** - Critical issues (cannot read file, etc.)
+
+### Fixing Compliance Issues
+If you have compliance issues, you can use the automated fix script:
+```bash
+python tests/fix_compliance_issues.py
+```
+
+This script will automatically replace print() statements with TestLogger calls and add missing imports.
 
 ## Test Results Interpretation
 

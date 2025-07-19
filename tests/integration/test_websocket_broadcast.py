@@ -22,9 +22,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 try:
     from backend.app.api.websocket_manager import WebSocketManager
 except ImportError as e:
-    print(f"Import error: {e}")
-    print(f"Backend path: {os.path.join(os.path.dirname(__file__), '..', '..', 'backend')}")
-    print(f"Available in backend: {os.listdir(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')) if os.path.exists(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')) else 'Path does not exist'}")
+    logger.error(f"Import error: {e}")
+    logger.info(f"Backend path: {os.path.join(os.path.dirname(__file__), '..', '..', 'backend')}")
+    logger.info(f"Available in backend: {os.listdir(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')) if os.path.exists(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')) else 'Path does not exist'}")
 
 from tests.utilities.test_utils import TestLogger
 

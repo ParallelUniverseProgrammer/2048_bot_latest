@@ -613,8 +613,8 @@ async def main():
         logger.error(f"Error: {result['error']}")
     
     # Print detailed stats
-    print("\nDetailed Performance Stats:")
-    print(json.dumps(result, indent=2, default=str))
+    logger.info("\nDetailed Performance Stats:")
+    logger.info(json.dumps(result, indent=2, default=str))
 
 
 if __name__ == "__main__":

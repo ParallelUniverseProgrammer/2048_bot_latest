@@ -226,7 +226,7 @@ def main():
     """Main test runner"""
     # Check if backend is available or start mock backend
     if not check_backend_or_start_mock():
-        print("Failed to start backend for testing")
+        logger.error("Failed to start backend for testing")
         return 1
     
     # Run the test suite
@@ -238,10 +238,10 @@ def main():
     total = len(tester.test_results)
     
     if passed == total:
-        print("\nAll speed control tests completed successfully!")
+        logger.success("All speed control tests completed successfully!")
         return 0
     else:
-        print(f"\n{total - passed}/{total} speed control tests failed")
+        logger.warning(f"{total - passed}/{total} speed control tests failed")
         return 1
 
 if __name__ == "__main__":

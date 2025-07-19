@@ -25,9 +25,9 @@ try:
     from backend.app.models.game_transformer import GameTransformer
     from backend.app.models.checkpoint_playback import CheckpointPlayback
 except ImportError as e:
-    print(f"Import error: {e}")
-    print(f"Backend path: {os.path.join(os.path.dirname(__file__), '..', '..', 'backend')}")
-    print(f"Available in backend: {os.listdir(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')) if os.path.exists(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')) else 'Path does not exist'}")
+    logger.error(f"Import error: {e}")
+    logger.info(f"Backend path: {os.path.join(os.path.dirname(__file__), '..', '..', 'backend')}")
+    logger.info(f"Available in backend: {os.listdir(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')) if os.path.exists(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')) else 'Path does not exist'}")
 
 from tests.utilities.test_utils import TestLogger
 
@@ -228,81 +228,81 @@ class TestGamePlayback:
 async def test_action_selection_scenarios():
     """Test various action selection scenarios that might cause freezing"""
     
-    print("=== Action Selection Freeze Tests ===\n")
+    logger.info("=== Action Selection Freeze Tests ===\n")
     
     # Test 1: Normal action selection
-    print("Test 1: Normal action selection")
+    logger.testing("Test 1: Normal action selection")
     test_game = TestGamePlayback('normal', 'normal')
     result, error, timed_out = test_game.test_single_game(timeout_seconds=10)
     
     if timed_out:
-        print("   [TIMEOUT] Normal action selection froze!")
+        logger.error("   [TIMEOUT] Normal action selection froze!")
         return False
     elif error:
-        print(f"   [ERROR] {error}")
+        logger.error(f"   [ERROR] {error}")
     elif result and 'error' not in result:
-        print("   [OK] Normal action selection completed successfully")
+        logger.ok("   [OK] Normal action selection completed successfully")
     else:
-        print(f"   [FAIL] Normal action selection failed: {result}")
+        logger.error(f"   [FAIL] Normal action selection failed: {result}")
     
     # Test 2: No model loaded
-    print("\nTest 2: No model loaded")
+    logger.testing("Test 2: No model loaded")
     test_game = TestGamePlayback('none', 'normal')
     result, error, timed_out = test_game.test_single_game(timeout_seconds=5)
     
     if timed_out:
-        print("   [TIMEOUT] No model handling froze!")
+        logger.error("   [TIMEOUT] No model handling froze!")
         return False
     elif result and 'error' in result:
-        print("   [OK] No model handled gracefully")
+        logger.ok("   [OK] No model handled gracefully")
     else:
-        print(f"   [FAIL] No model should have returned an error: {result}")
+        logger.error(f"   [FAIL] No model should have returned an error: {result}")
     
     # Test 3: Slow model inference
-    print("\nTest 3: Slow model inference")
+    logger.testing("Test 3: Slow model inference")
     test_game = TestGamePlayback('slow', 'normal')
     result, error, timed_out = test_game.test_single_game(timeout_seconds=15)
     
     if timed_out:
-        print("   [OK] Slow model inference timeout detected and handled correctly!")
+        logger.ok("   [OK] Slow model inference timeout detected and handled correctly!")
     elif error:
-        print(f"   [WARN] ERROR: {error} (might be expected for slow models)")
+        logger.warning(f"   [WARN] ERROR: {error} (might be expected for slow models)")
     elif result and 'error' not in result:
-        print("   [OK] Slow model inference completed successfully")
+        logger.ok("   [OK] Slow model inference completed successfully")
     else:
-        print(f"   [FAIL] Slow model inference failed: {result}")
+        logger.error(f"   [FAIL] Slow model inference failed: {result}")
     
     # Test 4: Model exception
-    print("\nTest 4: Model throws exception")
+    logger.testing("Test 4: Model throws exception")
     test_game = TestGamePlayback('exception', 'normal')
     result, error, timed_out = test_game.test_single_game(timeout_seconds=10)
     
     if timed_out:
-        print("   [TIMEOUT] Model exception handling froze!")
+        logger.error("   [TIMEOUT] Model exception handling froze!")
         return False
     elif result and result.get('completed', False):
         # Check if fallback mechanism was triggered (should see random actions)
         if 'game_history' in result and len(result['game_history']) > 0:
-            print("   [OK] Model exception handled gracefully with fallback random actions")
+            logger.ok("   [OK] Model exception handled gracefully with fallback random actions")
         else:
-            print("   [OK] Model exception handled gracefully")
+            logger.ok("   [OK] Model exception handled gracefully")
     else:
-        print(f"   [FAIL] Model exception should have been handled gracefully: {result}")
+        logger.error(f"   [FAIL] Model exception should have been handled gracefully: {result}")
     
     # Test 5: Model returns NaN
-    print("\nTest 5: Model returns NaN values")
+    logger.testing("Test 5: Model returns NaN values")
     test_game = TestGamePlayback('nan_output', 'normal')
     result, error, timed_out = test_game.test_single_game(timeout_seconds=10)
     
     if timed_out:
-        print("   [TIMEOUT] NaN output handling froze!")
+        logger.error("   [TIMEOUT] NaN output handling froze!")
         return False
     elif error:
-        print(f"   [WARN] ERROR: {error} (might be expected for NaN outputs)")
+        logger.warning(f"   [WARN] ERROR: {error} (might be expected for NaN outputs)")
     elif result:
-        print("   [OK] NaN output handled gracefully")
+        logger.ok("   [OK] NaN output handled gracefully")
     else:
-        print("   [FAIL] NaN output handling failed")
+        logger.error("   [FAIL] NaN output handling failed")
     
     return True
 
@@ -310,51 +310,51 @@ async def test_action_selection_scenarios():
 async def test_environment_scenarios():
     """Test various environment scenarios that might cause freezing"""
     
-    print("\n=== Environment Freeze Tests ===\n")
+    logger.info("\n=== Environment Freeze Tests ===\n")
     
     # Test 1: Stuck environment
-    print("Test 1: Stuck environment (repeating same state)")
+    logger.testing("Test 1: Stuck environment (repeating same state)")
     test_game = TestGamePlayback('normal', 'stuck')
     result, error, timed_out = test_game.test_single_game(timeout_seconds=20)
     
     if timed_out:
-        print("   [TIMEOUT] Stuck environment froze!")
+        logger.error("   [TIMEOUT] Stuck environment froze!")
         return False
     elif error:
-        print(f"   [WARN] ERROR: {error}")
+        logger.warning(f"   [WARN] ERROR: {error}")
     elif result and 'error' not in result:
-        print("   [OK] Stuck environment handled successfully")
-        print(f"       Game had {result.get('steps', 0)} steps")
+        logger.ok("   [OK] Stuck environment handled successfully")
+        logger.info(f"       Game had {result.get('steps', 0)} steps")
     else:
-        print(f"   [FAIL] Stuck environment failed: {result}")
+        logger.error(f"   [FAIL] Stuck environment failed: {result}")
     
     # Test 2: Infinite environment
-    print("\nTest 2: Infinite environment (never terminates)")
+    logger.testing("Test 2: Infinite environment (never terminates)")
     test_game = TestGamePlayback('normal', 'infinite')
     result, error, timed_out = test_game.test_single_game(timeout_seconds=15)
     
     if timed_out:
-        print("   [OK] Infinite environment timeout detected and handled correctly!")
+        logger.ok("   [OK] Infinite environment timeout detected and handled correctly!")
     elif error:
-        print(f"   [WARN] ERROR: {error}")
+        logger.warning(f"   [WARN] ERROR: {error}")
     elif result and 'error' not in result:
-        print("   [OK] Infinite environment handled successfully")
-        print(f"       Game had {result.get('steps', 0)} steps (should hit max_steps limit)")
+        logger.ok("   [OK] Infinite environment handled successfully")
+        logger.info(f"       Game had {result.get('steps', 0)} steps (should hit max_steps limit)")
     else:
-        print(f"   [FAIL] Infinite environment failed: {result}")
+        logger.error(f"   [FAIL] Infinite environment failed: {result}")
     
     # Test 3: Environment exception
-    print("\nTest 3: Environment throws exception")
+    logger.testing("Test 3: Environment throws exception")
     test_game = TestGamePlayback('normal', 'exception')
     result, error, timed_out = test_game.test_single_game(timeout_seconds=10)
     
     if timed_out:
-        print("   [TIMEOUT] Environment exception handling froze!")
+        logger.error("   [TIMEOUT] Environment exception handling froze!")
         return False
     elif result and 'error' in result:
-        print("   [OK] Environment exception handled gracefully")
+        logger.ok("   [OK] Environment exception handled gracefully")
     else:
-        print(f"   [FAIL] Environment exception should have failed: {result}")
+        logger.error(f"   [FAIL] Environment exception should have failed: {result}")
     
     return True
 
@@ -362,9 +362,9 @@ async def test_environment_scenarios():
 async def test_concurrent_games():
     """Test multiple concurrent games to detect race conditions"""
     
-    print("\n=== Concurrent Game Tests ===\n")
+    logger.info("\n=== Concurrent Game Tests ===\n")
     
-    print("Test: Multiple concurrent games")
+    logger.testing("Test: Multiple concurrent games")
     
     # Create multiple game instances
     games = [TestGamePlayback('normal', 'normal') for _ in range(3)]
@@ -381,26 +381,26 @@ async def test_concurrent_games():
     results, error = timeout_helper.run_with_timeout(run_all_games)
     
     if timeout_helper.timed_out:
-        print("   [TIMEOUT] Concurrent games froze!")
+        logger.error("   [TIMEOUT] Concurrent games froze!")
         return False
     elif error:
-        print(f"   [ERROR] {error}")
+        logger.error(f"   [ERROR] {error}")
         return False
     elif results:
         success_count = sum(1 for result, error, timed_out in results if not timed_out and not error)
-        print(f"   [OK] {success_count}/3 concurrent games completed successfully")
+        logger.ok(f"   [OK] {success_count}/3 concurrent games completed successfully")
         return success_count > 0
     else:
-        print("   [FAIL] Concurrent games failed")
+        logger.error("   [FAIL] Concurrent games failed")
         return False
 
 
 async def test_memory_usage():
     """Test for memory leaks during game playing"""
     
-    print("\n=== Memory Usage Tests ===\n")
+    logger.info("\n=== Memory Usage Tests ===\n")
     
-    print("Test: Memory usage during repeated games")
+    logger.testing("Test: Memory usage during repeated games")
     
     test_game = TestGamePlayback('normal', 'normal')
     initial_memory = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
@@ -410,27 +410,28 @@ async def test_memory_usage():
         result, error, timed_out = test_game.test_single_game(timeout_seconds=10)
         
         if timed_out:
-            print(f"   [TIMEOUT] Game {i+1} froze!")
+            logger.error(f"   [TIMEOUT] Game {i+1} froze!")
             return False
         
         current_memory = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
-        print(f"   Game {i+1}: {'[OK]' if not error else '[FAIL]'} Memory: {current_memory - initial_memory} bytes")
+        logger.info(f"   Game {i+1}: {'[OK]' if not error else '[FAIL]'} Memory: {current_memory - initial_memory} bytes")
     
     final_memory = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
     memory_increase = final_memory - initial_memory
     
     if memory_increase > 100 * 1024 * 1024:  # 100MB threshold
-        print(f"   [WARN] WARNING: Memory usage increased by {memory_increase/1024/1024:.2f}MB")
+        logger.warning(f"   [WARN] WARNING: Memory usage increased by {memory_increase/1024/1024:.2f}MB")
     else:
-        print(f"   [OK] Memory usage stable (increased by {memory_increase/1024/1024:.2f}MB)")
+        logger.ok(f"   [OK] Memory usage stable (increased by {memory_increase/1024/1024:.2f}MB)")
     
     return True
 
 
 async def main():
+    logger = TestLogger()
     """Run all game simulation tests"""
     
-    print("Testing game simulation scenarios that might cause server freezing...")
+    logger.info("Testing game simulation scenarios that might cause server freezing...")
     
     success = True
     
@@ -447,9 +448,9 @@ async def main():
     success &= await test_memory_usage()
     
     if success:
-        print("\n[OK] All game simulation tests passed!")
+        logger.success("All game simulation tests passed!")
     else:
-        print("\n[FAIL] Some game simulation tests failed!")
+        logger.error("Some game simulation tests failed!")
         return 1
     
     return 0

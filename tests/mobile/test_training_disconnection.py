@@ -405,7 +405,7 @@ async def main():
     with open("mobile_training_disconnection_test_results.json", "w") as f:
         json.dump(results, f, indent=2)
     
-    print(f"\nResults saved to mobile_training_disconnection_test_results.json")
+    logger.info(f"Results saved to results file")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

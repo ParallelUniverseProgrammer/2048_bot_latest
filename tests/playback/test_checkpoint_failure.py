@@ -594,10 +594,10 @@ async def main():
     results = await detector.run_complete_detection()
     
     # Print detailed results
-    print("\n" + "=" * 60)
-    print("DETAILED RESULTS")
-    print("=" * 60)
-    print(json.dumps(results, indent=2, default=str))
+    logger.separator()
+    logger.info("DETAILED RESULTS")
+    logger.info("=" * 60)
+    logger.info("Detailed results available in logs")
     
     return results
 

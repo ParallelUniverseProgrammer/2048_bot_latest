@@ -86,7 +86,7 @@ class MockWebSocketManager:
                 try:
                     await conn.websocket.send_text("test")
                 except Exception as e:
-                    print(f"Client send failed: {e}")
+                    logger.error(f"Client send failed: {e}")
                     
         elif self.failure_mode == "deadlock":
             # Simulate broadcast deadlock
@@ -103,7 +103,7 @@ class MockWebSocketManager:
                 try:
                     await conn.websocket.send_text("test")
                 except Exception as e:
-                    print(f"Client send failed: {e}")
+                    logger.error(f"Client send failed: {e}")
 
 class FreezeReproductionTest:
     """Test class to reproduce freezing issues"""
@@ -200,7 +200,7 @@ class FreezeReproductionTest:
     
     async def test_action_selection_infinite_loop(self):
         """Test for infinite loops in action selection"""
-        print("\n=== Testing Action Selection Infinite Loop ===")
+        logger.info("\n=== Testing Action Selection Infinite Loop ===")
         
         # Create a mock model that could cause issues
         class MockModel:
@@ -310,7 +310,7 @@ class FreezeReproductionTest:
     
     async def test_concurrent_operations(self):
         """Test concurrent operations that could cause deadlocks"""
-        print("\n=== Testing Concurrent Operations ===")
+        logger.info("\n=== Testing Concurrent Operations ===")
         
         start_time = time.time()
         try:

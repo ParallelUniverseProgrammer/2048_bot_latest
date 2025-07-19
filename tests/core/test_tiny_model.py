@@ -35,9 +35,9 @@ try:
     from app.models.model_config import ModelConfig
     from app.environment.gym_2048_env import Gym2048Env
 except ImportError as e:
-    print(f"Import error: {e}")
-    print(f"Backend path: {backend_path}")
-    print(f"Available in backend: {os.listdir(backend_path) if os.path.exists(backend_path) else 'Path does not exist'}")
+    logger.error(f"Import error: {e}")
+    logger.info(f"Backend path: {backend_path}")
+    logger.info(f"Available in backend: {os.listdir(backend_path) if os.path.exists(backend_path) else 'Path does not exist'}")
     raise
 
 def test_tiny_model():

@@ -524,8 +524,8 @@ async def main():
     results = await simulation.run_comprehensive_test_suite()
     
     # Output results as JSON for analysis
-    print("\nDETAILED RESULTS:")
-    print(json.dumps(results, indent=2, default=str))
+    logger.info("DETAILED RESULTS:")
+    logger.info("Detailed results available in logs")
 
 
 if __name__ == "__main__":

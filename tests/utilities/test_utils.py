@@ -83,78 +83,78 @@ class TestLogger:
     
     def info(self, message: str):
         """Log an info message"""
-        print(self._format_message(message, "INFO:", "blue"))
+        logger.info(self._format_message(message, "INFO:", "blue"))
     
     def ok(self, message: str):
         """Log a success message"""
-        print(self._format_message(message, "OK:", "green"))
+        logger.ok(self._format_message(message, "OK:", "green"))
     
     def warning(self, message: str):
         """Log a warning message"""
-        print(self._format_message(message, "WARNING:", "yellow"))
+        logger.warning(self._format_message(message, "WARNING:", "yellow"))
     
     def error(self, message: str):
         """Log an error message"""
-        print(self._format_message(message, "ERROR:", "red"))
+        logger.error(self._format_message(message, "ERROR:", "red"))
     
     def log(self, message: str):
         """Log a plain message"""
-        print(self._format_message(message))
+        logger.info(self._format_message(message))
     
     def debug(self, message: str):
         """Log a debug message"""
-        print(self._format_message(message, "DEBUG:", "cyan"))
+        logger.info(self._format_message(message, "DEBUG:", "cyan"))
     
     def game(self, message: str):
         """Log a game-related message"""
-        print(self._format_message(message, "GAME:", "magenta"))
+        logger.info(self._format_message(message, "GAME:", "magenta"))
     
     def find(self, message: str):
         """Log a find-related message"""
-        print(self._format_message(message, "FIND:", "cyan"))
+        logger.info(self._format_message(message, "FIND:", "cyan"))
     
     def status(self, message: str):
         """Log a status message"""
-        print(self._format_message(message, "STATUS:", "blue"))
+        logger.info(self._format_message(message, "STATUS:", "blue"))
     
     def starting(self, message: str):
         """Log a starting message"""
-        print(self._format_message(message, "STARTING:", "cyan"))
+        logger.info(self._format_message(message, "STARTING:", "cyan"))
     
     def running(self, message: str):
         """Log a running message"""
-        print(self._format_message(message, "RUNNING:", "blue"))
+        logger.info(self._format_message(message, "RUNNING:", "blue"))
     
     def controls(self, message: str):
         """Log a controls-related message"""
-        print(self._format_message(message, "CONTROLS:", "magenta"))
+        logger.info(self._format_message(message, "CONTROLS:", "magenta"))
     
     def playback(self, message: str):
         """Log a playback-related message"""
-        print(self._format_message(message, "PLAYBACK:", "cyan"))
+        logger.info(self._format_message(message, "PLAYBACK:", "cyan"))
     
     def testing(self, message: str):
         """Log a testing message"""
-        print(self._format_message(message, "TESTING:", "blue"))
+        logger.info(self._format_message(message, "TESTING:", "blue"))
     
     def success(self, message: str):
         """Log a success message"""
-        print(self._format_message(message, "SUCCESS:", "green"))
+        logger.ok(self._format_message(message, "SUCCESS:", "green"))
     
     def banner(self, message: str, width: int = 60):
         """Print a banner with consistent formatting"""
-        print(self._format_message(f"{self._get_color_code('bold')}{message}{self._get_color_code('reset')}"))
-        print(self._format_message("=" * width))
+        logger.info(self._format_message(f"{self._get_color_code('bold')}{message}{self._get_color_code('reset')}"))
+        logger.info(self._format_message("=" * width))
     
     def separator(self, width: int = 60):
         """Print a separator line"""
-        print(self._format_message("=" * width))
+        logger.info(self._format_message("=" * width))
     
     def section(self, message: str, width: int = 60):
         """Print a section header"""
-        print(self._format_message(""))
-        print(self._format_message(f"{self._get_color_code('bold')}{message}{self._get_color_code('reset')}"))
-        print(self._format_message("-" * len(message)))
+        logger.info(self._format_message(""))
+        logger.info(self._format_message(f"{self._get_color_code('bold')}{message}{self._get_color_code('reset')}"))
+        logger.info(self._format_message("-" * len(message)))
     
     def indent(self):
         """Increase indentation level"""
@@ -173,7 +173,7 @@ class TestLogger:
         if message:
             progress_msg += f" {message}"
         
-        print(self._format_message(progress_msg, "PROGRESS:", "cyan"))
+        logger.info(self._format_message(progress_msg, "PROGRESS:", "cyan"))
     
     def table_header(self, headers: List[str], widths: List[int] = None):
         """Print a table header"""
@@ -183,8 +183,8 @@ class TestLogger:
         header_line = " | ".join(h.ljust(w) for h, w in zip(headers, widths))
         separator_line = "-+-".join("-" * w for w in widths)
         
-        print(self._format_message(f"{self._get_color_code('bold')}{header_line}{self._get_color_code('reset')}"))
-        print(self._format_message(separator_line))
+        logger.info(self._format_message(f"{self._get_color_code('bold')}{header_line}{self._get_color_code('reset')}"))
+        logger.info(self._format_message(separator_line))
     
     def table_row(self, values: List[str], widths: List[int] = None):
         """Print a table row"""
@@ -192,29 +192,29 @@ class TestLogger:
             widths = [max(15, len(str(v))) for v in values]
         
         row_line = " | ".join(str(v).ljust(w) for v, w in zip(values, widths))
-        print(self._format_message(row_line))
+        logger.info(self._format_message(row_line))
     
     def summary_box(self, title: str, items: List[tuple], width: int = 60):
         """Print a summary box with title and items"""
-        print(self._format_message(""))
-        print(self._format_message("┌" + "─" * (width - 2) + "┐"))
+        logger.info(self._format_message(""))
+        logger.info(self._format_message("┌" + "─" * (width - 2) + "┐"))
         
         # Title
         title_line = f"│ {title.center(width - 4)} │"
-        print(self._format_message(f"{self._get_color_code('bold')}{title_line}{self._get_color_code('reset')}"))
-        print(self._format_message("├" + "─" * (width - 2) + "┤"))
+        logger.info(self._format_message(f"{self._get_color_code('bold')}{title_line}{self._get_color_code('reset')}"))
+        logger.info(self._format_message("├" + "─" * (width - 2) + "┤"))
         
         # Items
         for label, value in items:
             item_line = f"│ {label}: {value}".ljust(width - 1) + "│"
-            print(self._format_message(item_line))
+            logger.info(self._format_message(item_line))
         
-        print(self._format_message("└" + "─" * (width - 2) + "┘"))
+        logger.info(self._format_message("└" + "─" * (width - 2) + "┘"))
     
     def step(self, step_num: int, total_steps: int, message: str):
         """Log a step in a multi-step process"""
         step_msg = f"Step {step_num}/{total_steps}: {message}"
-        print(self._format_message(step_msg, "STEP:", "cyan"))
+        logger.info(self._format_message(step_msg, "STEP:", "cyan"))
 
 class BackendTester:
     """Common backend testing functionality with enhanced availability checking"""

@@ -90,7 +90,7 @@ async def _run_playback(websocket_manager, runtime: float = 6.0) -> CheckpointPl
         await asyncio.wait_for(task, timeout=5)
     except asyncio.TimeoutError:
         # Task did not finish -> hang detected
-        print("[TEST] Playback task hung during shutdown!")
+        logger.error("[TEST] Playback task hung during shutdown!")
     return playback
 
 def main():

@@ -46,87 +46,87 @@ def test_api_endpoint(endpoint: str, method: str = "GET", data: Dict[str, Any] =
 
 def test_checkpoint_endpoints():
     """Test all checkpoint-related endpoints"""
-    print("FIND: Testing Checkpoint Endpoints")
-    print("=" * 50)
+    logger.find("Testing Checkpoint Endpoints")
+    logger.separator()
     
     # Test 1: List checkpoints
-    print("\n1. Testing GET /checkpoints")
+    logger.testing("1. Testing GET /checkpoints")
     result = test_api_endpoint("/checkpoints")
-    print(f"   Status: {result.get('status_code', 'N/A')}")
-    print(f"   OK: {result.get('ok', False)}")
-    print(f"   Response Time: {result.get('response_time', 'N/A')}s")
+    logger.info(f"   Status: {result.get('status_code', 'N/A')}")
+    logger.ok(f"   OK: {result.get('ok', False)}")
+    logger.info(f"   Response Time: {result.get('response_time', 'N/A')}s")
     if result.get('error'):
-        print(f"   Error: {result['error']}")
+        logger.error(f"   Error: {result['error']}")
     elif result.get('data'):
-        print(f"   Checkpoints Found: {len(result['data'])}")
+        logger.info(f"   Checkpoints Found: {len(result['data'])}")
         if result['data']:
-            print(f"   First Checkpoint: {result['data'][0].get('id', 'N/A')}")
+            logger.info(f"   First Checkpoint: {result['data'][0].get('id', 'N/A')}")
     
     # Test 2: Get checkpoint stats
-    print("\n2. Testing GET /checkpoints/stats")
+    logger.testing("2. Testing GET /checkpoints/stats")
     result = test_api_endpoint("/checkpoints/stats")
-    print(f"   Status: {result.get('status_code', 'N/A')}")
-    print(f"   OK: {result.get('ok', False)}")
-    print(f"   Response Time: {result.get('response_time', 'N/A')}s")
+    logger.info(f"   Status: {result.get('status_code', 'N/A')}")
+    logger.ok(f"   OK: {result.get('ok', False)}")
+    logger.info(f"   Response Time: {result.get('response_time', 'N/A')}s")
     if result.get('error'):
-        print(f"   Error: {result['error']}")
+        logger.error(f"   Error: {result['error']}")
     elif result.get('data'):
-        print(f"   Stats: {result['data']}")
+        logger.info(f"   Stats: {result['data']}")
     
     # Test 3: Get playback status
-    print("\n3. Testing GET /checkpoints/playback/status")
+    logger.testing("3. Testing GET /checkpoints/playback/status")
     result = test_api_endpoint("/checkpoints/playback/status")
-    print(f"   Status: {result.get('status_code', 'N/A')}")
-    print(f"   OK: {result.get('ok', False)}")
-    print(f"   Response Time: {result.get('response_time', 'N/A')}s")
+    logger.info(f"   Status: {result.get('status_code', 'N/A')}")
+    logger.ok(f"   OK: {result.get('ok', False)}")
+    logger.info(f"   Response Time: {result.get('response_time', 'N/A')}s")
     if result.get('error'):
-        print(f"   Error: {result['error']}")
+        logger.error(f"   Error: {result['error']}")
     elif result.get('data'):
-        print(f"   Playback Status: {result['data']}")
+        logger.info(f"   Playback Status: {result['data']}")
     
     # Test 4: Get current playback data
-    print("\n4. Testing GET /checkpoints/playback/current")
+    logger.testing("4. Testing GET /checkpoints/playback/current")
     result = test_api_endpoint("/checkpoints/playback/current")
-    print(f"   Status: {result.get('status_code', 'N/A')}")
-    print(f"   OK: {result.get('ok', False)}")
-    print(f"   Response Time: {result.get('response_time', 'N/A')}s")
+    logger.info(f"   Status: {result.get('status_code', 'N/A')}")
+    logger.ok(f"   OK: {result.get('ok', False)}")
+    logger.info(f"   Response Time: {result.get('response_time', 'N/A')}s")
     if result.get('error'):
-        print(f"   Error: {result['error']}")
+        logger.error(f"   Error: {result['error']}")
     elif result.get('data'):
-        print(f"   Has Data: {result['data'].get('has_data', False)}")
+        logger.info(f"   Has Data: {result['data'].get('has_data', False)}")
         if result['data'].get('error'):
-            print(f"   Error: {result['data']['error']}")
+            logger.error(f"   Error: {result['data']['error']}")
 
 def test_training_status():
     """Test training status endpoints"""
-    print("\nFIND: Testing Training Status")
-    print("=" * 50)
+    logger.find("Testing Training Status")
+    logger.separator()
     
     # Test training status
-    print("\n1. Testing GET /training/status")
+    logger.testing("1. Testing GET /training/status")
     result = test_api_endpoint("/training/status")
-    print(f"   Status: {result.get('status_code', 'N/A')}")
-    print(f"   OK: {result.get('ok', False)}")
-    print(f"   Response Time: {result.get('response_time', 'N/A')}s")
+    logger.info(f"   Status: {result.get('status_code', 'N/A')}")
+    logger.ok(f"   OK: {result.get('ok', False)}")
+    logger.info(f"   Response Time: {result.get('response_time', 'N/A')}s")
     if result.get('error'):
-        print(f"   Error: {result['error']}")
+        logger.error(f"   Error: {result['error']}")
     elif result.get('data'):
-        print(f"   Training Status: {result['data']}")
+        logger.info(f"   Training Status: {result['data']}")
 
 def test_websocket_connection():
     """Test WebSocket connection"""
-    print("\nFIND: Testing WebSocket Connection")
-    print("=" * 50)
+    logger.find("Testing WebSocket Connection")
+    logger.separator()
     
     try:
         import websocket
         ws = websocket.create_connection(f"{BASE_URL.replace('http', 'ws')}/ws", timeout=10)
-        print("   OK: WebSocket connection successful")
+        logger.ok("   OK: WebSocket connection successful")
         ws.close()
     except ImportError:
-        print("   WARNING:  websocket-client not installed, skipping WebSocket test")
+        logger.warning("   WARNING:  websocket-client not installed, skipping WebSocket test")
     except Exception as e:
-        print(f"   ERROR: WebSocket connection failed: {str(e)}")
+        logger.error(f"   ERROR: WebSocket connection failed: {str(e)}")
 
 def main():
     """Run all tests with enhanced backend availability checking"""
@@ -189,10 +189,10 @@ def main():
     
     # Print next steps
     logger.info("Next steps:")
-    print("   1. Check if any endpoints are timing out")
-    print("   2. Verify checkpoint files exist in backend/checkpoints/")
-    print("   3. Check backend logs for errors")
-    print("   4. Test frontend checkpoint loading with browser dev tools")
+    logger.info("   1. Check if any endpoints are timing out")
+    logger.info("   2. Verify checkpoint files exist in backend/checkpoints/")
+    logger.info("   3. Check backend logs for errors")
+    logger.info("   4. Test frontend checkpoint loading with browser dev tools")
 
 if __name__ == "__main__":
     main() 
