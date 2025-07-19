@@ -37,6 +37,8 @@ from enum import Enum
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
+from tests.utilities.test_utils import TestLogger
+
 class TestStatus(Enum):
     PASSED = "PASSED"
     FAILED = "FAILED"
@@ -55,6 +57,7 @@ class CheckpointTestSuite:
     """Comprehensive test suite for checkpoint system"""
     
     def __init__(self, base_url: str = "http://localhost:8000"):
+        self.logger = TestLogger()
         self.base_url = base_url
         self.results: List[TestResult] = []
         self.checkpoints: List[Dict[str, Any]] = []
@@ -104,18 +107,19 @@ class CheckpointTestSuite:
     
     def print_result(self, result: TestResult):
         """Print test result with formatting"""
-        status_emoji = {
-            TestStatus.PASSED: "OK:",
-            TestStatus.FAILED: "ERROR:",
-            TestStatus.SKIPPED: "NEXT:",
-            TestStatus.TIMEOUT: "ALARM:"
-        }
-        
-        print(f"{status_emoji[result.status]} {result.name} ({result.duration:.2f}s)")
+        if result.status == TestStatus.PASSED:
+            self.logger.ok(f"{result.name} ({result.duration:.2f}s)")
+        elif result.status == TestStatus.FAILED:
+            self.logger.error(f"{result.name} ({result.duration:.2f}s)")
+        elif result.status == TestStatus.SKIPPED:
+            self.logger.info(f"{result.name} ({result.duration:.2f}s)")
+        elif result.status == TestStatus.TIMEOUT:
+            self.logger.warning(f"{result.name} ({result.duration:.2f}s)")
+            
         if result.error:
-            print(f"   Error: {result.error}")
+            self.logger.error(f"   Error: {result.error}")
         if result.details:
-            print(f"   Details: {result.details}")
+            self.logger.info(f"   Details: {result.details}")
     
     # ============================================================================
     # BACKEND API TESTS
@@ -466,8 +470,8 @@ class CheckpointTestSuite:
     
     def run_backend_tests(self) -> bool:
         """Run all backend API tests"""
-        print("\nRUNNING: Backend API Tests")
-        print("=" * 50)
+        self.logger.info("RUNNING: Backend API Tests")
+        self.logger.separator()
         
         tests = [
             ("Backend Connectivity", self.test_backend_connectivity),
@@ -486,8 +490,8 @@ class CheckpointTestSuite:
     
     def run_checkpoint_loading_tests(self) -> bool:
         """Run checkpoint loading tests"""
-        print("\nSTATUS: Checkpoint Loading Tests")
-        print("=" * 50)
+        self.logger.info("STATUS: Checkpoint Loading Tests")
+        self.logger.separator()
         
         tests = [
             ("Checkpoint Metadata Validation", self.test_checkpoint_metadata_validation),
@@ -505,8 +509,8 @@ class CheckpointTestSuite:
     
     async def run_playback_tests(self) -> bool:
         """Run game playback tests"""
-        print("\nGAME: Game Playback Tests")
-        print("=" * 50)
+        self.logger.info("GAME: Game Playback Tests")
+        self.logger.separator()
         
         tests = [
             ("Single Game Playback", self.test_single_game_playback),
@@ -525,8 +529,8 @@ class CheckpointTestSuite:
     
     def run_error_handling_tests(self) -> bool:
         """Run error handling tests"""
-        print("\nWARNING: Error Handling Tests")
-        print("=" * 50)
+        self.logger.warning("WARNING: Error Handling Tests")
+        self.logger.separator()
         
         tests = [
             ("Invalid Checkpoint Access", self.test_invalid_checkpoint_access),
@@ -543,8 +547,8 @@ class CheckpointTestSuite:
     
     def run_frontend_integration_tests(self) -> bool:
         """Run frontend integration tests"""
-        print("\nSTATUS: Frontend Integration Tests")
-        print("=" * 50)
+        self.logger.info("STATUS: Frontend Integration Tests")
+        self.logger.separator()
         
         tests = [
             ("Frontend Checkpoint Display", self.test_frontend_checkpoint_display),
@@ -560,16 +564,16 @@ class CheckpointTestSuite:
     
     async def run_comprehensive_test_suite(self) -> bool:
         """Run the complete test suite"""
-        print("STATUS: Comprehensive Checkpoint System Test Suite")
-        print("=" * 80)
-        print("Testing complete checkpoint functionality including:")
-        print("- Backend API endpoints")
-        print("- Checkpoint loading and validation")
-        print("- Complete game playback")
-        print("- Performance metrics")
-        print("- Error handling")
-        print("- Frontend integration")
-        print("=" * 80)
+        self.logger.info("STATUS: Comprehensive Checkpoint System Test Suite")
+        self.logger.separator()
+        self.logger.info("Testing complete checkpoint functionality including:")
+        self.logger.info("- Backend API endpoints")
+        self.logger.info("- Checkpoint loading and validation")
+        self.logger.info("- Complete game playback")
+        self.logger.info("- Performance metrics")
+        self.logger.info("- Error handling")
+        self.logger.info("- Frontend integration")
+        self.logger.separator()
         
         # Run all test categories
         backend_ok = self.run_backend_tests()
@@ -585,9 +589,9 @@ class CheckpointTestSuite:
     
     def print_summary(self):
         """Print comprehensive test summary"""
-        print("\n" + "=" * 80)
-        print("COMPREHENSIVE TEST SUMMARY")
-        print("=" * 80)
+        self.logger.separator()
+        self.logger.info("COMPREHENSIVE TEST SUMMARY")
+        self.logger.separator()
         
         passed = sum(1 for r in self.results if r.status == TestStatus.PASSED)
         failed = sum(1 for r in self.results if r.status == TestStatus.FAILED)
@@ -595,81 +599,96 @@ class CheckpointTestSuite:
         skipped = sum(1 for r in self.results if r.status == TestStatus.SKIPPED)
         total = len(self.results)
         
-        print(f"Total Tests: {total}")
-        print(f"OK: Passed: {passed}")
-        print(f"ERROR: Failed: {failed}")
-        print(f"ALARM: Timeout: {timeout}")
-        print(f"NEXT: Skipped: {skipped}")
-        print()
+        self.logger.info(f"Total Tests: {total}")
+        self.logger.info(f"OK: Passed: {passed}")
+        self.logger.error(f"ERROR: Failed: {failed}")
+        self.logger.warning(f"ALARM: Timeout: {timeout}")
+        self.logger.info(f"NEXT: Skipped: {skipped}")
+        self.logger.separator()
         
         if failed > 0:
-            print("FAILED TESTS:")
+            self.logger.error("FAILED TESTS:")
             for result in self.results:
                 if result.status == TestStatus.FAILED:
-                    print(f"  ERROR: {result.name}: {result.error}")
-            print()
+                    self.logger.error(f"  ERROR: {result.name}: {result.error}")
+            self.logger.separator()
         
         if timeout > 0:
-            print("TIMEOUT TESTS:")
+            self.logger.warning("TIMEOUT TESTS:")
             for result in self.results:
                 if result.status == TestStatus.TIMEOUT:
-                    print(f"  ALARM: {result.name}")
-            print()
+                    self.logger.warning(f"  ALARM: {result.name}")
+            self.logger.separator()
         
         success_rate = (passed / total * 100) if total > 0 else 0
-        print(f"Success Rate: {success_rate:.1f}%")
+        self.logger.info(f"Success Rate: {success_rate:.1f}%")
         
         if passed == total:
-            print("\nSUCCESS: ALL TESTS PASSED! Checkpoint system is working correctly.")
+            self.logger.ok("\nSUCCESS: ALL TESTS PASSED! Checkpoint system is working correctly.")
         else:
-            print(f"\nWARNING: {failed + timeout} tests failed. Checkpoint system needs attention.")
+            self.logger.warning(f"\nWARNING: {failed + timeout} tests failed. Checkpoint system needs attention.")
         
         # Performance insights
         performance_tests = [r for r in self.results if "Performance" in r.name]
         if performance_tests:
-            print("\nSUMMARY: Performance Insights:")
+            self.logger.info("\nSUMMARY: Performance Insights:")
             for test in performance_tests:
                 if test.details and "performance_ok" in test.details:
                     status = "OK:" if test.details["performance_ok"] else "WARNING:"
-                    print(f"  {status} {test.name}: {'Good' if test.details['performance_ok'] else 'Needs attention'}")
+                    self.logger.info(f"  {status} {test.name}: {'Good' if test.details['performance_ok'] else 'Needs attention'}")
 
-async def main():
-    """Main entry point for comprehensive testing"""
-    import argparse
+def main():
+    """Main entry point"""
+    logger = TestLogger()
+    logger.banner("Comprehensive Checkpoint System Test Suite", 60)
     
-    parser = argparse.ArgumentParser(description='Comprehensive Checkpoint System Test Suite')
-    parser.add_argument('--url', default='http://localhost:8000', help='Backend URL')
-    parser.add_argument('--quick', action='store_true', help='Run quick tests only')
-    
-    args = parser.parse_args()
-    
-    # Check if backend is running
-    try:
-        response = requests.get(args.url, timeout=5)
-        if response.status_code != 200:
-            print(f"ERROR: Backend not accessible at {args.url}")
-            print("Please start the backend server first.")
+    async def run_tests():
+        import argparse
+        
+        parser = argparse.ArgumentParser(description='Comprehensive Checkpoint System Test Suite')
+        parser.add_argument('--url', default='http://localhost:8000', help='Backend URL')
+        parser.add_argument('--quick', action='store_true', help='Run quick tests only')
+        
+        args = parser.parse_args()
+        
+        # Check if backend is running
+        try:
+            response = requests.get(args.url, timeout=5)
+            if response.status_code != 200:
+                logger.error(f"Backend not accessible at {args.url}")
+                logger.info("Please start the backend server first.")
+                return False
+        except Exception:
+            logger.error(f"Cannot connect to backend at {args.url}")
+            logger.info("Please start the backend server first.")
             return False
-    except Exception:
-        print(f"ERROR: Cannot connect to backend at {args.url}")
-        print("Please start the backend server first.")
+        
+        logger.ok(f"Backend accessible at {args.url}")
+        
+        # Run tests
+        test_suite = CheckpointTestSuite(args.url)
+        
+        if args.quick:
+            # Run basic tests only
+            backend_ok = test_suite.run_backend_tests()
+            loading_ok = test_suite.run_checkpoint_loading_tests()
+            test_suite.print_summary()
+            return backend_ok and loading_ok
+        else:
+            # Run comprehensive test suite
+            return await test_suite.run_comprehensive_test_suite()
+    
+    try:
+        success = asyncio.run(run_tests())
+        if success:
+            logger.success("Comprehensive test suite completed successfully")
+        else:
+            logger.error("Comprehensive test suite failed")
+        return success
+    except Exception as e:
+        logger.error(f"Test suite failed: {e}")
         return False
-    
-    print(f"OK: Backend accessible at {args.url}")
-    
-    # Run tests
-    test_suite = CheckpointTestSuite(args.url)
-    
-    if args.quick:
-        # Run basic tests only
-        backend_ok = test_suite.run_backend_tests()
-        loading_ok = test_suite.run_checkpoint_loading_tests()
-        test_suite.print_summary()
-        return backend_ok and loading_ok
-    else:
-        # Run comprehensive test suite
-        return await test_suite.run_comprehensive_test_suite()
 
 if __name__ == "__main__":
-    success = asyncio.run(main())
+    success = main()
     sys.exit(0 if success else 1) 

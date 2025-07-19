@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
 """
-Browser simulation test to reproduce frontend-backend interaction freezing issues.
-This test simulates real browser behavior including resource constraints and timing issues.
+Browser Simulation Test
+======================
+
+This test simulates real browser behavior to reproduce frontend-backend interaction 
+freezing issues. It includes:
+- Browser resource constraints (memory pressure, CPU throttling)
+- Tab switching behavior (background/foreground processing)
+- Network connectivity issues
+- Frontend state update storms
+- Memory leak detection
+
+This test is critical for identifying performance issues that occur in real browser environments.
 """
 
 import sys
@@ -19,6 +29,7 @@ import gc
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
+from tests.utilities.test_utils import TestLogger
 from backend.app.models.checkpoint_playback import CheckpointPlayback
 from backend.app.models.checkpoint_metadata import CheckpointManager
 from backend.app.api.websocket_manager import WebSocketManager
@@ -26,7 +37,8 @@ from backend.app.api.websocket_manager import WebSocketManager
 class BrowserSimulatedWebSocket:
     """WebSocket that simulates real browser behavior"""
     
-    def __init__(self, slow_processing=False, memory_pressure=False, tab_switching=False):
+    def __init__(self, logger: TestLogger, slow_processing=False, memory_pressure=False, tab_switching=False):
+        self.logger = logger
         self.slow_processing = slow_processing
         self.memory_pressure = memory_pressure
         self.tab_switching = tab_switching
@@ -51,7 +63,7 @@ class BrowserSimulatedWebSocket:
         if self.memory_pressure:
             self.memory_usage += len(message)
             if self.memory_usage > self.max_memory:
-                print(f"WARNING:  Memory pressure detected: {self.memory_usage / 1024 / 1024:.1f}MB")
+                self.logger.warning(f"Memory pressure detected: {self.memory_usage / 1024 / 1024:.1f}MB")
                 # Simulate garbage collection pause
                 await asyncio.sleep(0.1)
                 self.memory_usage = self.memory_usage // 2  # Simulate GC
@@ -137,14 +149,15 @@ class BrowserSimulatedWebSocket:
     def simulate_tab_switch(self, visible: bool):
         """Simulate browser tab switching"""
         self.is_visible = visible
-        print(f"REFRESH: Tab switched: {'visible' if visible else 'background'}")
+        self.logger.info(f"Tab switched: {'visible' if visible else 'background'}")
 
 class BrowserSimulationTest:
     """Test class that simulates real browser conditions"""
     
     def __init__(self):
+        self.logger = TestLogger()
         checkpoint_dir = os.getenv('CHECKPOINTS_DIR', os.path.join(os.path.dirname(__file__), '..', 'backend', 'checkpoints'))
-        print(f"[test_browser_simulation] Using checkpoint_dir: {checkpoint_dir}")
+        self.logger.info(f"Using checkpoint_dir: {checkpoint_dir}")
         self.checkpoint_manager = CheckpointManager(checkpoint_dir)
         self.websocket_manager = WebSocketManager()
         self.playback = None
@@ -157,17 +170,17 @@ class BrowserSimulationTest:
         
         for scenario in scenarios:
             if scenario == "normal":
-                client = BrowserSimulatedWebSocket()
+                client = BrowserSimulatedWebSocket(self.logger)
             elif scenario == "slow_processing":
-                client = BrowserSimulatedWebSocket(slow_processing=True)
+                client = BrowserSimulatedWebSocket(self.logger, slow_processing=True)
             elif scenario == "memory_pressure":
-                client = BrowserSimulatedWebSocket(memory_pressure=True)
+                client = BrowserSimulatedWebSocket(self.logger, memory_pressure=True)
             elif scenario == "tab_switching":
-                client = BrowserSimulatedWebSocket(tab_switching=True)
+                client = BrowserSimulatedWebSocket(self.logger, tab_switching=True)
             elif scenario == "combined_stress":
-                client = BrowserSimulatedWebSocket(slow_processing=True, memory_pressure=True, tab_switching=True)
+                client = BrowserSimulatedWebSocket(self.logger, slow_processing=True, memory_pressure=True, tab_switching=True)
             else:
-                client = BrowserSimulatedWebSocket()
+                client = BrowserSimulatedWebSocket(self.logger)
                 
             await self.websocket_manager.connect(client, f"browser-sim-{scenario}")
             clients.append(client)
@@ -177,7 +190,7 @@ class BrowserSimulationTest:
         
     async def simulate_frontend_state_storm(self):
         """Simulate frontend state update storms that could cause freezing"""
-        print("STATUS:  Simulating frontend state update storm...")
+        self.logger.info("Simulating frontend state update storm...")
         
         # Simulate rapid state updates like in a real React app
         tasks = []
@@ -195,7 +208,7 @@ class BrowserSimulationTest:
             
     async def simulate_resource_constraints(self):
         """Simulate system resource constraints"""
-        print("STATUS: Simulating resource constraints...")
+        self.logger.info("Simulating resource constraints...")
         
         # Simulate memory pressure
         memory_hog = []
@@ -225,7 +238,7 @@ class BrowserSimulationTest:
             
     async def simulate_network_issues(self):
         """Simulate network connectivity issues"""
-        print("STATUS: Simulating network issues...")
+        self.logger.info("Simulating network issues...")
         
         # Simulate intermittent connectivity
         for client in self.simulated_clients:
@@ -234,7 +247,7 @@ class BrowserSimulationTest:
                 
     async def simulate_tab_switching_behavior(self):
         """Simulate browser tab switching behavior"""
-        print("REFRESH: Simulating tab switching behavior...")
+        self.logger.info("Simulating tab switching behavior...")
         
         # Switch tabs to background
         for client in self.simulated_clients:
@@ -248,16 +261,16 @@ class BrowserSimulationTest:
             if hasattr(client, 'simulate_tab_switch'):
                 client.simulate_tab_switch(True)
                 
-    async def test_checkpoint_playback_under_stress(self, checkpoint_id: str):
+    async def test_checkpoint_playback_under_stress(self, checkpoint_id: str) -> tuple[bool, str]:
         """Test checkpoint playback under various stress conditions"""
-        print(f"\nTESTING: Testing checkpoint playback under stress: {checkpoint_id}")
+        self.logger.info(f"Testing checkpoint playback under stress: {checkpoint_id}")
         
         try:
             # Create playback instance
             self.playback = CheckpointPlayback(self.checkpoint_manager)
             
             # Load checkpoint
-            print("Loading checkpoint...")
+            self.logger.info("Loading checkpoint...")
             success = self.playback.load_checkpoint(checkpoint_id)
             if not success:
                 return False, "Failed to load checkpoint"
@@ -265,10 +278,10 @@ class BrowserSimulationTest:
             # Create simulated browser clients
             scenarios = ["normal", "slow_processing", "memory_pressure", "tab_switching", "combined_stress"]
             clients = await self.create_simulated_browser_clients(scenarios)
-            print(f"Created {len(clients)} simulated browser clients")
+            self.logger.ok(f"Created {len(clients)} simulated browser clients")
             
             # Start playback
-            print("Starting live playback...")
+            self.logger.info("Starting live playback...")
             playback_task = asyncio.create_task(
                 self.playback.start_live_playback(self.websocket_manager)
             )
@@ -289,7 +302,7 @@ class BrowserSimulationTest:
                 return True, "Completed successfully"
                 
             except asyncio.TimeoutError:
-                print("ALARM: Test timed out - potential freeze detected!")
+                self.logger.error("Test timed out - potential freeze detected!")
                 
                 # Try to stop playback gracefully
                 self.playback.stop_playback()
@@ -304,18 +317,18 @@ class BrowserSimulationTest:
             
     async def test_memory_leak_detection(self):
         """Test for memory leaks in the playback system"""
-        print("\nFIND: Testing for memory leaks...")
+        self.logger.info("Testing for memory leaks...")
         
         checkpoints = self.checkpoint_manager.list_checkpoints()
         if not checkpoints:
-            print("No checkpoints available")
+            self.logger.warning("No checkpoints available")
             return
             
         checkpoint_id = checkpoints[0].id
         
         # Run multiple playback cycles to detect memory leaks
         for cycle in range(3):
-            print(f"Memory leak test cycle {cycle + 1}/3")
+            self.logger.info(f"Memory leak test cycle {cycle + 1}/3")
             
             # Force garbage collection
             gc.collect()
@@ -326,7 +339,7 @@ class BrowserSimulationTest:
             
             if success:
                 # Create client
-                client = BrowserSimulatedWebSocket(memory_pressure=True)
+                client = BrowserSimulatedWebSocket(self.logger, memory_pressure=True)
                 await self.websocket_manager.connect(client, f"memory-test-{cycle}")
                 
                 # Run short playback
@@ -345,61 +358,76 @@ class BrowserSimulationTest:
                         
                 # Check simulated memory usage
                 if hasattr(client, 'memory_usage'):
-                    print(f"Cycle {cycle + 1} memory usage: {client.memory_usage / 1024 / 1024:.1f}MB")
+                    self.logger.info(f"Cycle {cycle + 1} memory usage: {client.memory_usage / 1024 / 1024:.1f}MB")
                     
                 # Disconnect client
                 self.websocket_manager.disconnect(client)
                 
             await asyncio.sleep(1.0)
             
-    async def run_all_browser_simulation_tests(self):
+    async def run_all_browser_simulation_tests(self) -> bool:
         """Run all browser simulation tests"""
-        print("STATUS: Starting Browser Simulation Tests")
-        print("=" * 60)
+        self.logger.banner("Browser Simulation Tests", 60)
         
-        checkpoints = self.checkpoint_manager.list_checkpoints()
-        if not checkpoints:
-            print("No checkpoints available for testing")
-            return
+        try:
+            checkpoints = self.checkpoint_manager.list_checkpoints()
+            if not checkpoints:
+                self.logger.error("No checkpoints available for testing")
+                return False
+                
+            results = []
             
-        results = []
-        
-        # Test first checkpoint under stress
-        checkpoint_id = checkpoints[0].id
-        print(f"Testing checkpoint: {checkpoint_id}")
-        
-        start_time = time.time()
-        success, message = await self.test_checkpoint_playback_under_stress(checkpoint_id)
-        duration = time.time() - start_time
-        
-        results.append({
-            'test': 'Stress Test',
-            'checkpoint': checkpoint_id,
-            'success': success,
-            'duration': duration,
-            'message': message
-        })
-        
-        # Test for memory leaks
-        await self.test_memory_leak_detection()
-        
-        # Summary
-        print("\n" + "=" * 60)
-        print("SUMMARY: Browser Simulation Test Summary:")
-        print("=" * 60)
-        
-        for result in results:
-            status = "OK: PASS" if result['success'] else "ERROR: FAIL"
-            print(f"{status} {result['test']}: {result['duration']:.2f}s")
-            print(f"    Message: {result['message']}")
+            # Test first checkpoint under stress
+            checkpoint_id = checkpoints[0].id
+            self.logger.info(f"Testing checkpoint: {checkpoint_id}")
             
-        print("\nTARGET: Browser Simulation Tests Complete")
-        print("These tests simulate real browser conditions that could cause freezing.")
+            start_time = time.time()
+            success, message = await self.test_checkpoint_playback_under_stress(checkpoint_id)
+            duration = time.time() - start_time
+            
+            results.append({
+                'test': 'Stress Test',
+                'checkpoint': checkpoint_id,
+                'success': success,
+                'duration': duration,
+                'message': message
+            })
+            
+            # Test for memory leaks
+            await self.test_memory_leak_detection()
+            
+            # Summary
+            self.logger.banner("Browser Simulation Test Summary", 60)
+            
+            all_passed = True
+            for result in results:
+                if result['success']:
+                    self.logger.ok(f"{result['test']}: {result['duration']:.2f}s")
+                else:
+                    self.logger.error(f"{result['test']}: {result['duration']:.2f}s")
+                    all_passed = False
+                self.logger.info(f"Message: {result['message']}")
+                
+            self.logger.info("Browser Simulation Tests Complete")
+            return all_passed
+            
+        except Exception as e:
+            self.logger.error(f"Browser simulation test failed: {e}")
+            return False
 
 async def main():
-    """Main test runner"""
+    """Main entry point for browser simulation tests"""
+    logger = TestLogger()
+    logger.banner("Browser Simulation Test Suite", 60)
+    
     test = BrowserSimulationTest()
-    await test.run_all_browser_simulation_tests()
+    success = await test.run_all_browser_simulation_tests()
+    
+    if success:
+        logger.success("BROWSER SIMULATION TESTS PASSED!")
+    else:
+        logger.error("BROWSER SIMULATION TESTS FAILED!")
+        sys.exit(1)
 
 if __name__ == "__main__":
     asyncio.run(main()) 

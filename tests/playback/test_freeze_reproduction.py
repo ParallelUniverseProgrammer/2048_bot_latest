@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
 """
+Freeze Reproduction Test Suite
+==============================
+
 Focused test to reproduce the server freezing issue during checkpoint playback.
 This test targets the most likely culprits identified in our analysis.
+
+The test covers:
+- WebSocket broadcast deadlock scenarios
+- Action selection infinite loops
+- Checkpoint loading issues
+- Concurrent operation conflicts
+- Resource exhaustion conditions
 """
 
 import sys
@@ -16,6 +26,7 @@ from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
+from tests.utilities.test_utils import TestLogger
 from backend.app.models.checkpoint_playback import CheckpointPlayback
 from backend.app.models.checkpoint_metadata import CheckpointManager
 from backend.app.api.websocket_manager import WebSocketManager
@@ -71,7 +82,6 @@ class MockWebSocketManager:
         
         if self.failure_mode == "slow_clients":
             # Simulate slow clients that cause broadcast to hang
-            print(f"Broadcasting message {self.broadcast_count} to {len(self.connections)} clients...")
             for conn in self.connections:
                 try:
                     await conn.websocket.send_text("test")
@@ -80,13 +90,11 @@ class MockWebSocketManager:
                     
         elif self.failure_mode == "deadlock":
             # Simulate broadcast deadlock
-            print(f"Simulating broadcast deadlock on message {self.broadcast_count}")
             await asyncio.sleep(30.0)  # This will cause the test to hang
             
         elif self.failure_mode == "timeout":
             # Simulate timeout after some broadcasts
             if self.broadcast_count > 5:
-                print(f"Simulating broadcast timeout on message {self.broadcast_count}")
                 await asyncio.sleep(10.0)
                 
         else:
@@ -101,8 +109,9 @@ class FreezeReproductionTest:
     """Test class to reproduce freezing issues"""
     
     def __init__(self):
+        self.logger = TestLogger()
         checkpoint_dir = os.getenv('CHECKPOINTS_DIR', os.path.join(os.path.dirname(__file__), '..', 'backend', 'checkpoints'))
-        print(f"[test_freeze_reproduction] Using checkpoint_dir: {checkpoint_dir}")
+        self.logger.info(f"Using checkpoint_dir: {checkpoint_dir}")
         self.checkpoint_manager = CheckpointManager(checkpoint_dir)
         self.test_results = []
         
@@ -116,13 +125,16 @@ class FreezeReproductionTest:
             'timestamp': time.time()
         }
         self.test_results.append(result)
-        print(f"{'OK:' if success else 'ERROR:'} {test_name}: {duration:.2f}s")
-        if error:
-            print(f"   Error: {error}")
+        if success:
+            self.logger.ok(f"{test_name}: {duration:.2f}s")
+        else:
+            self.logger.error(f"{test_name}: {duration:.2f}s")
+            if error:
+                self.logger.error(f"   Error: {error}")
             
     async def test_websocket_broadcast_deadlock(self):
         """Test WebSocket broadcast deadlock scenario"""
-        print("\n=== Testing WebSocket Broadcast Deadlock ===")
+        self.logger.banner("Testing WebSocket Broadcast Deadlock", 60)
         
         # Test 1: Normal broadcast
         start_time = time.time()
@@ -244,16 +256,16 @@ class FreezeReproductionTest:
     
     async def test_checkpoint_loading_issues(self):
         """Test checkpoint loading for potential issues"""
-        print("\n=== Testing Checkpoint Loading Issues ===")
+        self.logger.banner("Testing Checkpoint Loading Issues", 60)
         
         # Get available checkpoints
         checkpoints = self.checkpoint_manager.list_checkpoints()
         if not checkpoints:
-            print("No checkpoints available for testing")
+            self.logger.warning("No checkpoints available for testing")
             return
             
         # Test loading the first checkpoint
-        checkpoint_id = checkpoints[0]['id']
+        checkpoint_id = checkpoints[0].id
         start_time = time.time()
         
         try:
@@ -332,7 +344,7 @@ class FreezeReproductionTest:
                 checkpoints = self.checkpoint_manager.list_checkpoints()
                 if checkpoints:
                     # Just test metadata access
-                    metadata = self.checkpoint_manager.get_checkpoint_metadata(checkpoints[0]['id'])
+                    metadata = self.checkpoint_manager.get_checkpoint_metadata(checkpoints[0].id)
                     await asyncio.sleep(0.1)
                     
             # Run all tasks concurrently
@@ -357,8 +369,7 @@ class FreezeReproductionTest:
     
     async def run_all_tests(self):
         """Run all freeze reproduction tests"""
-        print("TESTING: Starting Freeze Reproduction Tests")
-        print("=" * 50)
+        self.logger.banner("Starting Freeze Reproduction Tests", 60)
         
         await self.test_websocket_broadcast_deadlock()
         await self.test_action_selection_infinite_loop()
@@ -366,33 +377,47 @@ class FreezeReproductionTest:
         await self.test_concurrent_operations()
         
         # Summary
-        print("\n" + "=" * 50)
-        print("SUMMARY: Test Summary:")
-        print("=" * 50)
+        self.logger.banner("Test Summary", 60)
         
         passed = sum(1 for r in self.test_results if r['success'])
         total = len(self.test_results)
         
         for result in self.test_results:
-            status = "OK: PASS" if result['success'] else "ERROR: FAIL"
-            print(f"{status} {result['test']} ({result['duration']:.2f}s)")
-            if result['error']:
-                print(f"    Error: {result['error']}")
+            if result['success']:
+                self.logger.ok(f"{result['test']} ({result['duration']:.2f}s)")
+            else:
+                self.logger.error(f"{result['test']} ({result['duration']:.2f}s)")
+                if result['error']:
+                    self.logger.error(f"    Error: {result['error']}")
                 
-        print(f"\nOverall: {passed}/{total} tests passed")
+        self.logger.info(f"Overall: {passed}/{total} tests passed")
         
         if passed < total:
-            print("\nFIND: Potential freezing issues detected!")
-            print("Check the failed tests above for specific problems.")
+            self.logger.warning("Potential freezing issues detected!")
+            self.logger.info("Check the failed tests above for specific problems.")
         else:
-            print("\nOK: All tests passed - no obvious freezing issues detected")
-            print("The freezing might be related to specific conditions not covered by these tests.")
+            self.logger.ok("All tests passed - no obvious freezing issues detected")
+            self.logger.info("The freezing might be related to specific conditions not covered by these tests.")
 
-async def main():
-    """Main test runner"""
-    test = FreezeReproductionTest()
-    await test.run_all_tests()
+def main():
+    """Main entry point"""
+    logger = TestLogger()
+    logger.banner("Freeze Reproduction Test Suite", 60)
+    
+    async def run_tests():
+        test = FreezeReproductionTest()
+        await test.run_all_tests()
+    
+    try:
+        import torch
+        asyncio.run(run_tests())
+        logger.success("Freeze reproduction tests completed")
+    except Exception as e:
+        logger.error(f"Test suite failed: {e}")
+        return False
+    
+    return True
 
 if __name__ == "__main__":
-    import torch
-    asyncio.run(main()) 
+    success = main()
+    sys.exit(0 if success else 1) 

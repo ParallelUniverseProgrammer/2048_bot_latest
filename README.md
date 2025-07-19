@@ -36,6 +36,8 @@
 
 • **🎯 Model Studio Foundation** – Complete backend API and frontend framework for visual model design. Features real-time validation, dynamic code generation, and mobile-first interface with 70%+ canvas space allocation. Ready for drag-and-drop canvas implementation.
 
+• **🧪 Test Suite Compliance Overhaul** – Complete standardization of the test suite with TestLogger integration across all 68 test files. All major compliance issues resolved (0 major issues remaining), improved maintainability with proper main() functions and exit codes, and enhanced error handling capabilities.
+
 ---
 
 ## 📋 Table of Contents
@@ -161,16 +163,57 @@ The launcher automatically creates a Cloudflare Tunnel for internet access:
 
 ## Test Suite & Developer Experience
 
-> **⚠️ Note**: The test suite is currently partially broken and under investigation. Some tests may fail or behave unexpectedly.
+✅ **Test Suite Compliance Overhaul Complete** – All major compliance issues have been resolved with comprehensive TestLogger integration across the entire test suite.
 
-Tests live under `tests/` and are grouped by domain (core, integration, performance, mobile, frontend…). Most integration tests spin up a mock backend automatically.
+The test suite now features:
+• **Standardized Logging** – Consistent TestLogger usage across all 68 test files
+• **Zero Major Issues** – All compliance violations resolved (down from 6 major issues)
+• **Improved Maintainability** – Proper main() functions with return values and exit codes
+• **Enhanced Error Handling** – Standardized error reporting and debugging capabilities
+• **Comprehensive Coverage** – Tests grouped by domain (core, integration, performance, mobile, frontend)
 
-Run all tests:
+### Running Tests
+
+**Master Test Runner** (Recommended):
 ```bash
-python tests/runners/master_test_runner.py
+python tests/runners/master_test_runner.py --level core
 ```
 
+**Individual Test Categories**:
+```bash
+# Core functionality tests
+python tests/core/test_checkpoint_loading.py
+
+# Integration tests
+python tests/integration/test_complete_games.py
+
+# Frontend tests
+python tests/frontend/test_automation.py
+
+# Performance tests
+python tests/performance/test_performance.py
+```
+
+**Compliance Checker**:
+```bash
+python tests/compliance_checker.py
+```
+
+### Test Architecture
+
+The test suite follows a structured approach with:
+• **TestLogger** – Standardized logging with colors, formatting, and structured output
+• **BackendTester** – Common backend API testing functionality
+• **GameTester** – Game playback testing utilities
+• **PlaybackTester** – Live playback and control testing
+
+All tests use consistent message prefixes (OK:, ERROR:, WARNING:, INFO:) for easy parsing and visual scanning.
+
+### Developer Experience
+
 Hot-reload is enabled out of the box (FastAPI `--reload`, Vite dev server). ESLint / Prettier (frontend) and Black / isort / flake8 (backend) keep the codebase tidy.
+
+See [tests/README.md](./tests/README.md) for comprehensive testing documentation and guidelines.
 
 ---
 

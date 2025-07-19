@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Autonomous test suite to verify checkpoint loading fixes.
-Runs four scenarios against a mock backend without requiring manual steps.
+Autonomous Test Suite for Checkpoint Loading Fixes
+==================================================
+
+This test suite verifies checkpoint loading fixes by running four scenarios against 
+a mock backend without requiring manual steps.
 
 Scenarios validated:
 1. timeout              -> playback/current returns has_data=false (HTTP 200)
@@ -20,7 +23,14 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 import contextlib
 import sys
+import os
 from typing import Any
+
+# Add project root to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
+
+from tests.utilities.test_utils import TestLogger
 
 HOST = "localhost"
 PORT = 8000
@@ -85,7 +95,6 @@ def run_mock_backend(scenario: str):
 # --------------------------------------------------------------------------------------
 # Helper functions
 
-
 def _request(method: str, path: str, body: dict | None = None):
     conn = http.client.HTTPConnection(HOST, PORT, timeout=5)
     headers = {"Content-Type": "application/json"}
@@ -102,63 +111,68 @@ def _request(method: str, path: str, body: dict | None = None):
 # --------------------------------------------------------------------------------------
 # Test scenarios
 
-
-def test_timeout():
+def test_timeout(logger: TestLogger):
+    """Test timeout scenario"""
     with run_mock_backend("timeout"):
         status, data = _request("GET", "/checkpoints/playback/current")
         assert status == 200, f"Expected 200, got {status}"
         assert data is not None and data.get("has_data") is False, "Expected has_data false in timeout scenario"
-        print("✅ timeout scenario passed")
+        logger.ok("timeout scenario passed")
 
-
-def test_api_error():
+def test_api_error(logger: TestLogger):
+    """Test API error scenario"""
     with run_mock_backend("api_error"):
         status, _ = _request("POST", "/checkpoints/test/playback/start", {})
         assert status == 500, f"Expected 500, got {status}"
-        print("✅ api_error scenario passed")
+        logger.ok("api_error scenario passed")
 
-
-def test_websocket_failure():
+def test_websocket_failure(logger: TestLogger):
+    """Test WebSocket failure scenario"""
     with run_mock_backend("websocket_failure"):
         status, _ = _request("GET", "/checkpoints/playback/current")
         assert status == 503, f"Expected 503, got {status}"
-        print("✅ websocket_failure scenario passed")
+        logger.ok("websocket_failure scenario passed")
 
-
-def test_success():
+def test_success(logger: TestLogger):
+    """Test success scenario"""
     with run_mock_backend("success"):
         status, data = _request("GET", "/checkpoints/playback/current")
         assert status == 200, f"Expected 200, got {status}"
         assert data is not None and data.get("has_data") is True, "Expected has_data true in success scenario"
-        print("✅ success scenario passed")
+        logger.ok("success scenario passed")
 
 # --------------------------------------------------------------------------------------
 
-
 def main():
+    """Main entry point"""
+    logger = TestLogger()
+    logger.banner("Checkpoint Loading Fixes Test Suite", 60)
+    
     tests = [
         ("timeout", test_timeout),
         ("api_error", test_api_error),
         ("websocket_failure", test_websocket_failure),
         ("success", test_success),
     ]
+    
     failures = 0
     for name, func in tests:
         try:
-            func()
+            logger.testing(f"Running {name} scenario...")
+            func(logger)
         except AssertionError as e:
-            print(f"❌ {name} scenario failed: {e}")
+            logger.error(f"{name} scenario failed: {e}")
             failures += 1
         except Exception as e:
-            print(f"❌ {name} scenario error: {e}")
+            logger.error(f"{name} scenario error: {e}")
             failures += 1
+    
     if failures == 0:
-        print("\n🎉 All checkpoint loading fix tests passed!")
+        logger.success("All checkpoint loading fix tests passed!")
         sys.exit(0)
     else:
-        print(f"\n🚨 {failures} test(s) failed.")
+        logger.error(f"{failures} test(s) failed.")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main() 

@@ -31,14 +31,10 @@ Usage:
 
 import time
 import threading
-import logging
 from typing import Dict, Any, Optional, Callable
 from contextlib import contextmanager
-from test_utils import BackendTester, TestLogger
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from tests.utilities.test_utils import BackendTester, TestLogger
 
 
 class BackendAvailabilityManager:
@@ -372,26 +368,37 @@ def get_global_manager() -> BackendAvailabilityManager:
     return _global_manager
 
 
-if __name__ == "__main__":
-    # Example usage
+def main():
+    """Main entry point for backend availability testing"""
+    logger = TestLogger()
+    logger.banner("Backend Availability Manager Test", 60)
+    
     manager = BackendAvailabilityManager()
     
-    print("Testing backend availability management...")
+    logger.info("Testing backend availability management...")
     
     # Test backend availability
     if manager.ensure_backend_available():
-        print("✓ Backend is available")
+        logger.ok("Backend is available")
         
         # Show backend stats
         stats = manager.get_backend_stats()
-        print(f"Backend type: {stats['backend_type']}")
-        print(f"Base URL: {stats['base_url']}")
+        logger.info(f"Backend type: {stats['backend_type']}")
+        logger.info(f"Base URL: {stats['base_url']}")
         
         # Test context manager
         with manager.backend_context() as available:
             if available:
-                print("✓ Backend context is working")
+                logger.ok("Backend context is working")
             else:
-                print("✗ Backend context failed")
+                logger.error("Backend context failed")
+        
+        return True
     else:
-        print("✗ Backend is not available") 
+        logger.error("Backend is not available")
+        return False
+
+if __name__ == "__main__":
+    success = main()
+    import sys
+    sys.exit(0 if success else 1) 

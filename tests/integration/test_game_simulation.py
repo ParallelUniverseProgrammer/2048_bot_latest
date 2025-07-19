@@ -1,11 +1,36 @@
-import sys, os
-# Add project root to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-# Add backend to path for internal imports
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
+#!/usr/bin/env python3
+"""
+Game Simulation Tests
+====================
+
+This module tests game simulation scenarios including different model behaviors,
+environment states, and concurrent game execution. It validates that the game
+simulation system can handle various edge cases and performance scenarios.
+
+These tests ensure the game simulation is robust and can handle real-world usage patterns.
+"""
 
 import asyncio
 import time
+import sys
+import os
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass, field
+
+# Add project root to path for imports
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+try:
+    from backend.app.environment.gym_2048_env import Gym2048Env
+    from backend.app.models.game_transformer import GameTransformer
+    from backend.app.models.checkpoint_playback import CheckpointPlayback
+except ImportError as e:
+    print(f"Import error: {e}")
+    print(f"Backend path: {os.path.join(os.path.dirname(__file__), '..', '..', 'backend')}")
+    print(f"Available in backend: {os.listdir(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')) if os.path.exists(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')) else 'Path does not exist'}")
+
+from tests.utilities.test_utils import TestLogger
+
 import threading
 import numpy as np
 import torch

@@ -81,10 +81,12 @@ class MasterTestRunner:
                     "tests/integration/test_complete_games.py",
                     "tests/integration/test_live_playback.py",
                     "tests/integration/test_game_simulation.py",
+                    "tests/integration/test_model_studio.py",
                     "tests/core/test_checkpoint_loading.py",
                     "tests/core/test_json_serialization.py",
                     "tests/playback/test_controls.py",
                     "tests/playback/test_simulation.py",
+                    "tests/frontend/test_pwa_origin_unification.py",
                 ]
             },
             TestLevel.COMPREHENSIVE: {
@@ -97,6 +99,8 @@ class MasterTestRunner:
                     "tests/integration/test_game_simulation.py",
                     "tests/integration/test_edge_cases.py",
                     "tests/integration/test_websocket_broadcast.py",
+                    "tests/integration/test_model_studio.py",
+                    "tests/integration/test_tunnel_demo.py",
                     
                     # Core tests
                     "tests/core/test_checkpoint_loading.py",
@@ -121,6 +125,7 @@ class MasterTestRunner:
                     
                     # Frontend tests
                     "tests/frontend/test_automation.py",
+                    "tests/frontend/test_pwa_origin_unification.py",
                 ]
             }
         }

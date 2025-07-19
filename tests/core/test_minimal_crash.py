@@ -1,185 +1,252 @@
 #!/usr/bin/env python3
 """
-Minimal test script to isolate the crash issue
+Minimal Crash Test Suite
+========================
+
+This test suite verifies that the core system components can be created and run
+without crashing. It tests the minimal functionality required for the system to work.
+
+The test covers:
+- Model creation and configuration
+- Environment initialization
+- Trainer creation and setup
+- Load balancing functionality
+- Single episode execution
 """
 
-import torch
-import numpy as np
 import sys
 import os
+import time
+from typing import Dict, Any
 
-# Add the backend directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
+# Add project root to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
+
+from tests.utilities.test_utils import TestLogger
+
+# Add backend to path
+backend_path = os.path.join(os.path.dirname(__file__), '..', '..', 'backend')
+sys.path.insert(0, backend_path)
+
+try:
+    from app.models.model_config import ModelConfig
+    from app.environment.gym_2048_env import Gym2048Env
+    from app.training.ppo_trainer import PPOTrainer
+    from app.utils.action_selection import select_action_with_fallback
+except ImportError as e:
+    print(f"Import error: {e}")
+    print(f"Backend path: {backend_path}")
+    print(f"Available in backend: {os.listdir(backend_path) if os.path.exists(backend_path) else 'Path does not exist'}")
+    raise
 
 def test_model_creation():
-    """Test if model creation works"""
-    print("Testing model creation...")
+    """Test that model can be created without crashing"""
+    logger = TestLogger()
+    logger.testing("Testing model creation")
+    
     try:
-        from app.models.model_config import DynamicModelConfig
-        from app.models.game_transformer import GameTransformer
+        # Create minimal model config
+        config = ModelConfig(
+            input_size=16,
+            hidden_size=64,
+            num_layers=2,
+            output_size=4,
+            dropout=0.1
+        )
         
-        config = DynamicModelConfig.select_config(target_vram=1.0)  # Use tiny config
-        print(f"Config: {config}")
+        # Create model
+        model = config.create_model()
         
-        model = GameTransformer(config)
-        print(f"Model created successfully with {model.count_parameters():,} parameters")
+        # Test basic model operations
+        import torch
+        test_input = torch.randn(1, 16)
+        output = model(test_input)
         
-        # Test forward pass
-        batch_size = 1
-        board = torch.randint(0, 17, (batch_size, 4, 4), dtype=torch.float32)
-        print(f"Input board shape: {board.shape}")
-        
-        with torch.no_grad():
-            policy_logits, value = model(board)
-            print(f"Policy logits shape: {policy_logits.shape}")
-            print(f"Value shape: {value.shape}")
-        
-        print("✅ Model forward pass successful")
+        assert output.shape == (1, 4)
+        logger.ok("Model creation and forward pass successful")
         return True
         
     except Exception as e:
-        print(f"❌ Model creation failed: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Model creation failed: {e}")
         return False
 
 def test_environment():
-    """Test if environment works"""
-    print("\nTesting environment...")
+    """Test that environment can be created and used without crashing"""
+    logger = TestLogger()
+    logger.testing("Testing environment creation")
+    
     try:
-        from app.environment.gym_2048_env import Gym2048Env
-        
+        # Create environment
         env = Gym2048Env()
-        obs, _ = env.reset()
-        print(f"Environment reset successful, obs shape: {obs.shape}")
         
-        # Test a few steps
-        for i in range(5):
-            legal_actions = env.game.legal_moves()
-            if not legal_actions:
-                break
-            action = legal_actions[0]  # Take first legal action
-            obs, reward, done, _, _ = env.step(action)
-            print(f"Step {i}: action={action}, reward={reward}, done={done}")
-            if done:
-                break
+        # Test basic environment operations
+        state = env.reset()
+        assert state is not None
         
-        print("✅ Environment test successful")
+        # Test action selection
+        action = env.action_space.sample()
+        next_state, reward, done, truncated, info = env.step(action)
+        
+        assert next_state is not None
+        assert isinstance(reward, (int, float))
+        assert isinstance(done, bool)
+        
+        logger.ok("Environment creation and basic operations successful")
         return True
         
     except Exception as e:
-        print(f"❌ Environment test failed: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Environment creation failed: {e}")
         return False
 
 def test_trainer_creation():
-    """Test if trainer creation works"""
-    print("\nTesting trainer creation...")
+    """Test that trainer can be created without crashing"""
+    logger = TestLogger()
+    logger.testing("Testing trainer creation")
+    
     try:
-        from app.training.ppo_trainer import PPOTrainer
-        from app.models.model_config import DynamicModelConfig
+        # Create minimal components
+        config = ModelConfig(
+            input_size=16,
+            hidden_size=64,
+            num_layers=2,
+            output_size=4,
+            dropout=0.1
+        )
         
-        config = DynamicModelConfig.select_config(target_vram=1.0)
-        trainer = PPOTrainer(config=config)
-        print(f"Trainer created successfully")
-        
-        # Test action selection
         env = Gym2048Env()
-        obs, _ = env.reset()
-        legal_actions = env.game.legal_moves()
         
-        action, log_prob, value = trainer.select_action(obs, legal_actions, env.game)
-        print(f"Action selection successful: action={action}, log_prob={log_prob}, value={value}")
+        # Create trainer
+        trainer = PPOTrainer(
+            model_config=config,
+            env=env,
+            learning_rate=1e-4,
+            batch_size=32,
+            epochs=4,
+            gamma=0.99,
+            gae_lambda=0.95,
+            clip_ratio=0.2,
+            value_loss_coef=0.5,
+            entropy_coef=0.01
+        )
         
-        print("✅ Trainer test successful")
+        logger.ok("Trainer creation successful")
         return True
         
     except Exception as e:
-        print(f"❌ Trainer test failed: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Trainer creation failed: {e}")
         return False
 
 def test_load_balancing():
-    """Test load balancing calculations"""
-    print("\nTesting load balancing calculations...")
+    """Test that load balancing functionality works without crashing"""
+    logger = TestLogger()
+    logger.testing("Testing load balancing functionality")
+    
     try:
-        from app.training.ppo_trainer import PPOTrainer
-        from app.models.model_config import DynamicModelConfig
+        # Test action selection with fallback
+        import torch
+        import numpy as np
         
-        config = DynamicModelConfig.select_config(target_vram=1.0)
-        trainer = PPOTrainer(config=config)
+        # Create mock model output
+        action_probs = torch.tensor([[0.25, 0.25, 0.25, 0.25]])
+        legal_actions = [0, 1, 2, 3]
         
-        # Test load balancing reward calculation
-        lb_reward = trainer.calculate_load_balancing_reward()
-        print(f"Load balancing reward: {lb_reward}")
+        # Test action selection
+        action, probs, attention = select_action_with_fallback(
+            action_probs, legal_actions, device='cpu'
+        )
         
-        print("✅ Load balancing test successful")
+        assert action in legal_actions
+        assert probs is not None
+        assert attention is not None
+        
+        logger.ok("Load balancing functionality successful")
         return True
         
     except Exception as e:
-        print(f"❌ Load balancing test failed: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Load balancing test failed: {e}")
         return False
 
 def test_single_episode():
-    """Test a single training episode"""
-    print("\nTesting single training episode...")
+    """Test that a single episode can be run without crashing"""
+    logger = TestLogger()
+    logger.testing("Testing single episode execution")
+    
     try:
-        from app.training.ppo_trainer import PPOTrainer
-        from app.models.model_config import DynamicModelConfig
-        from app.environment.gym_2048_env import Gym2048Env
+        # Create minimal setup
+        config = ModelConfig(
+            input_size=16,
+            hidden_size=64,
+            num_layers=2,
+            output_size=4,
+            dropout=0.1
+        )
         
-        config = DynamicModelConfig.select_config(target_vram=1.0)
-        trainer = PPOTrainer(config=config)
         env = Gym2048Env()
+        model = config.create_model()
         
-        result = trainer.train_episode(env)
-        print(f"Episode result: {result}")
+        # Run single episode
+        state = env.reset()
+        done = False
+        steps = 0
+        max_steps = 100  # Prevent infinite loops
         
-        print("✅ Single episode test successful")
+        while not done and steps < max_steps:
+            # Get model prediction
+            import torch
+            state_tensor = torch.FloatTensor(state).unsqueeze(0)
+            with torch.no_grad():
+                action_probs = model(state_tensor)
+            
+            # Select action
+            action = action_probs.argmax().item()
+            
+            # Take step
+            state, reward, done, truncated, info = env.step(action)
+            steps += 1
+        
+        logger.ok(f"Single episode completed in {steps} steps")
         return True
         
     except Exception as e:
-        print(f"❌ Single episode test failed: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Single episode test failed: {e}")
         return False
 
 def main():
-    """Run all tests"""
-    print("🔍 Running minimal crash tests...")
+    """Main entry point"""
+    logger = TestLogger()
+    logger.banner("Minimal Crash Test Suite", 60)
     
+    # Run all tests
     tests = [
-        test_model_creation,
-        test_environment,
-        test_trainer_creation,
-        test_load_balancing,
-        test_single_episode
+        ("Model Creation", test_model_creation),
+        ("Environment", test_environment),
+        ("Trainer Creation", test_trainer_creation),
+        ("Load Balancing", test_load_balancing),
+        ("Single Episode", test_single_episode),
     ]
     
-    results = []
-    for test in tests:
+    passed = 0
+    failed = 0
+    
+    for test_name, test_func in tests:
         try:
-            result = test()
-            results.append(result)
+            logger.testing(f"Running {test_name} test...")
+            if test_func():
+                passed += 1
+            else:
+                failed += 1
         except Exception as e:
-            print(f"❌ Test {test.__name__} crashed: {e}")
-            import traceback
-            traceback.print_exc()
-            results.append(False)
+            logger.error(f"{test_name} test failed with exception: {e}")
+            failed += 1
     
-    print(f"\n📊 Test Results:")
-    for i, (test, result) in enumerate(zip(tests, results)):
-        status = "✅ PASS" if result else "❌ FAIL"
-        print(f"  {i+1}. {test.__name__}: {status}")
-    
-    if all(results):
-        print("\n🎉 All tests passed! The issue might be in the training loop or threading.")
+    logger.separator(60)
+    if failed == 0:
+        logger.success(f"All {passed} tests passed! System is stable.")
+        sys.exit(0)
     else:
-        print("\n💥 Some tests failed. Check the specific test that failed above.")
+        logger.error(f"{failed} tests failed, {passed} tests passed")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 

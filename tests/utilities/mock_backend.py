@@ -32,14 +32,11 @@ from datetime import datetime, timedelta
 import random
 import threading
 import queue
-import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import socketserver
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from tests.utilities.test_utils import TestLogger
 
 class MockData:
     """Mock data generator for backend responses"""
@@ -339,7 +336,8 @@ class MockBackendHandler(BaseHTTPRequestHandler):
     
     def log_message(self, format, *args):
         """Override log message to use our logger"""
-        logger.info(f"Mock Backend: {format % args}")
+        # Use print for HTTP server logs since TestLogger might not be available in this context
+        print(f"Mock Backend: {format % args}")
 
 
 class MockBackend:
@@ -352,6 +350,7 @@ class MockBackend:
         self.server = None
         self.server_thread = None
         self.is_running = False
+        self.logger = TestLogger()
     
     def start(self):
         """Start the mock backend server"""
@@ -369,22 +368,22 @@ class MockBackend:
             self.server_thread.start()
             self.is_running = True
             
-            logger.info(f"Mock Backend Server started on http://{self.host}:{self.port}")
-            logger.info("Available endpoints:")
-            logger.info("  GET  /")
-            logger.info("  GET  /checkpoints")
-            logger.info("  GET  /checkpoints/stats")
-            logger.info("  GET  /checkpoints/{id}")
-            logger.info("  GET  /training/status")
-            logger.info("  GET  /checkpoints/playback/status")
-            logger.info("  POST /checkpoints/{id}/playback/start")
-            logger.info("  POST /checkpoints/{id}/playback/game")
-            logger.info("  POST /checkpoints/playback/pause")
-            logger.info("  POST /checkpoints/playback/resume")
-            logger.info("  POST /checkpoints/playback/stop")
+            self.logger.info(f"Mock Backend Server started on http://{self.host}:{self.port}")
+            self.logger.info("Available endpoints:")
+            self.logger.info("  GET  /")
+            self.logger.info("  GET  /checkpoints")
+            self.logger.info("  GET  /checkpoints/stats")
+            self.logger.info("  GET  /checkpoints/{id}")
+            self.logger.info("  GET  /training/status")
+            self.logger.info("  GET  /checkpoints/playback/status")
+            self.logger.info("  POST /checkpoints/{id}/playback/start")
+            self.logger.info("  POST /checkpoints/{id}/playback/game")
+            self.logger.info("  POST /checkpoints/playback/pause")
+            self.logger.info("  POST /checkpoints/playback/resume")
+            self.logger.info("  POST /checkpoints/playback/stop")
             
         except Exception as e:
-            logger.error(f"Failed to start mock backend: {e}")
+            self.logger.error(f"Failed to start mock backend: {e}")
             raise
     
     def stop(self):
@@ -393,7 +392,7 @@ class MockBackend:
             self.server.shutdown()
             self.server.server_close()
             self.is_running = False
-            logger.info("Mock Backend Server stopped")
+            self.logger.info("Mock Backend Server stopped")
     
     def is_alive(self) -> bool:
         """Check if the server is running"""
@@ -409,15 +408,15 @@ def main():
     """Main function to run the mock backend server"""
     import argparse
     
+    logger = TestLogger()
+    logger.banner("Mock Backend Server for 2048 Bot Testing", 60)
+    
     parser = argparse.ArgumentParser(description="Mock Backend Server for 2048 Bot Testing")
     parser.add_argument("--host", default="localhost", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     
     args = parser.parse_args()
-    
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
     
     # Create and start the mock backend
     mock_backend = MockBackend(args.host, args.port)
@@ -428,13 +427,19 @@ def main():
         logger.info("Mock Backend Server is running. Press Ctrl+C to stop.")
         mock_backend.wait_for_shutdown()
         
+        return True
+        
     except KeyboardInterrupt:
         logger.info("Shutting down...")
         mock_backend.stop()
+        return True
     except Exception as e:
         logger.error(f"Server error: {e}")
         mock_backend.stop()
+        return False
 
 
 if __name__ == "__main__":
-    main() 
+    success = main()
+    import sys
+    sys.exit(0 if success else 1) 

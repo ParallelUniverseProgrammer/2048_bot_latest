@@ -1,9 +1,24 @@
-import sys, os
-# Add project root to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-# Add backend to path for internal imports
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
+#!/usr/bin/env python3
+"""
+Freeze Diagnostics Test Suite
+============================
 
+This test suite provides comprehensive diagnostics for identifying and analyzing
+freeze conditions during checkpoint playback. It includes system resource monitoring,
+detailed timing analysis, and instrumented playback to help identify the root
+causes of freezing issues.
+
+The diagnostics include:
+- System resource monitoring (CPU, memory, threads, file descriptors)
+- Detailed playback event logging
+- Step-by-step timing analysis
+- WebSocket broadcast monitoring
+- Error event tracking and analysis
+- Comprehensive diagnostic reports
+"""
+
+import sys
+import os
 import asyncio
 import time
 import threading
@@ -14,6 +29,12 @@ from pathlib import Path
 import json
 from datetime import datetime
 
+# Add project root to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# Add backend to path for internal imports
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
+
+from tests.utilities.test_utils import TestLogger
 from backend.app.models.checkpoint_playback import CheckpointPlayback
 from backend.app.models.checkpoint_metadata import CheckpointManager
 from backend.app.api.websocket_manager import WebSocketManager
@@ -23,6 +44,7 @@ class SystemMonitor:
     """Monitor system resources during playback"""
     
     def __init__(self):
+        self.logger = TestLogger()
         self.process = psutil.Process()
         self.monitoring = False
         self.stats = []
@@ -33,6 +55,7 @@ class SystemMonitor:
         self.monitoring = True
         self.stats = []
         self.monitor_task = asyncio.create_task(self._monitor_loop(interval))
+        self.logger.info(f"Started system monitoring with {interval}s interval")
     
     async def stop_monitoring(self):
         """Stop monitoring and return collected stats"""
@@ -43,6 +66,7 @@ class SystemMonitor:
                 await self.monitor_task
             except asyncio.CancelledError:
                 pass
+        self.logger.info(f"Stopped system monitoring, collected {len(self.stats)} samples")
         return self.stats
     
     async def _monitor_loop(self, interval):
@@ -84,7 +108,7 @@ class SystemMonitor:
                 await asyncio.sleep(interval)
                 
             except Exception as e:
-                print(f"Error in monitoring: {e}")
+                self.logger.error(f"Error in monitoring: {e}")
                 await asyncio.sleep(interval)
     
     def get_summary(self):
@@ -340,6 +364,7 @@ class FreezeDiagnostics:
     """Main diagnostic tool for checkpoint playback freezing"""
     
     def __init__(self):
+        self.logger = TestLogger()
         self.system_monitor = SystemMonitor()
         self.playback_monitor = DetailedPlaybackMonitor()
         self.checkpoint_manager = None
@@ -350,7 +375,7 @@ class FreezeDiagnostics:
         """Setup diagnostics for real system (not test mocks)"""
         # Use real checkpoint manager
         checkpoint_dir = os.getenv('CHECKPOINTS_DIR', os.path.join(os.path.dirname(__file__), '..', 'backend', 'checkpoints'))
-        print(f"[test_freeze_diagnostics] Using checkpoint_dir: {checkpoint_dir}")
+        self.logger.info(f"[test_freeze_diagnostics] Using checkpoint_dir: {checkpoint_dir}")
         self.checkpoint_manager = CheckpointManager(checkpoint_dir)
         
         # Use real WebSocket manager
@@ -363,7 +388,7 @@ class FreezeDiagnostics:
     
     async def diagnose_checkpoint_loading(self, checkpoint_id: str):
         """Diagnose checkpoint loading performance"""
-        print(f"\n=== Diagnosing Checkpoint Loading: {checkpoint_id} ===")
+        self.logger.info(f"\n=== Diagnosing Checkpoint Loading: {checkpoint_id} ===")
         
         self.playback_monitor.start_monitoring()
         await self.system_monitor.start_monitoring()
@@ -373,28 +398,28 @@ class FreezeDiagnostics:
             success = self.playback.load_checkpoint(checkpoint_id)
             duration = time.time() - start_time
             
-            print(f"Checkpoint loading: {'SUCCESS' if success else 'FAILED'} ({duration:.2f}s)")
+            self.logger.info(f"Checkpoint loading: {'SUCCESS' if success else 'FAILED'} ({duration:.2f}s)")
             
             if not success:
-                print("ERROR: Checkpoint loading failed - check error logs")
+                self.logger.error("ERROR: Checkpoint loading failed - check error logs")
                 return False
             
             return True
             
         except Exception as e:
-            print(f"ERROR: Checkpoint loading exception: {e}")
+            self.logger.error(f"ERROR: Checkpoint loading exception: {e}")
             return False
         
         finally:
             system_stats = await self.system_monitor.stop_monitoring()
             system_summary = self.system_monitor.get_summary()
             
-            print(f"System Impact: Memory peak: {system_summary.get('memory_peak', 0):.1f}MB, "
+            self.logger.info(f"System Impact: Memory peak: {system_summary.get('memory_peak', 0):.1f}MB, "
                   f"CPU peak: {system_summary.get('cpu_peak', 0):.1f}%")
     
     async def diagnose_single_game(self, checkpoint_id: str):
         """Diagnose single game playing performance"""
-        print(f"\n=== Diagnosing Single Game: {checkpoint_id} ===")
+        self.logger.info(f"\n=== Diagnosing Single Game: {checkpoint_id} ===")
         
         # Load checkpoint first
         if not await self.diagnose_checkpoint_loading(checkpoint_id):
@@ -409,18 +434,18 @@ class FreezeDiagnostics:
             duration = time.time() - start_time
             
             if 'error' in result:
-                print(f"ERROR: Single game failed: {result['error']}")
+                self.logger.error(f"ERROR: Single game failed: {result['error']}")
                 return False
             
-            print(f"Single game: SUCCESS ({duration:.2f}s)")
-            print(f"  Steps: {result.get('steps', 0)}")
-            print(f"  Score: {result.get('final_score', 0)}")
-            print(f"  Max tile: {result.get('max_tile', 0)}")
+            self.logger.info(f"Single game: SUCCESS ({duration:.2f}s)")
+            self.logger.info(f"  Steps: {result.get('steps', 0)}")
+            self.logger.info(f"  Score: {result.get('final_score', 0)}")
+            self.logger.info(f"  Max tile: {result.get('max_tile', 0)}")
             
             return True
             
         except Exception as e:
-            print(f"ERROR: Single game exception: {e}")
+            self.logger.error(f"ERROR: Single game exception: {e}")
             return False
         
         finally:
@@ -428,17 +453,17 @@ class FreezeDiagnostics:
             system_summary = self.system_monitor.get_summary()
             playback_summary = self.playback_monitor.get_summary()
             
-            print(f"System Impact: Memory peak: {system_summary.get('memory_peak', 0):.1f}MB, "
+            self.logger.info(f"System Impact: Memory peak: {system_summary.get('memory_peak', 0):.1f}MB, "
                   f"CPU peak: {system_summary.get('cpu_peak', 0):.1f}%")
             
             if 'step_timing' in playback_summary:
                 step_timing = playback_summary['step_timing']
-                print(f"Step Performance: Avg: {step_timing['avg_duration']:.3f}s, "
+                self.logger.info(f"Step Performance: Avg: {step_timing['avg_duration']:.3f}s, "
                       f"Max: {step_timing['max_duration']:.3f}s")
     
     async def diagnose_live_playback(self, checkpoint_id: str, duration_seconds: int = 30):
         """Diagnose live playback performance"""
-        print(f"\n=== Diagnosing Live Playback: {checkpoint_id} ===")
+        self.logger.info(f"\n=== Diagnosing Live Playback: {checkpoint_id} ===")
         
         # Load checkpoint first
         if not await self.diagnose_checkpoint_loading(checkpoint_id):
@@ -466,14 +491,14 @@ class FreezeDiagnostics:
             # Wait for graceful shutdown
             try:
                 await asyncio.wait_for(playback_task, timeout=10.0)
-                print("OK: Live playback completed successfully")
+                self.logger.info("OK: Live playback completed successfully")
                 return True
             except asyncio.TimeoutError:
-                print("ERROR: Live playback hung during shutdown!")
+                self.logger.error("ERROR: Live playback hung during shutdown!")
                 return False
             
         except Exception as e:
-            print(f"ERROR: Live playback exception: {e}")
+            self.logger.error(f"ERROR: Live playback exception: {e}")
             return False
         
         finally:
@@ -481,23 +506,23 @@ class FreezeDiagnostics:
             system_summary = self.system_monitor.get_summary()
             playback_summary = self.playback_monitor.get_summary()
             
-            print(f"\nSystem Impact: Memory peak: {system_summary.get('memory_peak', 0):.1f}MB, "
+            self.logger.info(f"\nSystem Impact: Memory peak: {system_summary.get('memory_peak', 0):.1f}MB, "
                   f"CPU peak: {system_summary.get('cpu_peak', 0):.1f}%")
             
             if 'broadcast_timing' in playback_summary:
                 broadcast_timing = playback_summary['broadcast_timing']
-                print(f"Broadcast Performance: Avg: {broadcast_timing['avg_duration']:.3f}s, "
+                self.logger.info(f"Broadcast Performance: Avg: {broadcast_timing['avg_duration']:.3f}s, "
                       f"Max: {broadcast_timing['max_duration']:.3f}s, "
                       f"Success: {broadcast_timing['success_rate']:.1%}")
             
-            print(f"Total Events: {playback_summary.get('total_events', 0)}")
-            print(f"Total Errors: {playback_summary.get('total_errors', 0)}")
+            self.logger.info(f"Total Events: {playback_summary.get('total_events', 0)}")
+            self.logger.info(f"Total Errors: {playback_summary.get('total_errors', 0)}")
             
             # Print recent errors
             if self.playback_monitor.error_events:
-                print("\nRecent Errors:")
+                self.logger.warning("\nRecent Errors:")
                 for error in self.playback_monitor.error_events[-5:]:
-                    print(f"  - {error['context']}: {error['error']}")
+                    self.logger.warning(f"  - {error['context']}: {error['error']}")
     
     async def _monitor_playback_health(self, duration_seconds: int):
         """Monitor playback health during live playback"""
@@ -517,7 +542,7 @@ class FreezeDiagnostics:
                         'stuck_duration': stuck_count * 2,
                         'last_broadcast_count': last_broadcast_count
                     })
-                    print(f"WARNING:  Playback appears stuck (no broadcasts for {stuck_count * 2}s)")
+                    self.logger.warning(f"WARNING:  Playback appears stuck (no broadcasts for {stuck_count * 2}s)")
             else:
                 stuck_count = 0
             
@@ -528,7 +553,7 @@ class FreezeDiagnostics:
                 self.playback_monitor.log_event('playback_unhealthy', {
                     'consecutive_failures': self.playback.consecutive_failures
                 })
-                print(f"WARNING:  Playback unhealthy (failures: {self.playback.consecutive_failures})")
+                self.logger.warning(f"WARNING:  Playback unhealthy (failures: {self.playback.consecutive_failures})")
     
     def save_diagnostic_report(self, filename: str):
         """Save diagnostic report to file"""
@@ -545,77 +570,90 @@ class FreezeDiagnostics:
         with open(filename, 'w') as f:
             json.dump(report, f, indent=2)
         
-        print(f"Diagnostic report saved to: {filename}")
+        self.logger.info(f"Diagnostic report saved to: {filename}")
 
 
-async def main():
-    """Main diagnostic function"""
-    print("=== Checkpoint Playback Freeze Diagnostics ===\n")
+def main():
+    """Main entry point"""
+    logger = TestLogger()
+    logger.banner("Checkpoint Playback Freeze Diagnostics", 60)
     
-    # Create diagnostics instance
-    diagnostics = FreezeDiagnostics()
+    async def run_diagnostics():
+        # Create diagnostics instance
+        diagnostics = FreezeDiagnostics()
+        
+        # Setup for real system
+        try:
+            diagnostics.setup_for_real_system()
+            logger.ok("Connected to real system")
+        except Exception as e:
+            logger.error(f"Failed to connect to real system: {e}")
+            logger.info("Make sure the backend is running and accessible")
+            return False
+        
+        # Get list of available checkpoints
+        try:
+            checkpoints = diagnostics.checkpoint_manager.list_checkpoints()
+            if not checkpoints:
+                logger.error("No checkpoints found")
+                return False
+            
+            logger.info(f"Found {len(checkpoints)} checkpoints")
+            
+            # Use the first checkpoint for testing
+            checkpoint_id = checkpoints[0]['id']
+            logger.info(f"Using checkpoint: {checkpoint_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to list checkpoints: {e}")
+            return False
+        
+        # Run diagnostics
+        try:
+            # Test checkpoint loading
+            success = await diagnostics.diagnose_checkpoint_loading(checkpoint_id)
+            if not success:
+                logger.error("Checkpoint loading failed - cannot continue")
+                return False
+            
+            # Test single game
+            success = await diagnostics.diagnose_single_game(checkpoint_id)
+            if not success:
+                logger.warning("Single game failed - but continuing with live playback test")
+            
+            # Test live playback (this is where freezing likely occurs)
+            success = await diagnostics.diagnose_live_playback(checkpoint_id, duration_seconds=20)
+            
+            # Save diagnostic report
+            report_filename = f"freeze_diagnostics_{int(time.time())}.json"
+            diagnostics.save_diagnostic_report(report_filename)
+            
+            if success:
+                logger.success("All diagnostics completed successfully!")
+                logger.info("If freezing occurs, check the diagnostic report for details.")
+            else:
+                logger.error("Diagnostics detected issues!")
+                logger.info("Check the diagnostic report for detailed analysis.")
+                return False
+        
+        except Exception as e:
+            logger.error(f"Diagnostic error: {e}")
+            return False
+        
+        return True
     
-    # Setup for real system
     try:
-        diagnostics.setup_for_real_system()
-        print("OK: Connected to real system")
-    except Exception as e:
-        print(f"ERROR: Failed to connect to real system: {e}")
-        print("Make sure the backend is running and accessible")
-        return 1
-    
-    # Get list of available checkpoints
-    try:
-        checkpoints = diagnostics.checkpoint_manager.list_checkpoints()
-        if not checkpoints:
-            print("ERROR: No checkpoints found")
-            return 1
-        
-        print(f"Found {len(checkpoints)} checkpoints")
-        
-        # Use the first checkpoint for testing
-        checkpoint_id = checkpoints[0]['id']
-        print(f"Using checkpoint: {checkpoint_id}")
-        
-    except Exception as e:
-        print(f"ERROR: Failed to list checkpoints: {e}")
-        return 1
-    
-    # Run diagnostics
-    try:
-        # Test checkpoint loading
-        success = await diagnostics.diagnose_checkpoint_loading(checkpoint_id)
-        if not success:
-            print("ERROR: Checkpoint loading failed - cannot continue")
-            return 1
-        
-        # Test single game
-        success = await diagnostics.diagnose_single_game(checkpoint_id)
-        if not success:
-            print("ERROR: Single game failed - but continuing with live playback test")
-        
-        # Test live playback (this is where freezing likely occurs)
-        success = await diagnostics.diagnose_live_playback(checkpoint_id, duration_seconds=20)
-        
-        # Save diagnostic report
-        report_filename = f"freeze_diagnostics_{int(time.time())}.json"
-        diagnostics.save_diagnostic_report(report_filename)
-        
+        success = asyncio.run(run_diagnostics())
         if success:
-            print("\nOK: All diagnostics completed successfully!")
-            print("If freezing occurs, check the diagnostic report for details.")
+            logger.success("Freeze diagnostics completed successfully")
         else:
-            print("\nERROR: Diagnostics detected issues!")
-            print("Check the diagnostic report for detailed analysis.")
-            return 1
-    
+            logger.error("Freeze diagnostics failed")
+        return success
     except Exception as e:
-        print(f"ERROR: Diagnostic error: {e}")
-        return 1
-    
-    return 0
+        logger.error(f"Test suite failed: {e}")
+        return False
 
 
 if __name__ == "__main__":
-    exit_code = asyncio.run(main())
-    sys.exit(exit_code) 
+    success = main()
+    sys.exit(0 if success else 1) 

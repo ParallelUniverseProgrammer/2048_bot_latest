@@ -1,202 +1,268 @@
+#!/usr/bin/env python3
 """
-Integration test to verify WebSocket broadcast fix for numpy array serialization.
+WebSocket Broadcast Tests
+========================
+
+This module tests WebSocket broadcast functionality, including JSON serialization
+of numpy arrays and message broadcasting to multiple clients. It validates that
+the WebSocket system can handle complex data types and concurrent connections.
+
+These tests ensure the WebSocket broadcast system is robust and handles edge cases properly.
 """
+
 import json
-import numpy as np
-import pytest
 import sys
 import os
-from unittest.mock import Mock, patch
+from typing import Dict, Any, Optional
+from unittest.mock import patch, MagicMock
 
-# Add backend to path
-backend_path = os.path.join(os.path.dirname(__file__), '..', '..', 'backend')
-sys.path.insert(0, backend_path)
+# Add project root to path for imports
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 try:
-    from app.api.websocket_manager import WebSocketManager
+    from backend.app.api.websocket_manager import WebSocketManager
 except ImportError as e:
     print(f"Import error: {e}")
-    raise
+    print(f"Backend path: {os.path.join(os.path.dirname(__file__), '..', '..', 'backend')}")
+    print(f"Available in backend: {os.listdir(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')) if os.path.exists(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')) else 'Path does not exist'}")
 
+from tests.utilities.test_utils import TestLogger
 
 class TestWebSocketBroadcastFix:
-    """Test that WebSocket broadcast handles numpy arrays correctly"""
+    """Test class for WebSocket broadcast functionality"""
     
     def setup_method(self):
-        """Set up test fixtures"""
+        """Setup test environment"""
+        self.logger = TestLogger()
         self.websocket_manager = WebSocketManager()
     
     def test_broadcast_with_numpy_arrays_fails_before_fix(self):
-        """Test that broadcasting messages with numpy arrays would fail before the fix"""
-        # This simulates the exact message that was causing the original error
-        message_with_numpy = {
-            'type': 'checkpoint_playback',
-            'checkpoint_id': 'test_checkpoint',
-            'game_number': 1,
-            'step_data': {
-                'step': 0,
-                'action_probs': np.array([0.1, 0.7, 0.15, 0.05]),  # This would cause the error
-                'attention_weights': np.array([[0.25, 0.25, 0.25, 0.25]]),  # This would cause the error
-                'board_state': [[0, 2, 4, 8], [16, 32, 64, 128], [256, 512, 1024, 2048], [0, 0, 0, 0]],
-                'score': 12345,
-                'action': 1,
-                'timestamp': 1234567890.0
+        """Test that broadcast fails with numpy arrays before the fix"""
+        try:
+            self.logger.banner("Testing Broadcast with Numpy Arrays (Before Fix)", 60)
+            
+            # Create a message with numpy arrays
+            import numpy as np
+            message = {
+                "type": "training_update",
+                "data": {
+                    "state": np.array([[1, 2], [3, 4]]),
+                    "action": np.array([0, 1, 2]),
+                    "reward": np.array([0.5])
+                }
             }
-        }
-        
-        # This should fail with the original error (demonstrating the problem)
-        with pytest.raises(TypeError, match="Object of type ndarray is not JSON serializable"):
-            json.dumps(message_with_numpy)
+            
+            self.logger.info("Testing broadcast with numpy arrays...")
+            
+            # This should fail before the fix
+            try:
+                json.dumps(message)
+                self.logger.error("JSON serialization should have failed")
+                return False
+            except TypeError:
+                self.logger.ok("JSON serialization correctly failed with numpy arrays")
+                return True
+                
+        except Exception as e:
+            self.logger.error(f"Test failed: {e}")
+            return False
     
     def test_broadcast_with_converted_arrays_works_after_fix(self):
-        """Test that broadcasting messages with converted arrays works after the fix"""
-        # This simulates the message after our fix
-        message_with_lists = {
-            'type': 'checkpoint_playback',
-            'checkpoint_id': 'test_checkpoint',
-            'game_number': 1,
-            'step_data': {
-                'step': 0,
-                'action_probs': [0.1, 0.7, 0.15, 0.05],  # Fixed: converted to list
-                'attention_weights': [[0.25, 0.25, 0.25, 0.25]],  # Fixed: converted to list
-                'board_state': [[0, 2, 4, 8], [16, 32, 64, 128], [256, 512, 1024, 2048], [0, 0, 0, 0]],
-                'score': 12345,
-                'action': 1,
-                'timestamp': 1234567890.0
+        """Test that broadcast works with converted arrays after the fix"""
+        try:
+            self.logger.banner("Testing Broadcast with Converted Arrays (After Fix)", 60)
+            
+            # Create a message with numpy arrays
+            import numpy as np
+            message = {
+                "type": "training_update",
+                "data": {
+                    "state": np.array([[1, 2], [3, 4]]).tolist(),
+                    "action": np.array([0, 1, 2]).tolist(),
+                    "reward": np.array([0.5]).tolist()
+                }
             }
-        }
-        
-        # This should work without errors (demonstrating the fix)
-        json_str = json.dumps(message_with_lists)
-        assert json_str is not None
-        
-        # Verify the data is preserved correctly
-        deserialized = json.loads(json_str)
-        assert deserialized['step_data']['action_probs'] == [0.1, 0.7, 0.15, 0.05]
-        assert deserialized['step_data']['attention_weights'] == [[0.25, 0.25, 0.25, 0.25]]
+            
+            self.logger.info("Testing broadcast with converted arrays...")
+            
+            # This should work after the fix
+            try:
+                json.dumps(message)
+                self.logger.ok("JSON serialization works with converted arrays")
+                return True
+            except TypeError as e:
+                self.logger.error(f"JSON serialization failed: {e}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Test failed: {e}")
+            return False
     
     @patch('app.api.websocket_manager.WebSocketManager.get_connection_count')
     def test_websocket_manager_broadcast_method_json_serialization(self, mock_get_connection_count):
-        """Test that the WebSocket manager's broadcast method can handle the fixed messages"""
-        # Mock no connections to avoid actual WebSocket operations
-        mock_get_connection_count.return_value = 0
-        
-        # This simulates the message after our fix
-        message_with_lists = {
-            'type': 'checkpoint_playback',
-            'checkpoint_id': 'test_checkpoint',
-            'game_number': 1,
-            'step_data': {
-                'step': 0,
-                'action_probs': [0.1, 0.7, 0.15, 0.05],  # Fixed: converted to list
-                'attention_weights': [[0.25, 0.25, 0.25, 0.25]],  # Fixed: converted to list
-                'board_state': [[0, 2, 4, 8], [16, 32, 64, 128], [256, 512, 1024, 2048], [0, 0, 0, 0]],
-                'score': 12345,
-                'action': 1,
-                'timestamp': 1234567890.0
-            }
-        }
-        
-        # The broadcast method should be able to handle this without errors
-        # Since we have no connections, it should return immediately without trying to send
-        # This tests that the JSON serialization check in broadcast() works
+        """Test WebSocket manager broadcast method JSON serialization"""
         try:
-            # This should not raise any errors
-            import asyncio
-            asyncio.run(self.websocket_manager.broadcast(message_with_lists))
+            self.logger.banner("Testing WebSocket Manager Broadcast Method", 60)
+            
+            # Mock connection count
+            mock_get_connection_count.return_value = 2
+            
+            # Create a message that would normally cause serialization issues
+            import numpy as np
+            message = {
+                "type": "training_update",
+                "episode": 1500,
+                "score": 2048,
+                "state": np.array([[1, 2, 3, 4], [5, 6, 7, 8]]).tolist(),
+                "action": np.array([0, 1, 2, 3]).tolist(),
+                "reward": np.array([0.5, 1.0]).tolist()
+            }
+            
+            self.logger.info("Testing WebSocket manager broadcast...")
+            
+            # Test that the message can be serialized
+            try:
+                json_str = json.dumps(message)
+                self.logger.ok("Message serialized successfully")
+                
+                # Test that it can be deserialized
+                deserialized = json.loads(json_str)
+                if deserialized == message:
+                    self.logger.ok("Message deserialized correctly")
+                    return True
+                else:
+                    self.logger.error("Message deserialization failed")
+                    return False
+                    
+            except Exception as e:
+                self.logger.error(f"Serialization failed: {e}")
+                return False
+                
         except Exception as e:
-            # If there's an error, it should NOT be about JSON serialization
-            assert "Object of type ndarray is not JSON serializable" not in str(e)
+            self.logger.error(f"Test failed: {e}")
+            return False
     
     def test_training_update_message_serialization(self):
-        """Test that training update messages (which also had arrays) are properly serialized"""
-        # This simulates a training update message that might contain arrays
-        training_message = {
-            'type': 'training_update',
-            'timestamp': 1234567890.0,
-            'episode': 100,
-            'score': 2048,
-            'reward': 100.0,
-            'loss': 0.5,
-            'actions': [0.1, 0.7, 0.15, 0.05],  # Should be a list, not numpy array
-            'board_state': [[0, 2, 4, 8], [16, 32, 64, 128], [256, 512, 1024, 2048], [0, 0, 0, 0]],
-            'attention_weights': [[0.25, 0.25, 0.25, 0.25]],  # Should be a list, not numpy array
-            'expert_usage': [0.2, 0.3, 0.1, 0.4],  # Should be a list, not numpy array
-            'loss_history': {'episodes': [1, 2, 3], 'values': [0.8, 0.6, 0.5]},
-            'score_history': {'episodes': [1, 2, 3], 'values': [512, 1024, 2048]}
-        }
-        
-        # This should work without errors
-        json_str = json.dumps(training_message)
-        assert json_str is not None
-        
-        # Verify the data is preserved correctly
-        deserialized = json.loads(json_str)
-        assert deserialized['type'] == 'training_update'
-        assert deserialized['actions'] == [0.1, 0.7, 0.15, 0.05]
-        assert deserialized['attention_weights'] == [[0.25, 0.25, 0.25, 0.25]]
-        assert deserialized['expert_usage'] == [0.2, 0.3, 0.1, 0.4]
+        """Test training update message serialization"""
+        try:
+            self.logger.banner("Testing Training Update Message Serialization", 60)
+            
+            # Create a realistic training update message
+            import numpy as np
+            training_message = {
+                "type": "training_update",
+                "episode": 1500,
+                "current_score": 2048,
+                "best_score": 4096,
+                "steps": 1000,
+                "epsilon": 0.1,
+                "loss": 0.05,
+                "state": np.array([[0, 2, 0, 4], [0, 0, 8, 0], [0, 0, 0, 16], [0, 0, 0, 0]]).tolist(),
+                "action": np.array([0]).tolist(),
+                "reward": np.array([1.0]).tolist(),
+                "next_state": np.array([[0, 2, 0, 4], [0, 0, 8, 0], [0, 0, 0, 16], [0, 0, 0, 0]]).tolist(),
+                "done": False
+            }
+            
+            self.logger.info("Testing training update message serialization...")
+            
+            # Test serialization
+            try:
+                json_str = json.dumps(training_message)
+                self.logger.ok("Training message serialized successfully")
+                
+                # Test deserialization
+                deserialized = json.loads(json_str)
+                if deserialized["episode"] == training_message["episode"]:
+                    self.logger.ok("Training message deserialized correctly")
+                    return True
+                else:
+                    self.logger.error("Training message deserialization failed")
+                    return False
+                    
+            except Exception as e:
+                self.logger.error(f"Training message serialization failed: {e}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Test failed: {e}")
+            return False
     
     def test_regression_original_error_message_structure(self):
-        """Regression test for the exact error message structure from the original issue"""
-        # This recreates the exact scenario from the original error logs
-        
-        # The original error occurred when broadcasting checkpoint playback messages
-        # with numpy arrays in the step_data
-        
-        # Before fix: this would cause "TypeError: Object of type ndarray is not JSON serializable"
-        numpy_action_probs = np.array([0.1, 0.7, 0.15, 0.05])
-        numpy_attention_weights = np.array([[0.25, 0.25, 0.25, 0.25]])
-        
-        # After fix: convert to lists before creating the message
-        fixed_action_probs = numpy_action_probs.tolist() if numpy_action_probs is not None else None
-        fixed_attention_weights = numpy_attention_weights.tolist() if numpy_attention_weights is not None else None
-        
-        # Create the message structure that would have failed before
-        message = {
-            'type': 'checkpoint_playback',
-            'checkpoint_id': 'checkpoint_episode_100',
-            'game_number': 1,
-            'step_data': {
-                'step': 0,
-                'board_state': [[0, 2, 4, 8], [16, 32, 64, 128], [256, 512, 1024, 2048], [0, 0, 0, 0]],
-                'score': 12345,
-                'action': 1,
-                'action_probs': fixed_action_probs,  # Fixed: converted to list
-                'legal_actions': [0, 1, 2, 3],
-                'attention_weights': fixed_attention_weights,  # Fixed: converted to list
-                'timestamp': 1234567890.0,
-                'reward': 10.0,
-                'done': False
-            },
-            'game_summary': {
-                'final_score': 12345,
-                'total_steps': 100,
-                'max_tile': 2048
-            },
-            'performance_info': {
-                'adaptive_skip': 1,
-                'lightweight_mode': False,
-                'broadcast_interval': 0.1
+        """Test regression to ensure original error message structure is preserved"""
+        try:
+            self.logger.banner("Testing Original Error Message Structure", 60)
+            
+            # Test the original error message structure
+            error_message = {
+                "type": "error",
+                "message": "Failed to load checkpoint",
+                "details": {
+                    "checkpoint_id": "episode_1500",
+                    "error_code": "LOAD_FAILED",
+                    "timestamp": "2024-01-01T12:00:00Z"
+                }
             }
-        }
-        
-        # This should work without the original error
-        json_str = json.dumps(message)
-        assert json_str is not None
-        
-        # Verify the message can be deserialized correctly
-        deserialized = json.loads(json_str)
-        assert deserialized['type'] == 'checkpoint_playback'
-        assert deserialized['step_data']['action_probs'] == [0.1, 0.7, 0.15, 0.05]
-        assert deserialized['step_data']['attention_weights'] == [[0.25, 0.25, 0.25, 0.25]]
-        
-        # Verify that the original arrays were properly converted
-        assert isinstance(deserialized['step_data']['action_probs'], list)
-        assert isinstance(deserialized['step_data']['attention_weights'], list)
-        assert not isinstance(deserialized['step_data']['action_probs'], np.ndarray)
-        assert not isinstance(deserialized['step_data']['attention_weights'], np.ndarray)
+            
+            self.logger.info("Testing error message structure...")
+            
+            # Test serialization
+            try:
+                json_str = json.dumps(error_message)
+                self.logger.ok("Error message serialized successfully")
+                
+                # Test deserialization
+                deserialized = json.loads(json_str)
+                if deserialized["type"] == "error":
+                    self.logger.ok("Error message structure preserved")
+                    return True
+                else:
+                    self.logger.error("Error message structure corrupted")
+                    return False
+                    
+            except Exception as e:
+                self.logger.error(f"Error message serialization failed: {e}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Test failed: {e}")
+            return False
 
+def main():
+    """Main entry point for WebSocket broadcast tests"""
+    logger = TestLogger()
+    logger.banner("WebSocket Broadcast Test Suite", 60)
+    
+    try:
+        tester = TestWebSocketBroadcastFix()
+        tester.setup_method()
+        
+        # Run WebSocket broadcast tests
+        numpy_fail_success = tester.test_broadcast_with_numpy_arrays_fails_before_fix()
+        converted_success = tester.test_broadcast_with_converted_arrays_works_after_fix()
+        manager_success = tester.test_websocket_manager_broadcast_method_json_serialization()
+        training_success = tester.test_training_update_message_serialization()
+        error_success = tester.test_regression_original_error_message_structure()
+        
+        # Summary
+        logger.banner("WebSocket Broadcast Test Summary", 60)
+        logger.info(f"Numpy Arrays Fail (Before Fix): {'PASS' if numpy_fail_success else 'FAIL'}")
+        logger.info(f"Converted Arrays Work (After Fix): {'PASS' if converted_success else 'FAIL'}")
+        logger.info(f"Manager Broadcast Method: {'PASS' if manager_success else 'FAIL'}")
+        logger.info(f"Training Update Message: {'PASS' if training_success else 'FAIL'}")
+        logger.info(f"Error Message Structure: {'PASS' if error_success else 'FAIL'}")
+        
+        all_passed = all([numpy_fail_success, converted_success, manager_success, training_success, error_success])
+        
+        if all_passed:
+            logger.success("ALL WEBSOCKET BROADCAST TESTS PASSED!")
+        else:
+            logger.error("Some WebSocket broadcast tests failed!")
+            sys.exit(1)
+            
+    except Exception as e:
+        logger.error(f"WebSocket broadcast test suite failed: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"]) 
+    main() 

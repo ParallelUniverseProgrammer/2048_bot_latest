@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 """
-Test script to verify performance improvements prevent freezing issues
+Performance Test
+===============
+
+This test verifies performance improvements prevent freezing issues by:
+- Testing WebSocket performance with multiple concurrent clients
+- Monitoring message batching and lightweight message usage
+- Testing checkpoint playback performance under load
+- Analyzing server performance metrics and connection health
+- Validating adaptive performance mechanisms
+
+This test is critical for ensuring the system can handle real-world load without freezing.
 """
 
 import asyncio
@@ -13,10 +23,13 @@ import sys
 import signal
 from typing import List, Dict, Any
 
+from tests.utilities.test_utils import TestLogger
+
 class PerformanceTestClient:
     """Test client that simulates realistic load"""
     
-    def __init__(self, client_id: int, slow_processing: bool = False):
+    def __init__(self, logger: TestLogger, client_id: int, slow_processing: bool = False):
+        self.logger = logger
         self.client_id = client_id
         self.slow_processing = slow_processing
         self.messages_received = 0
@@ -31,11 +44,11 @@ class PerformanceTestClient:
     async def connect_and_monitor(self, websocket_url: str, duration: int = 60):
         """Connect to WebSocket and monitor performance"""
         try:
-            print(f"Client {self.client_id}: Connecting to {websocket_url}")
+            self.logger.info(f"Client {self.client_id}: Connecting to {websocket_url}")
             self.connection_start = time.time()
             
             async with websockets.connect(websocket_url) as websocket:
-                print(f"Client {self.client_id}: Connected successfully")
+                self.logger.ok(f"Client {self.client_id}: Connected successfully")
                 
                 # Monitor messages for specified duration
                 end_time = time.time() + duration
@@ -50,15 +63,15 @@ class PerformanceTestClient:
                         # No message received in timeout period, that's okay
                         continue
                     except websockets.exceptions.ConnectionClosed:
-                        print(f"Client {self.client_id}: Connection closed")
+                        self.logger.warning(f"Client {self.client_id}: Connection closed")
                         break
                     except Exception as e:
                         self.errors.append(f"Message processing error: {e}")
-                        print(f"Client {self.client_id}: Error processing message: {e}")
+                        self.logger.error(f"Client {self.client_id}: Error processing message: {e}")
                         
         except Exception as e:
             self.errors.append(f"Connection error: {e}")
-            print(f"Client {self.client_id}: Connection error: {e}")
+            self.logger.error(f"Client {self.client_id}: Connection error: {e}")
     
     async def _process_message(self, message: str):
         """Process received message and track performance"""
@@ -118,244 +131,266 @@ class PerformanceTestClient:
             'error_details': self.errors[-5:] if self.errors else []  # Last 5 errors
         }
 
-async def test_websocket_performance():
-    """Test WebSocket performance improvements"""
-    print("=== WebSocket Performance Test ===")
+class PerformanceTester:
+    """Test class for performance verification"""
     
-    # Test configuration
-    base_url = "http://localhost:8000"
-    websocket_url = "ws://localhost:8000/ws"
-    num_clients = 5
-    test_duration = 30  # seconds
+    def __init__(self):
+        self.logger = TestLogger()
+        self.base_url = "http://localhost:8000"
+        self.websocket_url = "ws://localhost:8000/ws"
     
-    # Check if server is running
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{base_url}/ws/stats") as response:
-                if response.status != 200:
-                    print("Server not running or WebSocket endpoint not available")
-                    return False
-    except Exception as e:
-        print(f"Cannot connect to server: {e}")
-        return False
-    
-    print(f"Testing with {num_clients} clients for {test_duration} seconds...")
-    
-    # Create test clients (mix of normal and slow processing)
-    clients = []
-    for i in range(num_clients):
-        slow_processing = i >= num_clients // 2  # Half the clients are slow
-        client = PerformanceTestClient(i, slow_processing)
-        clients.append(client)
-    
-    # Start all clients concurrently
-    tasks = []
-    for client in clients:
-        task = asyncio.create_task(client.connect_and_monitor(websocket_url, test_duration))
-        tasks.append(task)
-    
-    # Wait for all clients to complete
-    print("Clients started, monitoring performance...")
-    await asyncio.gather(*tasks, return_exceptions=True)
-    
-    # Collect and analyze results
-    print("\n=== Performance Results ===")
-    
-    total_messages = 0
-    total_errors = 0
-    total_batches = 0
-    total_lightweight = 0
-    total_full = 0
-    
-    for client in clients:
-        stats = client.get_stats()
-        total_messages += stats['messages_received']
-        total_errors += stats['errors']
-        total_batches += stats['batches_received']
-        total_lightweight += stats['lightweight_messages']
-        total_full += stats['full_messages']
+    async def test_websocket_performance(self) -> bool:
+        """Test WebSocket performance improvements"""
+        self.logger.banner("WebSocket Performance Test", 60)
         
-        print(f"Client {stats['client_id']}: "
-              f"{stats['messages_received']} msgs, "
-              f"{stats['messages_per_second']:.1f} msg/s, "
-              f"{stats['avg_processing_time']*1000:.1f}ms avg, "
-              f"{stats['errors']} errors")
-    
-    # Get server performance stats
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{base_url}/ws/performance") as response:
-                if response.status == 200:
-                    server_stats = await response.json()
-                    print(f"\nServer Performance:")
-                    print(f"  Total broadcasts: {server_stats.get('total_broadcasts', 0)}")
-                    print(f"  Successful broadcasts: {server_stats.get('successful_broadcasts', 0)}")
-                    print(f"  Failed broadcasts: {server_stats.get('failed_broadcasts', 0)}")
-                    print(f"  Slow broadcasts: {server_stats.get('slow_broadcasts', 0)}")
-                    print(f"  Avg broadcast time: {server_stats.get('avg_broadcast_time', 0)*1000:.1f}ms")
-                    
-                    # Check connection health
-                    healthy_connections = sum(1 for conn in server_stats.get('connection_health', []) 
-                                            if conn.get('health_score', 0) > 0.7)
-                    print(f"  Healthy connections: {healthy_connections}/{len(server_stats.get('connection_health', []))}")
-    except Exception as e:
-        print(f"Could not get server stats: {e}")
-    
-    print(f"\nOverall Results:")
-    print(f"  Total messages received: {total_messages}")
-    print(f"  Total batches received: {total_batches}")
-    print(f"  Lightweight messages: {total_lightweight}")
-    print(f"  Full messages: {total_full}")
-    print(f"  Total errors: {total_errors}")
-    
-    # Performance assessment
-    success_rate = (total_messages - total_errors) / total_messages if total_messages > 0 else 0
-    print(f"  Success rate: {success_rate*100:.1f}%")
-    
-    # Check if improvements are working
-    improvements_working = (
-        total_batches > 0 or  # Message batching is active
-        total_lightweight > 0 or  # Lightweight messages are being used
-        success_rate > 0.95  # High success rate
-    )
-    
-    if improvements_working:
-        print("OK: Performance improvements are working!")
-    else:
-        print("ERROR: Performance improvements may not be working properly")
-    
-    return improvements_working
+        # Test configuration
+        num_clients = 5
+        test_duration = 30  # seconds
+        
+        # Check if server is running
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.base_url}/ws/stats") as response:
+                    if response.status != 200:
+                        self.logger.error("Server not running or WebSocket endpoint not available")
+                        return False
+        except Exception as e:
+            self.logger.error(f"Cannot connect to server: {e}")
+            return False
+        
+        self.logger.info(f"Testing with {num_clients} clients for {test_duration} seconds...")
+        
+        # Create test clients (mix of normal and slow processing)
+        clients = []
+        for i in range(num_clients):
+            slow_processing = i >= num_clients // 2  # Half the clients are slow
+            client = PerformanceTestClient(self.logger, i, slow_processing)
+            clients.append(client)
+        
+        # Start all clients concurrently
+        tasks = []
+        for client in clients:
+            task = asyncio.create_task(client.connect_and_monitor(self.websocket_url, test_duration))
+            tasks.append(task)
+        
+        # Wait for all clients to complete
+        self.logger.info("Clients started, monitoring performance...")
+        await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Collect and analyze results
+        self.logger.banner("Performance Results", 60)
+        
+        total_messages = 0
+        total_errors = 0
+        total_batches = 0
+        total_lightweight = 0
+        total_full = 0
+        
+        for client in clients:
+            stats = client.get_stats()
+            total_messages += stats['messages_received']
+            total_errors += stats['errors']
+            total_batches += stats['batches_received']
+            total_lightweight += stats['lightweight_messages']
+            total_full += stats['full_messages']
+            
+            self.logger.info(f"Client {stats['client_id']}: "
+                  f"{stats['messages_received']} msgs, "
+                  f"{stats['messages_per_second']:.1f} msg/s, "
+                  f"{stats['avg_processing_time']*1000:.1f}ms avg, "
+                  f"{stats['errors']} errors")
+        
+        # Get server performance stats
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.base_url}/ws/performance") as response:
+                    if response.status == 200:
+                        server_stats = await response.json()
+                        self.logger.info("Server Performance:")
+                        self.logger.info(f"  Total broadcasts: {server_stats.get('total_broadcasts', 0)}")
+                        self.logger.info(f"  Successful broadcasts: {server_stats.get('successful_broadcasts', 0)}")
+                        self.logger.info(f"  Failed broadcasts: {server_stats.get('failed_broadcasts', 0)}")
+                        self.logger.info(f"  Slow broadcasts: {server_stats.get('slow_broadcasts', 0)}")
+                        self.logger.info(f"  Avg broadcast time: {server_stats.get('avg_broadcast_time', 0)*1000:.1f}ms")
+                        
+                        # Check connection health
+                        healthy_connections = sum(1 for conn in server_stats.get('connection_health', []) 
+                                                if conn.get('health_score', 0) > 0.7)
+                        self.logger.info(f"  Healthy connections: {healthy_connections}/{len(server_stats.get('connection_health', []))}")
+        except Exception as e:
+            self.logger.warning(f"Could not get server stats: {e}")
+        
+        self.logger.info("Overall Results:")
+        self.logger.info(f"  Total messages received: {total_messages}")
+        self.logger.info(f"  Total batches received: {total_batches}")
+        self.logger.info(f"  Lightweight messages: {total_lightweight}")
+        self.logger.info(f"  Full messages: {total_full}")
+        self.logger.info(f"  Total errors: {total_errors}")
+        
+        # Performance assessment
+        success_rate = (total_messages - total_errors) / total_messages if total_messages > 0 else 0
+        self.logger.info(f"  Success rate: {success_rate*100:.1f}%")
+        
+        # Check if improvements are working
+        improvements_working = (
+            total_batches > 0 or  # Message batching is active
+            total_lightweight > 0 or  # Lightweight messages are being used
+            success_rate > 0.95  # High success rate
+        )
+        
+        if improvements_working:
+            self.logger.ok("Performance improvements are working!")
+        else:
+            self.logger.error("Performance improvements may not be working properly")
+        
+        return improvements_working
 
-async def test_checkpoint_playback_performance():
-    """Test checkpoint playback performance specifically"""
-    print("\n=== Checkpoint Playback Performance Test ===")
-    
-    base_url = "http://localhost:8000"
-    websocket_url = "ws://localhost:8000/ws"
-    
-    # Get available checkpoints
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{base_url}/checkpoints") as response:
-                if response.status != 200:
-                    print("Cannot get checkpoints")
-                    return False
-                
-                checkpoints = await response.json()
-                if not checkpoints:
-                    print("No checkpoints available for testing")
-                    return False
-                
-                # Use the first checkpoint
-                checkpoint_id = checkpoints[0]['id']
-                print(f"Testing with checkpoint: {checkpoint_id}")
-    except Exception as e:
-        print(f"Error getting checkpoints: {e}")
-        return False
-    
-    # Start playback
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{base_url}/checkpoints/{checkpoint_id}/playback/start", 
-                                  ) as response:
-                if response.status != 200:
-                    print("Failed to start playback")
-                    return False
-                
-                print("Started checkpoint playback")
-    except Exception as e:
-        print(f"Error starting playback: {e}")
-        return False
-    
-    # Monitor playback with multiple clients
-    num_clients = 3
-    test_duration = 20  # seconds
-    
-    clients = []
-    for i in range(num_clients):
-        client = PerformanceTestClient(i, slow_processing=(i == num_clients-1))
-        clients.append(client)
-    
-    # Start monitoring
-    tasks = []
-    for client in clients:
-        task = asyncio.create_task(client.connect_and_monitor(websocket_url, test_duration))
-        tasks.append(task)
-    
-    await asyncio.gather(*tasks, return_exceptions=True)
-    
-    # Stop playback
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{base_url}/checkpoints/playback/stop") as response:
-                print("Stopped checkpoint playback")
-    except Exception as e:
-        print(f"Error stopping playback: {e}")
-    
-    # Analyze results
-    total_playback_messages = 0
-    total_lightweight = 0
-    
-    for client in clients:
-        stats = client.get_stats()
-        total_playback_messages += stats['lightweight_messages'] + stats['full_messages']
-        total_lightweight += stats['lightweight_messages']
+    async def test_checkpoint_playback_performance(self) -> bool:
+        """Test checkpoint playback performance specifically"""
+        self.logger.banner("Checkpoint Playback Performance Test", 60)
         
-        print(f"Client {stats['client_id']}: "
-              f"{stats['lightweight_messages']} light, "
-              f"{stats['full_messages']} full, "
-              f"{stats['errors']} errors")
-    
-    print(f"\nPlayback Results:")
-    print(f"  Total playback messages: {total_playback_messages}")
-    print(f"  Lightweight messages: {total_lightweight}")
-    print(f"  Lightweight ratio: {total_lightweight/total_playback_messages*100:.1f}%" if total_playback_messages > 0 else "N/A")
-    
-    # Check if adaptive performance is working
-    adaptive_working = total_lightweight > 0 and total_playback_messages > 0
-    
-    if adaptive_working:
-        print("OK: Adaptive playback performance is working!")
-    else:
-        print("ERROR: Adaptive playback performance may not be working")
-    
-    return adaptive_working
+        # Get available checkpoints
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.base_url}/checkpoints") as response:
+                    if response.status != 200:
+                        self.logger.error("Cannot get checkpoints")
+                        return False
+                    
+                    checkpoints = await response.json()
+                    if not checkpoints:
+                        self.logger.error("No checkpoints available for testing")
+                        return False
+                    
+                    # Use the first checkpoint
+                    checkpoint_id = checkpoints[0]['id']
+                    self.logger.info(f"Testing with checkpoint: {checkpoint_id}")
+        except Exception as e:
+            self.logger.error(f"Error getting checkpoints: {e}")
+            return False
+        
+        # Start playback
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{self.base_url}/checkpoints/{checkpoint_id}/playback/start") as response:
+                    if response.status != 200:
+                        self.logger.error("Failed to start playback")
+                        return False
+                    
+                    self.logger.ok("Started checkpoint playback")
+        except Exception as e:
+            self.logger.error(f"Error starting playback: {e}")
+            return False
+        
+        # Monitor playback with multiple clients
+        num_clients = 3
+        test_duration = 20  # seconds
+        
+        clients = []
+        for i in range(num_clients):
+            client = PerformanceTestClient(self.logger, i, slow_processing=(i == num_clients-1))
+            clients.append(client)
+        
+        # Start monitoring
+        tasks = []
+        for client in clients:
+            task = asyncio.create_task(client.connect_and_monitor(self.websocket_url, test_duration))
+            tasks.append(task)
+        
+        await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Stop playback
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{self.base_url}/checkpoints/playback/stop") as response:
+                    self.logger.info("Stopped checkpoint playback")
+        except Exception as e:
+            self.logger.warning(f"Error stopping playback: {e}")
+        
+        # Analyze results
+        total_playback_messages = 0
+        total_lightweight = 0
+        
+        for client in clients:
+            stats = client.get_stats()
+            total_playback_messages += stats['lightweight_messages'] + stats['full_messages']
+            total_lightweight += stats['lightweight_messages']
+            
+            self.logger.info(f"Client {stats['client_id']}: "
+                  f"{stats['lightweight_messages']} light, "
+                  f"{stats['full_messages']} full, "
+                  f"{stats['errors']} errors")
+        
+        self.logger.info("Playback Results:")
+        self.logger.info(f"  Total playback messages: {total_playback_messages}")
+        self.logger.info(f"  Lightweight messages: {total_lightweight}")
+        if total_playback_messages > 0:
+            self.logger.info(f"  Lightweight ratio: {total_lightweight/total_playback_messages*100:.1f}%")
+        
+        # Check if adaptive performance is working
+        adaptive_working = total_lightweight > 0 and total_playback_messages > 0
+        
+        if adaptive_working:
+            self.logger.ok("Adaptive playback performance is working!")
+        else:
+            self.logger.error("Adaptive playback performance may not be working")
+        
+        return adaptive_working
+
+    async def run_all_performance_tests(self) -> bool:
+        """Run all performance tests"""
+        self.logger.banner("Performance Improvement Tests", 60)
+        
+        try:
+            # Test 1: General WebSocket performance
+            websocket_test_passed = await self.test_websocket_performance()
+            
+            # Test 2: Checkpoint playback performance
+            playback_test_passed = await self.test_checkpoint_playback_performance()
+            
+            # Overall result
+            self.logger.banner("Final Results", 60)
+            if websocket_test_passed and playback_test_passed:
+                self.logger.success("All performance tests passed!")
+                self.logger.info("The freezing issue should be resolved.")
+                return True
+            else:
+                self.logger.error("Some performance tests failed.")
+                self.logger.warning("The freezing issue may still occur under load.")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Performance test failed: {e}")
+            return False
 
 async def main():
-    """Run all performance tests"""
-    print("Starting Performance Improvement Tests...")
+    """Main entry point for performance tests"""
+    logger = TestLogger()
+    logger.banner("Performance Test Suite", 60)
     
-    # Test 1: General WebSocket performance
-    websocket_test_passed = await test_websocket_performance()
-    
-    # Test 2: Checkpoint playback performance
-    playback_test_passed = await test_checkpoint_playback_performance()
-    
-    # Overall result
-    print("\n=== Final Results ===")
-    if websocket_test_passed and playback_test_passed:
-        print("SUCCESS: All performance tests passed!")
-        print("The freezing issue should be resolved.")
-        return True
-    else:
-        print("WARNING:  Some performance tests failed.")
-        print("The freezing issue may still occur under load.")
-        return False
-
-if __name__ == "__main__":
     # Handle Ctrl+C gracefully
     def signal_handler(sig, frame):
-        print("\nTest interrupted by user")
+        logger.warning("Test interrupted by user")
         sys.exit(0)
     
     signal.signal(signal.SIGINT, signal_handler)
     
     try:
-        success = asyncio.run(main())
-        sys.exit(0 if success else 1)
+        tester = PerformanceTester()
+        success = await tester.run_all_performance_tests()
+        
+        if success:
+            logger.success("PERFORMANCE TESTS PASSED!")
+        else:
+            logger.error("PERFORMANCE TESTS FAILED!")
+            sys.exit(1)
+            
     except KeyboardInterrupt:
-        print("\nTest interrupted")
+        logger.warning("Test interrupted")
         sys.exit(1)
     except Exception as e:
-        print(f"Test failed with error: {e}")
-        sys.exit(1) 
+        logger.error(f"Test failed with error: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    asyncio.run(main()) 

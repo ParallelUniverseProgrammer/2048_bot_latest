@@ -808,4 +808,38 @@ def check_backend_or_start_mock(port: int = 8000, wait_time: int = 30) -> bool:
         return True
     else:
         backend_tester.logger.error("Neither real nor mock backend is available")
-        return False 
+        return False
+
+def main():
+    """Main entry point for test utilities - demonstrates usage"""
+    logger = TestLogger()
+    logger.banner("Test Utilities Demo", 60)
+    
+    # Demonstrate TestLogger functionality
+    logger.info("Testing TestLogger functionality...")
+    logger.ok("Success message example")
+    logger.warning("Warning message example")
+    logger.error("Error message example")
+    logger.game("Game message example")
+    logger.controls("Controls message example")
+    logger.playback("Playback message example")
+    
+    # Demonstrate BackendTester functionality
+    logger.info("Testing BackendTester functionality...")
+    backend = BackendTester(logger=logger)
+    
+    if backend.is_backend_available():
+        logger.ok("Backend is available")
+        
+        # Test basic connectivity
+        if backend.test_connectivity():
+            logger.ok("Backend connectivity test passed")
+        else:
+            logger.error("Backend connectivity test failed")
+    else:
+        logger.warning("Backend is not available")
+    
+    logger.success("Test utilities demo completed!")
+
+if __name__ == "__main__":
+    main() 

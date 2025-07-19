@@ -1,7 +1,18 @@
 #!/usr/bin/env python3
 """
-Real playback freeze reproduction test.
-This test loads actual checkpoints and tries to reproduce the freezing issue.
+Real Playback Freeze Detection Test
+==================================
+
+This test loads actual checkpoints and tries to reproduce the freezing issue
+that can occur during live playback. It uses real checkpoint data and simulates
+WebSocket clients to identify potential freeze conditions.
+
+The test performs:
+- Real checkpoint loading and validation
+- Single game playback testing
+- Live playback with timeout detection
+- WebSocket stress testing
+- Multiple checkpoint testing to identify problematic ones
 """
 
 import sys
@@ -14,6 +25,7 @@ from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
 
+from tests.utilities.test_utils import TestLogger
 from backend.app.models.checkpoint_playback import CheckpointPlayback
 from backend.app.models.checkpoint_metadata import CheckpointManager
 from backend.app.api.websocket_manager import WebSocketManager
@@ -39,8 +51,9 @@ class RealPlaybackFreezeTest:
     """Test class to reproduce freezing with real checkpoints"""
     
     def __init__(self):
+        self.logger = TestLogger()
         checkpoint_dir = os.getenv('CHECKPOINTS_DIR', os.path.join(os.path.dirname(__file__), '..', 'backend', 'checkpoints'))
-        print(f"[test_real_playback_freeze] Using checkpoint_dir: {checkpoint_dir}")
+        self.logger.info(f"Using checkpoint_dir: {checkpoint_dir}")
         self.checkpoint_manager = CheckpointManager(checkpoint_dir)
         self.websocket_manager = WebSocketManager()
         self.playback = None
@@ -52,45 +65,45 @@ class RealPlaybackFreezeTest:
         """Connect a mock WebSocket client to the WebSocketManager."""
         self.mock_client = MockWebSocket(slow=slow)
         await self.websocket_manager.connect(self.mock_client, user_agent="mock-test-client")
-        print("Mock client connected.")
+        self.logger.ok("Mock client connected")
     
     async def test_real_checkpoint_playback(self, checkpoint_id: str):
         """Test real checkpoint playback with timeout (asyncio only) and a simulated client."""
-        print(f"\n=== Testing Real Checkpoint Playback: {checkpoint_id} ===")
+        self.logger.banner(f"Testing Real Checkpoint Playback: {checkpoint_id}", 60)
         try:
             # Create playback instance
             self.playback = CheckpointPlayback(self.checkpoint_manager)
             
             # Load checkpoint
-            print(f"Loading checkpoint {checkpoint_id}...")
+            self.logger.info(f"Loading checkpoint {checkpoint_id}...")
             start_time = time.time()
             success = self.playback.load_checkpoint(checkpoint_id)
             load_time = time.time() - start_time
             
             if not success:
-                print(f"ERROR: Failed to load checkpoint {checkpoint_id}")
+                self.logger.error(f"Failed to load checkpoint {checkpoint_id}")
                 return False, False
                 
-            print(f"OK: Checkpoint loaded in {load_time:.2f}s")
+            self.logger.ok(f"Checkpoint loaded in {load_time:.2f}s")
             
             # Test single game first
-            print("Testing single game playback...")
+            self.logger.info("Testing single game playback...")
             start_time = time.time()
             game_result = self.playback.play_single_game()
             game_time = time.time() - start_time
             
             if 'error' in game_result:
-                print(f"ERROR: Single game failed: {game_result['error']}")
+                self.logger.error(f"Single game failed: {game_result['error']}")
                 return False, False
                 
-            print(f"OK: Single game completed in {game_time:.2f}s")
-            print(f"   Score: {game_result.get('final_score', 0)}")
-            print(f"   Steps: {game_result.get('steps', 0)}")
-            print(f"   Max tile: {game_result.get('max_tile', 0)}")
+            self.logger.ok(f"Single game completed in {game_time:.2f}s")
+            self.logger.info(f"   Score: {game_result.get('final_score', 0)}")
+            self.logger.info(f"   Steps: {game_result.get('steps', 0)}")
+            self.logger.info(f"   Max tile: {game_result.get('max_tile', 0)}")
             
             # Simulate a connected client before starting live playback
             await self.connect_mock_client(slow=False)
-            print("Testing live playback (will timeout after 30 seconds)...")
+            self.logger.info("Testing live playback (will timeout after 30 seconds)...")
             start_time = time.time()
             playback_task = asyncio.create_task(
                 self.playback.start_live_playback(self.websocket_manager)
@@ -98,36 +111,35 @@ class RealPlaybackFreezeTest:
             try:
                 await asyncio.wait_for(playback_task, timeout=30.0)
                 playback_time = time.time() - start_time
-                print(f"OK: Live playback completed in {playback_time:.2f}s")
+                self.logger.ok(f"Live playback completed in {playback_time:.2f}s")
                 return True, False
             except asyncio.TimeoutError:
                 playback_time = time.time() - start_time
-                print(f"ALARM: Live playback timed out after {playback_time:.2f}s - potential freeze!")
+                self.logger.warning(f"Live playback timed out after {playback_time:.2f}s - potential freeze!")
                 self.playback.stop_playback()
                 try:
                     await asyncio.wait_for(playback_task, timeout=5.0)
-                    print("OK: Playback stopped gracefully")
+                    self.logger.ok("Playback stopped gracefully")
                 except asyncio.TimeoutError:
-                    print("ERROR: Playback failed to stop gracefully - confirmed freeze!")
+                    self.logger.error("Playback failed to stop gracefully - confirmed freeze!")
                 return False, True
         except Exception as e:
-            print(f"ERROR: Exception during playback: {e}")
+            self.logger.error(f"Exception during playback: {e}")
             import traceback
             traceback.print_exc()
             return False, False
     
     async def test_multiple_checkpoints(self):
         """Test multiple checkpoints to find problematic ones"""
-        print("FIND: Testing Multiple Checkpoints for Freezing Issues")
-        print("=" * 60)
+        self.logger.banner("Testing Multiple Checkpoints for Freezing Issues", 60)
         checkpoints = self.checkpoint_manager.list_checkpoints()
         if not checkpoints:
-            print("No checkpoints available for testing")
+            self.logger.warning("No checkpoints available for testing")
             return
         results = []
         for checkpoint in checkpoints[:3]:  # Test first 3 checkpoints
             checkpoint_id = checkpoint.id
-            print(f"\n--- Testing Checkpoint: {checkpoint_id} ---")
+            self.logger.info(f"--- Testing Checkpoint: {checkpoint_id} ---")
             start_time = time.time()
             try:
                 # Wrap the whole test in a timeout
@@ -136,7 +148,7 @@ class RealPlaybackFreezeTest:
                     timeout=self.test_timeout
                 )
             except asyncio.TimeoutError:
-                print(f"ALARM: Entire test timed out after {self.test_timeout} seconds - potential freeze!")
+                self.logger.warning(f"Entire test timed out after {self.test_timeout} seconds - potential freeze!")
                 success, froze = False, True
             total_time = time.time() - start_time
             result = {
@@ -149,25 +161,24 @@ class RealPlaybackFreezeTest:
             # Brief pause between tests
             await asyncio.sleep(2.0)
         # Summary
-        print("\n" + "=" * 60)
-        print("SUMMARY: Checkpoint Test Summary:")
-        print("=" * 60)
+        self.logger.banner("Checkpoint Test Summary", 60)
         for result in results:
-            status = "OK: PASS" if result['success'] else "ERROR: FAIL"
+            status = "PASS" if result['success'] else "FAIL"
             freeze_indicator = " (FROZE)" if result['froze'] else ""
-            print(f"{status} {result['checkpoint_id']}: {result['time']:.2f}s{freeze_indicator}")
+            self.logger.info(f"{status} {result['checkpoint_id']}: {result['time']:.2f}s{freeze_indicator}")
         frozen_count = sum(1 for r in results if r['froze'])
         if frozen_count > 0:
-            print(f"\nFIND: Found {frozen_count} checkpoint(s) that caused freezing!")
+            self.logger.warning(f"Found {frozen_count} checkpoint(s) that caused freezing!")
         else:
-            print(f"\nOK: No freezing detected in checkpoint tests")
+            self.logger.ok("No freezing detected in checkpoint tests")
+    
     async def test_websocket_stress(self):
         """Test WebSocket stress conditions"""
-        print("\n=== Testing WebSocket Stress Conditions ===")
+        self.logger.banner("Testing WebSocket Stress Conditions", 60)
         for i in range(3):
             mock_ws = MockWebSocket(slow=(i == 0))  # First connection is slow
             await self.websocket_manager.connect(mock_ws, f"test_client_{i}")
-        print(f"Connected {self.websocket_manager.get_connection_count()} mock clients")
+        self.logger.info(f"Connected {self.websocket_manager.get_connection_count()} mock clients")
         start_time = time.time()
         try:
             for i in range(10):
@@ -178,30 +189,41 @@ class RealPlaybackFreezeTest:
                 })
                 await asyncio.sleep(0.1)  # Small delay between broadcasts
             duration = time.time() - start_time
-            print(f"OK: Stress test completed in {duration:.2f}s")
+            self.logger.ok(f"Stress test completed in {duration:.2f}s")
         except Exception as e:
             duration = time.time() - start_time
-            print(f"ERROR: Stress test failed after {duration:.2f}s: {e}")
+            self.logger.error(f"Stress test failed after {duration:.2f}s: {e}")
+    
     async def run_all_tests(self):
         """Run all real playback tests"""
-        print("TESTING: Starting Real Playback Freeze Tests")
-        print("=" * 60)
+        self.logger.banner("Starting Real Playback Freeze Tests", 60)
         await self.test_multiple_checkpoints()
         await self.test_websocket_stress()
-        print("\n" + "=" * 60)
-        print("TARGET: Test Complete")
-        print("=" * 60)
-        print("If freezing was detected, check the specific checkpoint and conditions.")
-        print("If no freezing was detected, the issue might be:")
-        print("1. Related to specific client conditions")
-        print("2. Timing-dependent")
-        print("3. Related to system resources")
-        print("4. Caused by frontend-backend interaction")
+        self.logger.banner("Test Complete", 60)
+        self.logger.info("If freezing was detected, check the specific checkpoint and conditions.")
+        self.logger.info("If no freezing was detected, the issue might be:")
+        self.logger.info("1. Related to specific client conditions")
+        self.logger.info("2. Timing-dependent")
+        self.logger.info("3. Related to system resources")
+        self.logger.info("4. Caused by frontend-backend interaction")
 
-async def main():
-    """Main test runner"""
-    test = RealPlaybackFreezeTest()
-    await test.run_all_tests()
+def main():
+    """Main entry point"""
+    logger = TestLogger()
+    logger.banner("Real Playback Freeze Detection Test", 60)
+    
+    async def run_tests():
+        test = RealPlaybackFreezeTest()
+        await test.run_all_tests()
+    
+    try:
+        asyncio.run(run_tests())
+        logger.success("All freeze detection tests completed")
+    except Exception as e:
+        logger.error(f"Test suite failed: {e}")
+        return False
+    
+    return True
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    main() 

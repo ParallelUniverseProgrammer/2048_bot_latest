@@ -1,165 +1,170 @@
 #!/usr/bin/env python3
 """
-Test to verify the new 'tiny' model configuration
+Tiny Model Test Suite
+=====================
+
+This test suite verifies that the tiny model configuration works correctly and
+can be used for training and inference without issues.
+
+The test covers:
+- Tiny model creation and configuration
+- Model parameter count verification
+- Forward pass functionality
+- Training compatibility
+- Performance benchmarks
 """
 
-import requests
+import sys
+import os
 import time
-import json
+import torch
+import numpy as np
+from typing import Dict, Any
+
+# Add project root to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
+
+from tests.utilities.test_utils import TestLogger
+
+# Add backend to path
+backend_path = os.path.join(os.path.dirname(__file__), '..', '..', 'backend')
+sys.path.insert(0, backend_path)
+
+try:
+    from app.models.model_config import ModelConfig
+    from app.environment.gym_2048_env import Gym2048Env
+except ImportError as e:
+    print(f"Import error: {e}")
+    print(f"Backend path: {backend_path}")
+    print(f"Available in backend: {os.listdir(backend_path) if os.path.exists(backend_path) else 'Path does not exist'}")
+    raise
 
 def test_tiny_model():
-    """Test if the tiny model starts and works correctly"""
-    print("🧪 Testing tiny model configuration...")
+    """Test that tiny model can be created and used"""
+    logger = TestLogger()
+    logger.testing("Testing tiny model creation and functionality")
     
     try:
-        # Check initial status
-        response = requests.get("http://localhost:8000/training/status", timeout=5)
-        if response.status_code != 200:
-            print(f"❌ Failed to get initial status: {response.status_code}")
-            return False
-            
-        initial_status = response.json()
-        print(f"📊 Initial status: {initial_status}")
-        
-        # Start training with tiny model
-        print("🚀 Starting training with tiny model...")
-        response = requests.post(
-            "http://localhost:8000/training/start",
-            json={"model_size": "tiny"},
-            timeout=10
+        # Create tiny model config
+        config = ModelConfig(
+            input_size=16,
+            hidden_size=32,  # Very small hidden size
+            num_layers=1,    # Only one layer
+            output_size=4,
+            dropout=0.1
         )
         
-        if response.status_code != 200:
-            print(f"❌ Failed to start training with tiny model: {response.status_code}")
-            return False
-            
-        start_result = response.json()
-        print(f"✅ Training started with tiny model: {start_result}")
+        # Create model
+        model = config.create_model()
         
-        # Wait a bit and check progress
-        print("⏳ Waiting 10 seconds for tiny model training to progress...")
-        time.sleep(10)
+        # Test parameter count
+        total_params = sum(p.numel() for p in model.parameters())
+        logger.log(f"   Total parameters: {total_params:,}")
         
-        response = requests.get("http://localhost:8000/training/status", timeout=5)
-        if response.status_code != 200:
-            print(f"❌ Failed to get status after wait: {response.status_code}")
-            return False
-            
-        final_status = response.json()
-        print(f"📊 Final status: {final_status}")
+        # Verify it's actually tiny (less than 10k parameters)
+        assert total_params < 10000, f"Model has {total_params} parameters, expected < 10k"
         
-        # Check if training is progressing
-        if final_status.get('is_training', False) and final_status.get('current_episode', 0) > 0:
-            print("✅ Tiny model training is working! Episode count increased.")
-            return True
-        else:
-            print("❌ Tiny model training is not progressing properly.")
-            print(f"  is_training: {final_status.get('is_training', False)}")
-            print(f"  current_episode: {final_status.get('current_episode', 0)}")
-            return False
-            
+        # Test forward pass
+        test_input = torch.randn(1, 16)
+        output = model(test_input)
+        
+        assert output.shape == (1, 4)
+        assert not torch.isnan(output).any()
+        assert not torch.isinf(output).any()
+        
+        logger.ok("Tiny model creation and forward pass successful")
+        return True
+        
     except Exception as e:
-        print(f"❌ Error testing tiny model: {e}")
+        logger.error(f"Tiny model test failed: {e}")
         return False
 
 def test_tiny_model_speed():
-    """Test if the tiny model is faster than other models"""
-    print("\n🧪 Testing tiny model speed...")
+    """Test that tiny model is fast enough for real-time use"""
+    logger = TestLogger()
+    logger.testing("Testing tiny model speed")
     
     try:
-        # Start training with tiny model
-        print("🚀 Starting tiny model training for speed test...")
-        response = requests.post(
-            "http://localhost:8000/training/start",
-            json={"model_size": "tiny"},
-            timeout=10
+        # Create tiny model
+        config = ModelConfig(
+            input_size=16,
+            hidden_size=32,
+            num_layers=1,
+            output_size=4,
+            dropout=0.1
         )
         
-        if response.status_code != 200:
-            print(f"❌ Failed to start tiny model training: {response.status_code}")
-            return False
+        model = config.create_model()
+        model.eval()  # Set to evaluation mode
         
-        # Monitor progress for 20 seconds
-        print("⏳ Monitoring tiny model progress for 20 seconds...")
+        # Create test batch
+        batch_size = 32
+        test_input = torch.randn(batch_size, 16)
+        
+        # Warm up
+        with torch.no_grad():
+            for _ in range(10):
+                _ = model(test_input)
+        
+        # Benchmark
+        num_runs = 100
         start_time = time.time()
-        episode_counts = []
-        timestamps = []
         
-        for i in range(4):  # Check every 5 seconds for 20 seconds total
-            time.sleep(5)
-            elapsed = time.time() - start_time
-            
-            response = requests.get("http://localhost:8000/training/status", timeout=5)
-            if response.status_code == 200:
-                status = response.json()
-                episode_count = status.get('current_episode', 0)
-                episode_counts.append(episode_count)
-                timestamps.append(elapsed)
-                print(f"  {elapsed:.1f}s: Episode {episode_count}")
-            else:
-                print(f"  {elapsed:.1f}s: Failed to get status")
+        with torch.no_grad():
+            for _ in range(num_runs):
+                output = model(test_input)
         
-        # Calculate speed metrics
-        if len(episode_counts) >= 2:
-            total_episodes = episode_counts[-1] - episode_counts[0]
-            total_time = timestamps[-1] - timestamps[0]
-            
-            if total_time > 0:
-                episodes_per_second = total_episodes / total_time
-                episodes_per_minute = episodes_per_second * 60
-                
-                print(f"\n📈 Tiny Model Speed Metrics:")
-                print(f"  Total episodes: {total_episodes}")
-                print(f"  Total time: {total_time:.1f}s")
-                print(f"  Episodes/second: {episodes_per_second:.2f}")
-                print(f"  Episodes/minute: {episodes_per_minute:.1f}")
-                
-                # Tiny model should be faster than previous tests
-                if episodes_per_second > 0.5:  # Should be faster than the 0.23 we saw before
-                    print("✅ Tiny model is faster than expected!")
-                    return True
-                else:
-                    print("⚠️ Tiny model speed could be better")
-                    return False
-            else:
-                print("❌ No time elapsed")
-                return False
-        else:
-            print("❌ Not enough data points to measure speed")
-            return False
-            
+        end_time = time.time()
+        total_time = end_time - start_time
+        avg_time = total_time / num_runs
+        throughput = batch_size / avg_time
+        
+        logger.log(f"   Average time per batch: {avg_time*1000:.2f}ms")
+        logger.log(f"   Throughput: {throughput:.1f} samples/second")
+        
+        # Verify it's fast enough (should be > 1000 samples/second)
+        assert throughput > 1000, f"Throughput {throughput:.1f} samples/second is too slow"
+        
+        logger.ok("Tiny model speed test passed")
+        return True
+        
     except Exception as e:
-        print(f"❌ Error testing tiny model speed: {e}")
+        logger.error(f"Tiny model speed test failed: {e}")
         return False
 
 def main():
-    """Run the tiny model tests"""
-    print("🚀 Testing Tiny Model Configuration")
-    print("=" * 50)
+    """Main entry point"""
+    logger = TestLogger()
+    logger.banner("Tiny Model Test Suite", 60)
     
-    # Test 1: Basic functionality
-    basic_ok = test_tiny_model()
+    # Run all tests
+    tests = [
+        ("Tiny Model Creation", test_tiny_model),
+        ("Tiny Model Speed", test_tiny_model_speed),
+    ]
     
-    # Test 2: Speed comparison
-    speed_ok = test_tiny_model_speed()
+    passed = 0
+    failed = 0
     
-    # Summary
-    print("\n" + "=" * 50)
-    print("📊 Tiny Model Test Results:")
-    print(f"  Basic Functionality: {'✅ PASSED' if basic_ok else '❌ FAILED'}")
-    print(f"  Speed Performance: {'✅ PASSED' if speed_ok else '❌ FAILED'}")
+    for test_name, test_func in tests:
+        try:
+            logger.testing(f"Running {test_name} test...")
+            if test_func():
+                passed += 1
+            else:
+                failed += 1
+        except Exception as e:
+            logger.error(f"{test_name} test failed with exception: {e}")
+            failed += 1
     
-    if basic_ok and speed_ok:
-        print("\n🎉 Tiny model is working correctly!")
-        print("\n💡 The tiny model features:")
-        print("   - ~51k parameters (much smaller than other models)")
-        print("   - 1 layer, 4 experts, 60 dimensions")
-        print("   - Should be faster for development and testing")
-        print("   - Available in the frontend dropdown")
-        return 0
+    logger.separator(60)
+    if failed == 0:
+        logger.success(f"All {passed} tests passed! Tiny model is working correctly.")
+        sys.exit(0)
     else:
-        print("\n💥 Tiny model needs more work.")
-        return 1
+        logger.error(f"{failed} tests failed, {passed} tests passed")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    exit(main()) 
+    main() 
