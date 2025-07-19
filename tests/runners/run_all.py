@@ -1,4 +1,3 @@
-from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Master Test Runner for 2048 AI Bot
@@ -32,6 +31,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from tests.utilities.test_utils import TestLogger
+from tests.utilities.backend_manager import requires_mock_backend
 
 class TestRunner:
     """Master test runner for all freeze diagnostic tests"""
@@ -176,7 +176,7 @@ class TestRunner:
             self.logger.error(f"SOME TESTS FAILED! ({passed}/{total} passed)")
         
         self.logger.info(f"Quick test results: {passed} passed, {failed} failed")
-@requires_mock_backend
+@requires_mock_backend("Test Runner")
 
 def main():
     """Main entry point"""

@@ -37,21 +37,33 @@ class MockData:
         self.playback_status = self._generate_mock_playback_status()
     
     def _generate_mock_checkpoints(self) -> List[Dict[str, Any]]:
-        """Generate mock checkpoint data"""
+        """Generate mock checkpoint data to match real backend structure"""
         checkpoints = []
         for i in range(5):
             checkpoint = {
                 "id": f"mock_checkpoint_{i+1}",
-                "name": f"Mock Checkpoint {i+1}",
-                "episode_count": (i + 1) * 500,  # Changed from 'episode' to 'episode_count'
-                "score": (i + 1) * 1000,
-                "timestamp": f"2025-01-{i+1:02d}T00:00:00Z",
-                "file_size": 1024 * 1024 * (i + 1),  # 1MB, 2MB, etc.
+                "nickname": f"Mock Checkpoint {i+1}",
+                "episode": (i + 1) * 500,
+                "created_at": f"2025-01-{i+1:02d}T00:00:00Z",
+                "training_duration": (i + 1) * 3600.0,  # hours in seconds
                 "model_config": {
-                    "hidden_size": 256,
-                    "num_layers": 4,
-                    "num_experts": 8
-                }
+                    "model_size": "medium",
+                    "learning_rate": 0.0003,
+                    "n_experts": 6,
+                    "n_layers": 6,
+                    "d_model": 384,
+                    "n_heads": 8
+                },
+                "performance_metrics": {
+                    "best_score": (i + 1) * 1000,
+                    "avg_score": (i + 1) * 800,
+                    "final_loss": 0.15 + i * 0.02,
+                    "training_speed": 95.0 + i * 2.0
+                },
+                "file_size": 1024 * 1024 * (i + 1),  # 1MB, 2MB, etc.
+                "parent_checkpoint": None,
+                "tags": ["mock", "test"],
+                "absolute_path": f"/mock/path/checkpoint_{i+1}.pt"
             }
             checkpoints.append(checkpoint)
         return checkpoints
@@ -80,14 +92,13 @@ class MockData:
         }
     
     def get_checkpoint_stats(self) -> Dict[str, Any]:
-        """Get checkpoint statistics"""
+        """Get checkpoint statistics to match real backend structure"""
         return {
             "total_checkpoints": len(self.checkpoints),
-            "total_size": sum(cp["file_size"] for cp in self.checkpoints),  # Added total_size
-            "best_score": max(cp["score"] for cp in self.checkpoints) if self.checkpoints else 0,
-            "latest_episode": max(cp["episode_count"] for cp in self.checkpoints) if self.checkpoints else 0,  # Added latest_episode
-            "total_episodes": sum(cp["episode_count"] for cp in self.checkpoints),  # Changed from 'episode' to 'episode_count'
-            "average_score": sum(cp["score"] for cp in self.checkpoints) / len(self.checkpoints) if self.checkpoints else 0
+            "total_size": sum(cp["file_size"] for cp in self.checkpoints),
+            "best_score": max(cp["performance_metrics"]["best_score"] for cp in self.checkpoints) if self.checkpoints else 0,
+            "latest_episode": max(cp["episode"] for cp in self.checkpoints) if self.checkpoints else 0,
+            "total_training_time": sum(cp["training_duration"] for cp in self.checkpoints)
         }
     
     def get_checkpoint_by_id(self, checkpoint_id: str) -> Optional[Dict[str, Any]]:
@@ -98,7 +109,7 @@ class MockData:
         return None
     
     def simulate_game_result(self) -> Dict[str, Any]:
-        """Simulate a game result"""
+        """Simulate a game result with the exact structure expected by GameTester"""
         steps = random.randint(50, 200)
         score = random.randint(100, 2048)
         max_tile = 2 ** random.randint(5, 9)  # 32 to 512
@@ -118,13 +129,12 @@ class MockData:
         return {
             "success": True,
             "final_score": score,
-            "steps_taken": steps,
-            "game_completed": True,
+            "steps": steps,
+            "completed": True,
             "performance_ok": True,
             "steps_per_second": random.uniform(0.5, 2.0),
             "game_history": game_history,
-            "max_tile": max_tile,
-            "steps": steps
+            "max_tile": max_tile
         }
 
 class MockBackendHandler(BaseHTTPRequestHandler):
@@ -177,6 +187,9 @@ class MockBackendHandler(BaseHTTPRequestHandler):
         try:
             if self.path == "/checkpoints/playback/start":
                 # Simulate starting playback
+                self._send_response(200, {"success": True, "message": "Playback started"})
+            elif self.path.startswith("/checkpoints/") and self.path.endswith("/playback/start"):
+                # Simulate starting playback for specific checkpoint
                 self._send_response(200, {"success": True, "message": "Playback started"})
             elif self.path == "/checkpoints/playback/stop":
                 # Simulate stopping playback

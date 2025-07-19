@@ -23,7 +23,8 @@ from dataclasses import dataclass
 from datetime import datetime
 
 # Import our test utilities
-from test_utils import TestLogger, BackendAvailabilityManager
+from tests.utilities.test_utils import TestLogger
+from tests.utilities.backend_manager import BackendManager
 
 
 @dataclass
@@ -46,7 +47,7 @@ class RealCheckpointFailureDetector:
     
     def __init__(self, logger: TestLogger = None):
         self.logger = logger or TestLogger()
-        self.backend_manager = BackendAvailabilityManager(logger=self.logger)
+        self.backend_manager = BackendManager(logger=self.logger)
         self.websocket_connection = None
         self.websocket_messages = []
         self.websocket_connected = False

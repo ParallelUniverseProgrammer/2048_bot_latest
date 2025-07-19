@@ -60,7 +60,6 @@ class CheckpointLoadingTester:
             self.logger.log(f"Details: {details}")
         self.test_results.append((test_name, success, details))
     
-    @requires_mock_backend("Checkpoint Loading Integration Tests")
     def test_metadata_validation(self) -> bool:
         """Test checkpoint metadata validation"""
         self.log_test_start("Metadata Validation")
@@ -73,7 +72,8 @@ class CheckpointLoadingTester:
             
             # Validate first checkpoint metadata
             checkpoint = checkpoints[0]
-            required_fields = ['id', 'name', 'episode', 'score', 'timestamp']
+            # Updated to match real backend structure
+            required_fields = ['id', 'nickname', 'episode', 'created_at', 'model_config', 'performance_metrics', 'file_size', 'absolute_path']
             
             missing_fields = [field for field in required_fields if field not in checkpoint]
             if missing_fields:
@@ -85,8 +85,13 @@ class CheckpointLoadingTester:
                 self.log_test_result("Metadata Validation", False, "Episode should be integer")
                 return False
                 
-            if not isinstance(checkpoint['score'], (int, float)):
-                self.log_test_result("Metadata Validation", False, "Score should be numeric")
+            # Check that performance_metrics contains best_score
+            if 'performance_metrics' not in checkpoint or 'best_score' not in checkpoint['performance_metrics']:
+                self.log_test_result("Metadata Validation", False, "Missing best_score in performance_metrics")
+                return False
+                
+            if not isinstance(checkpoint['performance_metrics']['best_score'], (int, float)):
+                self.log_test_result("Metadata Validation", False, "best_score should be numeric")
                 return False
             
             self.log_test_result("Metadata Validation", True, f"Validated {len(checkpoints)} checkpoints")
@@ -96,7 +101,6 @@ class CheckpointLoadingTester:
             self.log_test_result("Metadata Validation", False, f"Exception: {str(e)}")
             return False
     
-    @requires_mock_backend("Checkpoint Loading Integration Tests")
     def test_model_loading(self) -> bool:
         """Test model loading functionality"""
         self.log_test_start("Model Loading")
@@ -130,7 +134,6 @@ class CheckpointLoadingTester:
             self.log_test_result("Model Loading", False, f"Exception: {str(e)}")
             return False
     
-    @requires_mock_backend("Checkpoint Loading Integration Tests")
     def test_compatibility_check(self) -> bool:
         """Test checkpoint compatibility"""
         self.log_test_start("Compatibility Check")
@@ -155,7 +158,6 @@ class CheckpointLoadingTester:
             self.log_test_result("Compatibility Check", False, f"Exception: {str(e)}")
             return False
     
-    @requires_mock_backend("Checkpoint Loading Integration Tests")
     def test_error_handling(self) -> bool:
         """Test error handling for invalid checkpoints"""
         self.log_test_start("Error Handling")
@@ -176,7 +178,6 @@ class CheckpointLoadingTester:
             self.log_test_result("Error Handling", False, f"Exception: {str(e)}")
             return False
     
-    @requires_mock_backend("Checkpoint Loading Integration Tests")
     def test_performance(self) -> bool:
         """Test checkpoint loading performance"""
         self.log_test_start("Performance Test")
@@ -219,7 +220,6 @@ class CheckpointLoadingTester:
             self.log_test_result("Performance Test", False, f"Exception: {str(e)}")
             return False
     
-    @requires_mock_backend("Checkpoint Loading Integration Tests")
     def test_memory_management(self) -> bool:
         """Test memory management during checkpoint loading"""
         self.log_test_start("Memory Management")
@@ -244,7 +244,6 @@ class CheckpointLoadingTester:
             self.log_test_result("Memory Management", False, f"Exception: {str(e)}")
             return False
     
-    @requires_mock_backend("Checkpoint Loading Integration Tests")
     def run_all_tests(self):
         """Run all checkpoint loading tests"""
         self.logger.banner("Checkpoint Loading Integration Test Suite", 60)

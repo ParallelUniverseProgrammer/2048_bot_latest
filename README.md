@@ -169,6 +169,8 @@ The launcher automatically creates a Cloudflare Tunnel for internet access:
 
 ✅ **Backend Decorator Implementation Complete** – Comprehensive backend management system with automatic decorator application and validation.
 
+⚠️ **Warning**: The backend parity test (`tests/integration/test_backend_parity.py`) is a comprehensive test that validates API consistency between real and mock backends. It takes 10-15 minutes to run and should only be used for thorough validation, not regular testing.
+
 The test suite now features:
 • **Standardized Logging** – Consistent TestLogger usage across all 68 test files
 • **Zero Major Issues** – All compliance violations resolved (down from 66 major issues to just 3)
@@ -193,6 +195,9 @@ python tests/core/test_checkpoint_loading.py
 
 # Integration tests
 python tests/integration/test_complete_games.py
+
+# Backend parity test (comprehensive - takes 10-15 minutes)
+python tests/integration/test_backend_parity.py
 
 # Frontend tests
 python tests/frontend/test_automation.py
@@ -231,6 +236,22 @@ The test suite follows a structured approach with:
 • **PlaybackTester** – Live playback and control testing
 
 All tests use consistent message prefixes (OK:, ERROR:, WARNING:, INFO:) for easy parsing and visual scanning.
+
+### Backend Parity Testing
+
+The backend parity test (`tests/integration/test_backend_parity.py`) is a comprehensive validation tool that ensures the mock backend accurately reflects the real backend's API behavior. It tests:
+
+• **API Endpoint Consistency** – All endpoints available on both backends
+• **Response Format Matching** – Identical JSON structure and data types
+• **Error Handling Parity** – Same error responses and status codes
+• **WebSocket Functionality** – WebSocket connections and message handling
+• **Performance Characteristics** – Response time comparisons within acceptable ranges
+
+**TODO: Backend Parity Cleanup**
+- The parity test currently identifies several API inconsistencies between real and mock backends
+- These need to be addressed to ensure test reliability and accurate mock backend behavior
+- Priority: Fix response format mismatches, missing endpoints, and error handling differences
+- Run `python tests/integration/test_backend_parity.py` to see current parity status
 
 ### Developer Experience
 

@@ -20,7 +20,7 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
 # Import our test utilities
-from test_utils import TestLogger
+from tests.utilities.test_utils import TestLogger
 
 
 @dataclass

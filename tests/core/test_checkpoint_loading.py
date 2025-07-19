@@ -71,7 +71,7 @@ def test_checkpoint_loading_behavior():
     else:
         logger.error("Checkpoints failed to load during training")
 
-@requires_real_backend
+@requires_real_backend("Frontend Loading States Test")
 def test_frontend_loading_states():
     """Test that frontend loading states work correctly"""
     logger = TestLogger()
@@ -98,7 +98,7 @@ def test_frontend_loading_states():
     logger.log("7. Verify checkpoints still display correctly")
     logger.log("8. Test checkpoint playback functionality")
 
-@requires_real_backend
+@requires_real_backend("Checkpoint Loading Test Suite")
 def main():
     """Run all tests"""
     logger = TestLogger()

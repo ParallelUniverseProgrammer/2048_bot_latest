@@ -49,8 +49,8 @@ class BackendManager:
     or provide mock backend services for testing.
     """
     
-    def __init__(self, base_url: str = "http://localhost:8000", 
-                 backend_port: int = 8000,
+    def __init__(self, base_url: str = "http://localhost:8001", 
+                 backend_port: int = 8001,
                  backend_dir: str = "backend",
                  test_logger: Optional[TestLogger] = None):
         """
@@ -428,9 +428,9 @@ def requires_mock_backend(test_name: Optional[str] = None):
             
             manager.test_logger.info(f"Ensuring mock backend for: {actual_test_name}")
             
-            # Check if any backend is available
-            if manager.is_backend_available():
-                manager.test_logger.ok("Backend is already available")
+            # Check if mock backend is available
+            if manager.is_backend_available(backend_type='mock'):
+                manager.test_logger.ok("Mock backend is already available")
                 return func(*args, **kwargs)
             
             # Start mock backend if no backend is available

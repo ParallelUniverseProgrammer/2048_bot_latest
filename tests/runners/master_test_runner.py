@@ -1,4 +1,3 @@
-from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Master Test Runner for 2048 AI Checkpoint System
@@ -31,6 +30,7 @@ from enum import Enum
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from tests.utilities.test_utils import TestLogger
+from tests.utilities.backend_manager import requires_mock_backend
 
 class TestLevel(Enum):
     """Test levels as defined in the README"""
@@ -83,6 +83,7 @@ class MasterTestRunner:
                     "tests/integration/test_live_playback.py",
                     "tests/integration/test_game_simulation.py",
                     "tests/integration/test_model_studio.py",
+                    "tests/integration/test_backend_parity.py",
                     "tests/core/test_checkpoint_loading.py",
                     "tests/core/test_json_serialization.py",
                     "tests/playback/test_controls.py",
@@ -93,7 +94,7 @@ class MasterTestRunner:
             TestLevel.COMPREHENSIVE: {
                 "description": "All tests including performance and edge cases (~15 minutes)",
                 "tests": [
-                    # Core functionality
+                    # Integration tests - Core functionality
                     "tests/integration/test_checkpoint_loading.py",
                     "tests/integration/test_complete_games.py",
                     "tests/integration/test_live_playback.py",
@@ -102,31 +103,64 @@ class MasterTestRunner:
                     "tests/integration/test_websocket_broadcast.py",
                     "tests/integration/test_model_studio.py",
                     "tests/integration/test_tunnel_demo.py",
+                    "tests/integration/test_mock_backend.py",
+                    "tests/integration/test_connection_stability.py",
+                    "tests/integration/test_checkpoint_loading_issue.py",
+                    "tests/integration/test_backend_parity.py",
                     
-                    # Core tests
+                    # Core tests - Backend functionality
                     "tests/core/test_checkpoint_loading.py",
                     "tests/core/test_json_serialization.py",
                     "tests/core/test_training_manager.py",
+                    "tests/core/test_training_issue.py",
+                    "tests/core/test_training_fix.py",
+                    "tests/core/test_tiny_model.py",
+                    "tests/core/test_minimal_crash.py",
+                    "tests/core/test_json_serialization_fix.py",
+                    "tests/core/test_checkpoint_loading_verification.py",
+                    "tests/core/test_checkpoint_loading_fixes.py",
                     
-                    # Playback tests
+                    # Playback tests - Game playback functionality
                     "tests/playback/test_controls.py",
                     "tests/playback/test_simulation.py",
                     "tests/playback/test_freeze_detection.py",
+                    "tests/playback/test_freeze_diagnostics.py",
+                    "tests/playback/test_freeze_reproduction.py",
+                    "tests/playback/test_failure_simple.py",
+                    "tests/playback/test_failure_comprehensive.py",
+                    "tests/playback/test_checkpoint_failure.py",
+                    "tests/playback/test_failure_final.py",
+                    "tests/playback/test_playback_failure.py",
                     
-                    # Performance tests
+                    # Performance tests - System performance
                     "tests/performance/test_performance.py",
                     "tests/performance/test_speed_control.py",
+                    "tests/performance/test_training_speed.py",
+                    "tests/performance/test_load_balancing.py",
+                    "tests/performance/test_gpu_usage.py",
                     
-                    # Mobile tests
+                    # Mobile tests - Device compatibility
                     "tests/mobile/test_connection_issues.py",
                     "tests/mobile/test_device_compatibility.py",
+                    "tests/mobile/test_device_fix.py",
+                    "tests/mobile/test_device_error.py",
+                    "tests/mobile/test_comprehensive_device.py",
+                    "tests/mobile/test_mobile_basic.py",
+                    "tests/mobile/test_training_disconnection.py",
                     
-                    # Training tests
+                    # Training tests - Training functionality
                     "tests/training/test_status_sync.py",
+                    "tests/training/test_status_sync_simple.py",
+                    "tests/training/test_reconnection.py",
+                    "tests/training/test_reconnection_failure.py",
                     
-                    # Frontend tests
+                    # Frontend tests - Frontend functionality
                     "tests/frontend/test_automation.py",
                     "tests/frontend/test_pwa_origin_unification.py",
+                    "tests/frontend/test_pwa_install.py",
+                    "tests/frontend/test_persistence_fix.py",
+                    "tests/frontend/test_browser_enhanced.py",
+                    "tests/frontend/test_browser_simulation.py",
                 ]
             }
         }
@@ -267,8 +301,8 @@ class MasterTestRunner:
             self.logger.log("  Files:")
             for test in suite['tests']:
                 self.logger.log(f"    - {test}")
-@requires_mock_backend
 
+@requires_mock_backend("Master Test Runner")
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
