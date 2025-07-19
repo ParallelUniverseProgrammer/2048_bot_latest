@@ -14,7 +14,8 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
-from tests.utilities.test_utils import TestLogger, BackendTester, check_backend_or_start_mock
+from tests.utilities.test_utils import TestLogger, BackendTester
+from tests.utilities.backend_manager import requires_mock_backend
 
 class TrainingStatusSyncTest:
     def __init__(self, backend_url: str = "http://localhost:8000", frontend_url: str = "http://localhost:5173"):
@@ -31,6 +32,7 @@ class TrainingStatusSyncTest:
             self.logger.error(f"Error getting backend training status: {e}")
             return {"is_training": False, "is_paused": False, "current_episode": 0}
             
+@requires_mock_backend
     def test_backend_training_status_consistency(self) -> bool:
         """Test that backend training status is consistent"""
         self.logger.testing("Testing backend training status consistency")
@@ -61,6 +63,7 @@ class TrainingStatusSyncTest:
         
         return consistent
     
+@requires_mock_backend
     def test_training_status_endpoint_stability(self) -> bool:
         """Test that training status endpoint is stable under load"""
         self.logger.testing("Testing training status endpoint stability")
@@ -87,6 +90,7 @@ class TrainingStatusSyncTest:
             self.logger.error("Training status endpoint is unstable")
             return False
     
+@requires_mock_backend
     def test_training_state_transitions(self) -> bool:
         """Test training state transitions"""
         self.logger.testing("Testing training state transitions")
@@ -118,6 +122,7 @@ class TrainingStatusSyncTest:
         
         return transition_success
     
+@requires_mock_backend
     def test_connection_health_during_training_simulation(self) -> bool:
         """Test connection health during simulated training activity"""
         self.logger.testing("Testing connection health during training simulation")
@@ -160,11 +165,6 @@ class TrainingStatusSyncTest:
         """Run all training status sync tests"""
         self.logger.banner("Training Status Sync Tests", 60)
         
-        # Ensure backend is available
-        if not check_backend_or_start_mock():
-            self.logger.error("No backend available for testing")
-            return {"error": "No backend available"}
-        
         results = {
             "backend_consistency": self.test_backend_training_status_consistency(),
             "endpoint_stability": self.test_training_status_endpoint_stability(),
@@ -192,6 +192,7 @@ class TrainingStatusSyncTest:
         
         return results
 
+@requires_mock_backend("Training Status Sync Tests")
 async def main():
     """Run the training status sync tests"""
     logger = TestLogger()

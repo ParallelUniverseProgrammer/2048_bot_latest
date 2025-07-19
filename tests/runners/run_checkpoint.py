@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Checkpoint System Test Runner
@@ -177,6 +178,7 @@ def check_backend_running(logger: TestLogger = None) -> bool:
     except Exception as e:
         logger.error(f"Backend server connectivity failed: {e}")
         return False
+@requires_mock_backend
 
 def main():
     """Main entry point"""

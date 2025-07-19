@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Enhanced Frontend Testing Automation
@@ -26,6 +27,7 @@ class FrontendTester:
         self.base_url = base_url
         self.logger = TestLogger()
         self.backend = BackendTester(base_url, self.logger)
+@requires_mock_backend
     
     def test_api_endpoints_for_frontend(self) -> Dict[str, bool]:
         """Test all API endpoints that the frontend depends on"""
@@ -80,6 +82,7 @@ class FrontendTester:
             self.logger.warning(f"Only {passed}/{total} frontend API endpoints accessible")
         
         return results
+@requires_mock_backend
     
     def test_websocket_connectivity(self) -> bool:
         """Test WebSocket connectivity for real-time updates"""
@@ -218,6 +221,7 @@ class FrontendTester:
         self.logger.log("   - Console errors (if any)")
         self.logger.log("5. Test both normal and edge cases")
         self.logger.log("6. Verify fixes by retesting affected areas")
+@requires_mock_backend
     
     def test_frontend_data_consistency(self) -> bool:
         """Test that frontend receives consistent data from backend"""
@@ -323,6 +327,7 @@ class FrontendTester:
         self.logger.log("3. Fix any issues found")
         self.logger.log("4. Retest affected areas")
         self.logger.log("5. Document test results")
+@requires_mock_backend
 
 def main():
     """Main entry point"""

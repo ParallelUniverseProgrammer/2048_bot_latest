@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Autonomous Test Suite for Checkpoint Loading Fixes
@@ -110,6 +111,7 @@ def _request(method: str, path: str, body: dict | None = None):
 
 # --------------------------------------------------------------------------------------
 # Test scenarios
+@requires_real_backend
 
 def test_timeout(logger: TestLogger):
     """Test timeout scenario"""
@@ -118,6 +120,7 @@ def test_timeout(logger: TestLogger):
         assert status == 200, f"Expected 200, got {status}"
         assert data is not None and data.get("has_data") is False, "Expected has_data false in timeout scenario"
         logger.ok("timeout scenario passed")
+@requires_real_backend
 
 def test_api_error(logger: TestLogger):
     """Test API error scenario"""
@@ -125,6 +128,7 @@ def test_api_error(logger: TestLogger):
         status, _ = _request("POST", "/checkpoints/test/playback/start", {})
         assert status == 500, f"Expected 500, got {status}"
         logger.ok("api_error scenario passed")
+@requires_real_backend
 
 def test_websocket_failure(logger: TestLogger):
     """Test WebSocket failure scenario"""
@@ -132,6 +136,7 @@ def test_websocket_failure(logger: TestLogger):
         status, _ = _request("GET", "/checkpoints/playback/current")
         assert status == 503, f"Expected 503, got {status}"
         logger.ok("websocket_failure scenario passed")
+@requires_real_backend
 
 def test_success(logger: TestLogger):
     """Test success scenario"""
@@ -142,6 +147,7 @@ def test_success(logger: TestLogger):
         logger.ok("success scenario passed")
 
 # --------------------------------------------------------------------------------------
+@requires_real_backend
 
 def main():
     """Main entry point"""

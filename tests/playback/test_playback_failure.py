@@ -1,31 +1,35 @@
 #!/usr/bin/env python3
 """
-Test: Checkpoint Playback Failure Reproduction
-==============================================
+Checkpoint Playback Failure Tester
+==================================
 
-This test reproduces the specific failure where:
-1. User clicks "Watch" on a checkpoint (1500 episodes)
-2. Frontend navigates to game tab and shows loading
-3. Loading state gets stuck indefinitely
-4. Page reload attempts fail entirely
+This test reproduces and analyzes the checkpoint playback failure scenario
+where the frontend gets stuck in a loading state during checkpoint playback.
 
-The test simulates the exact user flow and identifies where the failure occurs.
+The failure scenario involves:
+1. User clicks "Watch" on a checkpoint
+2. Frontend shows loading state
+3. Loading state never resolves
+4. User is stuck and cannot interact with the system
+
+This test helps identify the root cause and verify fixes.
 """
 
 import asyncio
-import json
 import time
+import json
+import sys
+import os
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
-from unittest.mock import Mock, patch
-import threading
-import queue
 
-# Import our test utilities
-from test_utils import TestLogger, BackendAvailabilityManager
-from mock_backend import MockBackendServer
+# Add project root to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
+from tests.utilities.test_utils import TestLogger
+from tests.utilities.backend_manager import BackendAvailabilityManager
 
 @dataclass
 class PlaybackFailureState:
@@ -38,19 +42,26 @@ class PlaybackFailureState:
     page_reload_failed: bool = False
     failure_point: Optional[str] = None
 
-
 class CheckpointPlaybackFailureTester:
-    """Reproduce and diagnose checkpoint playback failures"""
+    """Test checkpoint playback failure scenarios"""
     
-    def __init__(self, logger: TestLogger = None):
+    def __init__(self, logger: Optional[TestLogger] = None):
         self.logger = logger or TestLogger()
-        self.backend_manager = BackendAvailabilityManager(logger=self.logger)
-        self.mock_backend = None
-        self.failure_state = None
+        self.backend_manager = BackendAvailabilityManager(test_logger=self.logger)
+        self.base_url = "http://localhost:8000"
+        self.websocket_url = "ws://localhost:8000/ws"
+        self.test_results = []
         
     def log(self, message: str, level: str = "INFO"):
-        """Log with timestamp"""
-        self.logger.log(f"[CHECKPOINT_FAILURE] {message}", level)
+        """Log a message with the specified level"""
+        if level == "INFO":
+            self.logger.info(message)
+        elif level == "WARNING":
+            self.logger.warning(message)
+        elif level == "ERROR":
+            self.logger.error(message)
+        else:
+            self.logger.log(message)
     
     async def setup_test_environment(self) -> bool:
         """Set up the test environment with mock backend"""
@@ -60,21 +71,11 @@ class CheckpointPlaybackFailureTester:
         with self.backend_manager.backend_context() as backend_available:
             if not backend_available:
                 self.log("Backend not available, starting mock backend", "WARNING")
-                self.mock_backend = MockBackendServer(port=8000)
-                await self.mock_backend.start()
-                
-                # Wait for mock backend to be ready
-                for attempt in range(10):
-                    try:
-                        response = requests.get("http://localhost:8000/", timeout=2)
-                        if response.status_code == 200:
-                            self.log("Mock backend ready")
-                            break
-                    except:
-                        await asyncio.sleep(0.5)
-                else:
-                    self.log("Mock backend failed to start", "ERROR")
-                    return False
+                # The original code had MockBackendServer, but it's removed.
+                # For now, we'll just log a warning and continue.
+                # If MockBackendServer is truly needed, it should be re-added.
+                self.log("Mock backend is not available, skipping mock backend start.", "WARNING")
+                return False
         
         return True
     
@@ -513,9 +514,8 @@ class CheckpointPlaybackFailureTester:
         """Clean up test resources"""
         self.log("Cleaning up test resources...")
         
-        if self.mock_backend:
-            await self.mock_backend.stop()
-        
+        # The original code had self.mock_backend, but it's removed.
+        # No specific cleanup needed here if mock_backend is gone.
         self.log("Cleanup complete")
     
     async def run_complete_test(self) -> Dict[str, Any]:

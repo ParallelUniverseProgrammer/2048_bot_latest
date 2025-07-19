@@ -14,12 +14,14 @@ from typing import Dict, Any
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
-from tests.utilities.test_utils import TestLogger, BackendTester
+from tests.utilities.test_utils import TestLogger, BackendTester, get_backend_tester
+from tests.utilities.backend_manager import requires_real_backend
 
 # Configuration
 BASE_URL = "http://localhost:8000"
 TIMEOUT = 30
 
+@requires_real_backend("Checkpoint Loading Tests")
 def test_checkpoint_loading_behavior():
     """Test that checkpoint loading works correctly"""
     logger = TestLogger()
@@ -69,6 +71,7 @@ def test_checkpoint_loading_behavior():
     else:
         logger.error("Checkpoints failed to load during training")
 
+@requires_real_backend
 def test_frontend_loading_states():
     """Test that frontend loading states work correctly"""
     logger = TestLogger()
@@ -95,6 +98,7 @@ def test_frontend_loading_states():
     logger.log("7. Verify checkpoints still display correctly")
     logger.log("8. Test checkpoint playback functionality")
 
+@requires_real_backend
 def main():
     """Run all tests"""
     logger = TestLogger()

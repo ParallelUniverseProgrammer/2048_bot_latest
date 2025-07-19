@@ -83,78 +83,78 @@ class TestLogger:
     
     def info(self, message: str):
         """Log an info message"""
-        logger.info(self._format_message(message, "INFO:", "blue"))
+        print(self._format_message(message, "INFO:", "blue"))
     
     def ok(self, message: str):
         """Log a success message"""
-        logger.ok(self._format_message(message, "OK:", "green"))
+        print(self._format_message(message, "OK:", "green"))
     
     def warning(self, message: str):
         """Log a warning message"""
-        logger.warning(self._format_message(message, "WARNING:", "yellow"))
+        print(self._format_message(message, "WARNING:", "yellow"))
     
     def error(self, message: str):
         """Log an error message"""
-        logger.error(self._format_message(message, "ERROR:", "red"))
+        print(self._format_message(message, "ERROR:", "red"))
     
     def log(self, message: str):
         """Log a plain message"""
-        logger.info(self._format_message(message))
+        print(self._format_message(message))
     
     def debug(self, message: str):
         """Log a debug message"""
-        logger.info(self._format_message(message, "DEBUG:", "cyan"))
+        print(self._format_message(message, "DEBUG:", "cyan"))
     
     def game(self, message: str):
         """Log a game-related message"""
-        logger.info(self._format_message(message, "GAME:", "magenta"))
+        print(self._format_message(message, "GAME:", "magenta"))
     
     def find(self, message: str):
         """Log a find-related message"""
-        logger.info(self._format_message(message, "FIND:", "cyan"))
+        print(self._format_message(message, "FIND:", "cyan"))
     
     def status(self, message: str):
         """Log a status message"""
-        logger.info(self._format_message(message, "STATUS:", "blue"))
+        print(self._format_message(message, "STATUS:", "blue"))
     
     def starting(self, message: str):
         """Log a starting message"""
-        logger.info(self._format_message(message, "STARTING:", "cyan"))
+        print(self._format_message(message, "STARTING:", "cyan"))
     
     def running(self, message: str):
         """Log a running message"""
-        logger.info(self._format_message(message, "RUNNING:", "blue"))
+        print(self._format_message(message, "RUNNING:", "blue"))
     
     def controls(self, message: str):
         """Log a controls-related message"""
-        logger.info(self._format_message(message, "CONTROLS:", "magenta"))
+        print(self._format_message(message, "CONTROLS:", "magenta"))
     
     def playback(self, message: str):
         """Log a playback-related message"""
-        logger.info(self._format_message(message, "PLAYBACK:", "cyan"))
+        print(self._format_message(message, "PLAYBACK:", "cyan"))
     
     def testing(self, message: str):
         """Log a testing message"""
-        logger.info(self._format_message(message, "TESTING:", "blue"))
+        print(self._format_message(message, "TESTING:", "blue"))
     
     def success(self, message: str):
         """Log a success message"""
-        logger.ok(self._format_message(message, "SUCCESS:", "green"))
+        print(self._format_message(message, "SUCCESS:", "green"))
     
     def banner(self, message: str, width: int = 60):
         """Print a banner with consistent formatting"""
-        logger.info(self._format_message(f"{self._get_color_code('bold')}{message}{self._get_color_code('reset')}"))
-        logger.info(self._format_message("=" * width))
+        print(self._format_message(f"{self._get_color_code('bold')}{message}{self._get_color_code('reset')}"))
+        print(self._format_message("=" * width))
     
     def separator(self, width: int = 60):
         """Print a separator line"""
-        logger.info(self._format_message("=" * width))
+        print(self._format_message("=" * width))
     
     def section(self, message: str, width: int = 60):
         """Print a section header"""
-        logger.info(self._format_message(""))
-        logger.info(self._format_message(f"{self._get_color_code('bold')}{message}{self._get_color_code('reset')}"))
-        logger.info(self._format_message("-" * len(message)))
+        print(self._format_message(""))
+        print(self._format_message(f"{self._get_color_code('bold')}{message}{self._get_color_code('reset')}"))
+        print(self._format_message("-" * len(message)))
     
     def indent(self):
         """Increase indentation level"""
@@ -173,9 +173,9 @@ class TestLogger:
         if message:
             progress_msg += f" {message}"
         
-        logger.info(self._format_message(progress_msg, "PROGRESS:", "cyan"))
+        print(self._format_message(progress_msg, "PROGRESS:", "cyan"))
     
-    def table_header(self, headers: List[str], widths: List[int] = None):
+    def table_header(self, headers: List[str], widths: Optional[List[int]] = None):
         """Print a table header"""
         if not widths:
             widths = [max(15, len(h)) for h in headers]
@@ -183,43 +183,43 @@ class TestLogger:
         header_line = " | ".join(h.ljust(w) for h, w in zip(headers, widths))
         separator_line = "-+-".join("-" * w for w in widths)
         
-        logger.info(self._format_message(f"{self._get_color_code('bold')}{header_line}{self._get_color_code('reset')}"))
-        logger.info(self._format_message(separator_line))
+        print(self._format_message(f"{self._get_color_code('bold')}{header_line}{self._get_color_code('reset')}"))
+        print(self._format_message(separator_line))
     
-    def table_row(self, values: List[str], widths: List[int] = None):
+    def table_row(self, values: List[str], widths: Optional[List[int]] = None):
         """Print a table row"""
         if not widths:
             widths = [max(15, len(str(v))) for v in values]
         
         row_line = " | ".join(str(v).ljust(w) for v, w in zip(values, widths))
-        logger.info(self._format_message(row_line))
+        print(self._format_message(row_line))
     
     def summary_box(self, title: str, items: List[tuple], width: int = 60):
         """Print a summary box with title and items"""
-        logger.info(self._format_message(""))
-        logger.info(self._format_message("┌" + "─" * (width - 2) + "┐"))
+        print(self._format_message(""))
+        print(self._format_message("┌" + "─" * (width - 2) + "┐"))
         
         # Title
         title_line = f"│ {title.center(width - 4)} │"
-        logger.info(self._format_message(f"{self._get_color_code('bold')}{title_line}{self._get_color_code('reset')}"))
-        logger.info(self._format_message("├" + "─" * (width - 2) + "┤"))
+        print(self._format_message(f"{self._get_color_code('bold')}{title_line}{self._get_color_code('reset')}"))
+        print(self._format_message("├" + "─" * (width - 2) + "┤"))
         
         # Items
         for label, value in items:
             item_line = f"│ {label}: {value}".ljust(width - 1) + "│"
-            logger.info(self._format_message(item_line))
+            print(self._format_message(item_line))
         
-        logger.info(self._format_message("└" + "─" * (width - 2) + "┘"))
+        print(self._format_message("└" + "─" * (width - 2) + "┘"))
     
     def step(self, step_num: int, total_steps: int, message: str):
         """Log a step in a multi-step process"""
         step_msg = f"Step {step_num}/{total_steps}: {message}"
-        logger.info(self._format_message(step_msg, "STEP:", "cyan"))
+        print(self._format_message(step_msg, "STEP:", "cyan"))
 
 class BackendTester:
     """Common backend testing functionality with enhanced availability checking"""
     
-    def __init__(self, base_url: str = DEFAULT_BASE_URL, logger: TestLogger = None, timeout: int = DEFAULT_TIMEOUT):
+    def __init__(self, base_url: str = DEFAULT_BASE_URL, logger: Optional[TestLogger] = None, timeout: int = DEFAULT_TIMEOUT):
         self.base_url = base_url
         self.logger = logger or TestLogger()
         self.timeout = timeout
@@ -453,6 +453,38 @@ class BackendTester:
         """Test all basic endpoints and return results"""
         results = {}
         
+        # Test checkpoints endpoint
+        try:
+            response = requests.get(f"{self.base_url}/checkpoints", timeout=self.timeout)
+            results['checkpoints'] = response.status_code == 200
+        except Exception:
+            results['checkpoints'] = False
+        
+        # Test stats endpoint
+        try:
+            response = requests.get(f"{self.base_url}/checkpoints/stats", timeout=self.timeout)
+            results['stats'] = response.status_code == 200
+        except Exception:
+            results['stats'] = False
+        
+        # Test training status endpoint
+        try:
+            response = requests.get(f"{self.base_url}/training/status", timeout=self.timeout)
+            results['training_status'] = response.status_code == 200
+        except Exception:
+            results['training_status'] = False
+        
+        # Test playback status endpoint
+        try:
+            response = requests.get(f"{self.base_url}/checkpoints/playback/status", timeout=self.timeout)
+            results['playback_status'] = response.status_code == 200
+        except Exception:
+            results['playback_status'] = False
+        
+        return results
+        """Test all basic endpoints and return results"""
+        results = {}
+        
         self.logger.info("Testing basic backend endpoints...")
         
         # Test connectivity first
@@ -488,7 +520,7 @@ class BackendTester:
 class GameTester:
     """Common game testing functionality"""
     
-    def __init__(self, base_url: str = DEFAULT_BASE_URL, logger: TestLogger = None, timeout: int = 120):
+    def __init__(self, base_url: str = DEFAULT_BASE_URL, logger: Optional[TestLogger] = None, timeout: int = 120):
         self.base_url = base_url
         self.logger = logger or TestLogger()
         self.timeout = timeout
@@ -585,7 +617,7 @@ class GameTester:
 class PlaybackTester:
     """Common playback testing functionality"""
     
-    def __init__(self, base_url: str = DEFAULT_BASE_URL, logger: TestLogger = None, timeout: int = 30):
+    def __init__(self, base_url: str = DEFAULT_BASE_URL, logger: Optional[TestLogger] = None, timeout: int = 30):
         self.base_url = base_url
         self.logger = logger or TestLogger()
         self.timeout = timeout
@@ -700,26 +732,14 @@ class PlaybackTester:
 # Global backend tester instance for shared use
 _global_backend_tester = None
 
-def get_backend_tester(base_url: str = DEFAULT_BASE_URL, logger: 'TestLogger' = None) -> 'BackendTester':
+def get_backend_tester(base_url: str = DEFAULT_BASE_URL, logger: Optional['TestLogger'] = None) -> 'BackendTester':
     """Get a global backend tester instance"""
     global _global_backend_tester
     if _global_backend_tester is None:
         _global_backend_tester = BackendTester(base_url, logger)
     return _global_backend_tester
 
-def requires_backend(test_name: str = None):
-    """Decorator to skip tests if backend is not available"""
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            backend_tester = get_backend_tester()
-            actual_test_name = test_name or func.__name__
-            
-            if not backend_tester.require_backend_or_skip(actual_test_name):
-                return {"skipped": True, "reason": "Backend not available"}
-            
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+# Legacy function removed - use @requires_real_backend or @requires_mock_backend decorators instead
 
 def with_backend_fallback(fallback_result=None):
     """Decorator to provide fallback results when backend is not available"""
@@ -736,22 +756,7 @@ def with_backend_fallback(fallback_result=None):
         return wrapper
     return decorator
 
-def check_backend_or_exit(exit_code: int = 1, wait_time: int = 30):
-    """Check if backend is available or exit with error code"""
-    backend_tester = get_backend_tester()
-    
-    if not backend_tester.is_backend_available():
-        backend_tester.logger.error("Backend is not available!")
-        backend_tester.logger.info("Starting backend server...")
-        backend_tester.logger.info("  cd backend && python main.py")
-        backend_tester.logger.info("")
-        backend_tester.logger.info(f"Waiting {wait_time}s for backend to start...")
-        
-        if not backend_tester.wait_for_backend(wait_time):
-            backend_tester.logger.error("Backend failed to start. Exiting.")
-            exit(exit_code)
-    
-    return backend_tester 
+# Legacy function removed - use @requires_real_backend or @requires_mock_backend decorators instead
 
 # Add mock backend import
 try:
@@ -793,22 +798,7 @@ def start_mock_backend_if_needed(port: int = 8000, wait_time: int = 30) -> bool:
         backend_tester.logger.error(f"Failed to start mock backend: {e}")
         return False
 
-def check_backend_or_start_mock(port: int = 8000, wait_time: int = 30) -> bool:
-    """Check if backend is available or start mock backend"""
-    backend_tester = get_backend_tester()
-    
-    if backend_tester.is_backend_available():
-        backend_tester.logger.ok("Real backend is available")
-        return True
-    
-    backend_tester.logger.warning("Real backend not available, attempting to start mock backend...")
-    
-    if start_mock_backend_if_needed(port, wait_time):
-        backend_tester.logger.ok("Mock backend started successfully")
-        return True
-    else:
-        backend_tester.logger.error("Neither real nor mock backend is available")
-        return False
+# Legacy function removed - use @requires_real_backend or @requires_mock_backend decorators instead
 
 def main():
     """Main entry point for test utilities - demonstrates usage"""

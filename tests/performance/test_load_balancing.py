@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Load Balancing Performance Tests
@@ -24,6 +25,7 @@ class LoadBalancingTester:
     def __init__(self):
         self.logger = TestLogger()
         self.backend = BackendTester()
+@requires_real_backend
     
     def test_load_balancing_rewards(self) -> Dict[str, Any]:
         """Test load balancing reward distribution"""
@@ -219,6 +221,7 @@ class LoadBalancingTester:
         except Exception as e:
             self.logger.error(f"Efficiency metrics collection failed: {e}")
             return {}
+@requires_real_backend
     
     def test_tiny_model_enhancement(self) -> bool:
         """Test tiny model enhancement for load balancing"""
@@ -247,6 +250,7 @@ class LoadBalancingTester:
         except Exception as e:
             self.logger.error(f"Tiny model enhancement test failed: {e}")
             return False
+@requires_real_backend
 
 def main():
     """Main entry point for load balancing tests"""

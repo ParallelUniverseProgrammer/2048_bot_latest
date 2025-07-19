@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Device Fix Tests
@@ -25,6 +26,7 @@ class DeviceFixTester:
     def __init__(self):
         self.logger = TestLogger()
         self.backend = BackendTester()
+@requires_mock_backend
     
     def test_device_compatibility_fix(self) -> Dict[str, Any]:
         """Test device compatibility fixes"""
@@ -237,6 +239,7 @@ class DeviceFixTester:
         except Exception as e:
             self.logger.error(f"Performance improvement test failed: {e}")
             return False
+@requires_mock_backend
 
 def main():
     """Main entry point for device fix tests"""

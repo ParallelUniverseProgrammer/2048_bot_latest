@@ -20,7 +20,8 @@ import contextlib
 import sys
 from typing import Any, Dict, List
 import random
-from test_utils import TestLogger, BackendTester, check_backend_or_start_mock
+from tests.utilities.test_utils import TestLogger, BackendTester
+from tests.utilities.backend_manager import requires_mock_backend
 
 HOST = "localhost"
 PORT = 8000
@@ -32,6 +33,7 @@ class ConnectionStabilityTest:
         self.logger = TestLogger()
         self.backend = BackendTester("http://localhost:8000", self.logger)
         
+@requires_real_backend
     def test_initial_connection_works(self):
         """Test that initial connection works fine"""
         self.logger.testing("Testing initial connection")
@@ -50,6 +52,7 @@ class ConnectionStabilityTest:
         self.logger.ok("Initial connection test passed")
         return True
             
+@requires_real_backend
     def test_connection_degradation_over_time(self):
         """Test that connection degrades over time"""
         self.logger.testing("Testing connection degradation over 50 seconds...")
@@ -93,6 +96,7 @@ class ConnectionStabilityTest:
             self.logger.error("Connection stability test failed - too many failures")
             return False
             
+@requires_real_backend
     def test_refresh_failure_scenario(self):
         """Test the specific refresh failure scenario"""
         self.logger.testing("Testing refresh failure scenario")
@@ -191,11 +195,6 @@ class ConnectionStabilityTest:
         """Run all connection stability tests"""
         self.logger.banner("Connection Stability Tests", 60)
         
-        # Ensure backend is available
-        if not check_backend_or_start_mock():
-            self.logger.error("No backend available for testing")
-            return {"error": "No backend available"}
-        
         results = {
             "initial_connection": self.test_initial_connection_works(),
             "connection_degradation": self.test_connection_degradation_over_time(),
@@ -223,6 +222,7 @@ class ConnectionStabilityTest:
         
         return results
 
+@requires_mock_backend("Connection Stability Tests")
 async def main():
     """Main entry point"""
     test = ConnectionStabilityTest()
@@ -232,7 +232,7 @@ async def main():
     with open("connection_stability_test_results.json", "w") as f:
         json.dump(results, f, indent=2)
     
-    logger.info(f"Results saved to results file")
+    test.logger.info(f"Results saved to results file")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

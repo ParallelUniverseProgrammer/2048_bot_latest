@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Playback Simulation Test Suite
@@ -92,6 +93,7 @@ async def _run_playback(websocket_manager, runtime: float = 6.0) -> CheckpointPl
         # Task did not finish -> hang detected
         logger.error("[TEST] Playback task hung during shutdown!")
     return playback
+@requires_mock_backend
 
 def main():
     """Main entry point"""

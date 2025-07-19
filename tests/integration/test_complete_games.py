@@ -22,7 +22,8 @@ from typing import Dict, Any, List, Optional
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
-from tests.utilities.test_utils import TestLogger, BackendTester, GameTester, PlaybackTester, check_backend_or_start_mock
+from tests.utilities.test_utils import TestLogger, BackendTester, GameTester, PlaybackTester, get_backend_tester
+from tests.utilities.backend_manager import requires_real_backend
 
 # Configuration
 BASE_URL = "http://localhost:8000"
@@ -44,21 +45,16 @@ class CheckpointGameTester:
         """Log a message with timestamp"""
         self.logger.log(message)
     
+@requires_real_backend
     def test_backend_connectivity(self) -> bool:
         """Test that backend is accessible"""
-        # Try to start mock backend if real backend is not available
-        if not self.backend.test_connectivity():
-            self.logger.info("Real backend not available, attempting to start mock backend...")
-            if check_backend_or_start_mock(port=8000, wait_time=30):
-                return self.backend.test_connectivity()
-            else:
-                return False
-        return True
+        return self.backend.test_connectivity()
     
     def get_available_checkpoints(self) -> List[Dict[str, Any]]:
         """Get list of available checkpoints"""
         return self.backend.get_checkpoints()
     
+@requires_real_backend
     def test_checkpoint_loading(self, checkpoint_id: str) -> bool:
         """Test that a checkpoint can be loaded"""
         checkpoint_info = self.backend.load_checkpoint(checkpoint_id)
@@ -68,14 +64,17 @@ class CheckpointGameTester:
             return True
         return False
     
+@requires_real_backend
     def test_single_game_playback(self, checkpoint_id: str) -> Dict[str, Any]:
         """Test playing a complete game from a checkpoint"""
         return self.game_tester.test_single_game_playback(checkpoint_id)
     
+@requires_real_backend
     def test_live_playback_start(self, checkpoint_id: str) -> Dict[str, Any]:
         """Test starting live playback (without waiting for completion)"""
         return self.playback_tester.start_live_playback(checkpoint_id)
     
+@requires_real_backend
     def test_playback_controls(self) -> Dict[str, Any]:
         """Test playback pause/resume/stop controls"""
         if not self.test_checkpoint_id:
@@ -83,6 +82,7 @@ class CheckpointGameTester:
         
         return self.playback_tester.test_playback_controls(self.test_checkpoint_id)
     
+    @requires_real_backend("Complete Game Playback Tests")
     def run_complete_test_suite(self) -> bool:
         """Run the complete test suite"""
         self.logger.starting("Starting Complete Game Playback Test Suite")
@@ -193,25 +193,23 @@ class CheckpointGameTester:
         
         return True
 
+@requires_real_backend
 def main():
     """Main entry point"""
     logger = TestLogger()
     
     logger.game("Complete Game Playback Test Suite")
-    logger.log("Testing that checkpoints can play complete games")
     logger.separator(60)
     
     tester = CheckpointGameTester()
     success = tester.run_complete_test_suite()
     
-    if not success:
-        logger.error("TEST SUITE FAILED")
-        logger.log("The checkpoint system needs attention.")
-        sys.exit(1)
+    if success:
+        logger.success("All tests passed!")
+        return 0
     else:
-        logger.ok("TEST SUITE PASSED")
-        logger.log("The checkpoint system is working correctly!")
-        sys.exit(0)
+        logger.error("Some tests failed!")
+        return 1
 
 if __name__ == "__main__":
-    main() 
+    exit(main()) 

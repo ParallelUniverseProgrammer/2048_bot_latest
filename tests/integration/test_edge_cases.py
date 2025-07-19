@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Edge Case Testing for Checkpoint System
@@ -29,6 +30,7 @@ class EdgeCaseTester:
         self.backend = BackendTester(base_url, self.logger)
         self.game_tester = GameTester(base_url, self.logger, 60)  # Shorter timeout for edge cases
         self.playback_tester = PlaybackTester(base_url, self.logger)
+@requires_real_backend
     
     def test_invalid_checkpoint_ids(self) -> Dict[str, bool]:
         """Test behavior with invalid checkpoint IDs"""
@@ -99,6 +101,7 @@ class EdgeCaseTester:
             self.logger.warning(f"Only {passed}/{total} invalid ID tests passed")
         
         return results
+@requires_real_backend
     
     def test_malformed_requests(self) -> Dict[str, bool]:
         """Test behavior with malformed HTTP requests"""
@@ -154,6 +157,7 @@ class EdgeCaseTester:
                 self.logger.error(f"Malformed payload {i} caused exception: {e}")
         
         return results
+@requires_real_backend
     
     def test_concurrent_operations(self) -> Dict[str, bool]:
         """Test concurrent operations that might cause race conditions"""
@@ -209,6 +213,7 @@ class EdgeCaseTester:
             self.logger.error(f"Concurrent checkpoint loading test failed: {e}")
         
         return results
+@requires_real_backend
     
     def test_resource_limits(self) -> Dict[str, bool]:
         """Test behavior at resource limits"""
@@ -248,6 +253,7 @@ class EdgeCaseTester:
             self.logger.error(f"Large response test failed: {e}")
         
         return results
+@requires_real_backend
     
     def test_error_recovery(self) -> Dict[str, bool]:
         """Test error recovery scenarios"""
@@ -295,6 +301,7 @@ class EdgeCaseTester:
             self.logger.error(f"Timeout recovery test failed: {e}")
         
         return results
+@requires_real_backend
     
     def test_boundary_conditions(self) -> Dict[str, bool]:
         """Test boundary conditions and limits"""
@@ -390,6 +397,7 @@ class EdgeCaseTester:
             self.logger.log(f"  {test_name}: {status}")
         
         return all_results
+@requires_real_backend
 
 def main():
     """Main entry point"""

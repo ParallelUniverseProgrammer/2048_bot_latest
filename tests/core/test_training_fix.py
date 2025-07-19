@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Training Fix Test Suite
@@ -25,6 +26,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
 from tests.utilities.test_utils import TestLogger, BackendTester
+@requires_real_backend
 
 def test_training_fix():
     """Test that training system works correctly after fixes"""
@@ -96,6 +98,7 @@ def test_training_fix():
     except Exception as e:
         logger.error(f"Training fix test failed: {e}")
         return False
+@requires_real_backend
 
 def main():
     """Main entry point"""

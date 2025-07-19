@@ -12,11 +12,14 @@ import re
 import sys
 from pathlib import Path
 from typing import List, Tuple
+from tests.utilities.test_utils import TestLogger
+from tests.utilities.backend_manager import requires_mock_backend
 
 class ComplianceFixer:
     """Fix compliance issues in test files"""
     
     def __init__(self):
+        self.logger = TestLogger()
         self.tests_dir = Path(__file__).parent
         self.fixed_files = []
         self.skipped_files = []
@@ -280,16 +283,16 @@ class ComplianceFixer:
             return False
             
         except Exception as e:
-            logger.error(f"Error fixing {file_path}: {e}")
+            self.logger.error(f"Error fixing {file_path}: {e}")
             return False
     
     def fix_all_files(self):
         """Fix compliance issues in all test files"""
-        logger.info("Starting compliance fixes...")
+        self.logger.info("Starting compliance fixes...")
         
         for file_path in self.tests_dir.rglob('*.py'):
             if file_path.name != '__init__.py' and file_path.name != 'compliance_checker.py':
-                logger.info(f"Processing: {file_path}")
+                self.logger.info(f"Processing: {file_path}")
                 
                 if self.fix_file(file_path):
                     self.fixed_files.append(str(file_path))
@@ -297,16 +300,18 @@ class ComplianceFixer:
                     self.skipped_files.append(str(file_path))
         
         # Print summary
-        logger.info(f"\nFixed {len(self.fixed_files)} files:")
+        self.logger.info(f"\nFixed {len(self.fixed_files)} files:")
         for file_path in self.fixed_files:
-            logger.info(f"  {file_path}")
+            self.logger.info(f"  {file_path}")
         
-        logger.info(f"\nSkipped {len(self.skipped_files)} files:")
+        self.logger.info(f"\nSkipped {len(self.skipped_files)} files:")
         for file_path in self.skipped_files:
-            logger.info(f"  {file_path}")
+            self.logger.info(f"  {file_path}")
 
+@requires_mock_backend("Fix Compliance Issues")
 def main():
     """Main entry point"""
+    logger = TestLogger()
     fixer = ComplianceFixer()
     fixer.fix_all_files()
 

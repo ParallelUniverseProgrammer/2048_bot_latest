@@ -15,7 +15,8 @@ import json
 import time
 import websockets
 from typing import Dict, Any, List
-from test_utils import TestLogger, BackendTester, check_backend_or_start_mock
+from tests.utilities.test_utils import TestLogger, BackendTester
+from tests.utilities.backend_manager import requires_mock_backend
 
 class MobileTrainingDisconnectionTest:
     """Test mobile Safari disconnection during training scenarios"""
@@ -114,6 +115,7 @@ class MobileTrainingDisconnectionTest:
                 "connection_errors": 1
             }
     
+@requires_mock_backend
     def test_backend_stability_during_training_simulation(self) -> Dict[str, Any]:
         """Test backend stability during simulated training activity"""
         self.logger.testing("Testing backend stability during training simulation")
@@ -263,6 +265,7 @@ class MobileTrainingDisconnectionTest:
             "results": results
         }
     
+@requires_mock_backend
     def test_refresh_recovery_scenario(self) -> Dict[str, Any]:
         """Test the refresh recovery scenario (refresh doesn't fix the problem)"""
         self.logger.testing("Testing refresh recovery scenario")
@@ -345,11 +348,6 @@ class MobileTrainingDisconnectionTest:
         """Run all mobile training disconnection tests"""
         self.logger.banner("Mobile Training Disconnection Tests", 60)
         
-        # Ensure backend is available
-        if not check_backend_or_start_mock():
-            self.logger.error("No backend available for testing")
-            return {"error": "No backend available"}
-        
         # Run tests in sequence to simulate the real scenario
         results = {
             "websocket_training_simulation": await self.test_websocket_connection_during_training_simulation(),
@@ -396,6 +394,7 @@ class MobileTrainingDisconnectionTest:
         
         return results
 
+@requires_mock_backend("Mobile Training Disconnection Tests")
 async def main():
     """Main entry point"""
     test = MobileTrainingDisconnectionTest()
@@ -405,7 +404,7 @@ async def main():
     with open("mobile_training_disconnection_test_results.json", "w") as f:
         json.dump(results, f, indent=2)
     
-    logger.info(f"Results saved to results file")
+    test.logger.info(f"Results saved to results file")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

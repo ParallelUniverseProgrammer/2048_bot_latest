@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Training Issue Test Suite
@@ -24,6 +25,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
 from tests.utilities.test_utils import TestLogger, BackendTester
+@requires_real_backend
 
 def test_training_start():
     """Test that training can start properly"""
@@ -65,6 +67,7 @@ def test_training_start():
     except Exception as e:
         logger.error(f"Training start test failed: {e}")
         return False
+@requires_real_backend
 
 def test_training_progress():
     """Test that training progress is monitored correctly"""
@@ -101,6 +104,7 @@ def test_training_progress():
     except Exception as e:
         logger.error(f"Training progress test failed: {e}")
         return False
+@requires_real_backend
 
 def main():
     """Main entry point"""

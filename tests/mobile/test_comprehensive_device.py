@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Comprehensive Device Compatibility Tests
@@ -25,6 +26,7 @@ class ComprehensiveDeviceTester:
     def __init__(self):
         self.logger = TestLogger()
         self.backend = BackendTester()
+@requires_mock_backend
     
     def test_device_compatibility_pipeline(self) -> Dict[str, Any]:
         """Test comprehensive device compatibility pipeline"""
@@ -128,6 +130,7 @@ class ComprehensiveDeviceTester:
         except Exception as e:
             self.logger.error(f"Performance metrics test failed: {e}")
             return {}
+@requires_mock_backend
 
 def main():
     """Main entry point for comprehensive device tests"""

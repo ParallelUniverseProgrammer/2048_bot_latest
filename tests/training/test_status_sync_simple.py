@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Simple Training Status Synchronization Test
@@ -34,6 +35,7 @@ class SimpleTrainingStatusTest:
         except Exception as e:
             self.logger.error(f"Error getting training status: {e}")
             return {"is_training": False, "is_paused": False, "current_episode": 0}
+@requires_mock_backend
             
     def test_fresh_server_status(self):
         """Test that a fresh server shows correct training status"""
@@ -49,6 +51,7 @@ class SimpleTrainingStatusTest:
         else:
             self.logger.error("Fresh server shows incorrect training status!")
             return False
+@requires_mock_backend
             
     def test_health_endpoint(self):
         """Test that the health endpoint is accessible"""
@@ -62,6 +65,7 @@ class SimpleTrainingStatusTest:
         except Exception as e:
             self.logger.error(f"Health endpoint failed: {e}")
             return False
+@requires_mock_backend
             
     def test_training_endpoints(self):
         """Test that training control endpoints are accessible"""
@@ -94,6 +98,7 @@ class SimpleTrainingStatusTest:
                 # This might be expected for some endpoints
                 
         return all_accessible
+@requires_mock_backend
 
 def main():
     """Main entry point"""

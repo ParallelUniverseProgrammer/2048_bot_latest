@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Minimal Crash Test Suite
@@ -39,6 +40,7 @@ except ImportError as e:
     logger.info(f"Backend path: {backend_path}")
     logger.info(f"Available in backend: {os.listdir(backend_path) if os.path.exists(backend_path) else 'Path does not exist'}")
     raise
+@requires_real_backend
 
 def test_model_creation():
     """Test that model can be created without crashing"""
@@ -70,6 +72,7 @@ def test_model_creation():
     except Exception as e:
         logger.error(f"Model creation failed: {e}")
         return False
+@requires_real_backend
 
 def test_environment():
     """Test that environment can be created and used without crashing"""
@@ -98,6 +101,7 @@ def test_environment():
     except Exception as e:
         logger.error(f"Environment creation failed: {e}")
         return False
+@requires_real_backend
 
 def test_trainer_creation():
     """Test that trainer can be created without crashing"""
@@ -136,6 +140,7 @@ def test_trainer_creation():
     except Exception as e:
         logger.error(f"Trainer creation failed: {e}")
         return False
+@requires_real_backend
 
 def test_load_balancing():
     """Test that load balancing functionality works without crashing"""
@@ -166,6 +171,7 @@ def test_load_balancing():
     except Exception as e:
         logger.error(f"Load balancing test failed: {e}")
         return False
+@requires_real_backend
 
 def test_single_episode():
     """Test that a single episode can be run without crashing"""
@@ -211,6 +217,7 @@ def test_single_episode():
     except Exception as e:
         logger.error(f"Single episode test failed: {e}")
         return False
+@requires_real_backend
 
 def main():
     """Main entry point"""

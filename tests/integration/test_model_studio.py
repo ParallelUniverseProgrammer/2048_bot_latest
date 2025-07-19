@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Model Studio Integration Test
@@ -25,6 +26,7 @@ class ModelStudioTester:
         self.logger = TestLogger()
         self.backend = BackendTester(base_url, self.logger)
         self.base_url = base_url
+@requires_real_backend
     
     def test_design_creation(self) -> Optional[str]:
         """Test creating a new design"""
@@ -43,6 +45,7 @@ class ModelStudioTester:
         except Exception as e:
             self.logger.error(f"Design creation error: {e}")
             return None
+@requires_real_backend
     
     def test_design_update(self, design_id: str) -> bool:
         """Test updating a design with valid architecture"""
@@ -91,6 +94,7 @@ class ModelStudioTester:
         except Exception as e:
             self.logger.error(f"Design update error: {e}")
             return False
+@requires_real_backend
     
     def test_design_validation(self, design_id: str) -> Optional[Dict[str, Any]]:
         """Test design validation"""
@@ -146,6 +150,7 @@ class ModelStudioTester:
         except Exception as e:
             self.logger.error(f"Validation error: {e}")
             return None
+@requires_real_backend
     
     def test_design_compilation(self, design_id: str) -> bool:
         """Test design compilation"""
@@ -204,6 +209,7 @@ class ModelStudioTester:
         
         self.logger.success("Model Studio test suite completed successfully!")
         return True
+@requires_real_backend
 
 def main():
     """Main entry point for Model Studio integration test"""

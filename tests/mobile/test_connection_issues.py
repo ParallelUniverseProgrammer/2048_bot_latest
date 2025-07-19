@@ -17,7 +17,8 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
-from tests.utilities.test_utils import TestLogger, BackendTester, check_backend_or_start_mock
+from tests.utilities.test_utils import TestLogger, BackendTester
+from tests.utilities.backend_manager import requires_mock_backend
 
 class MobileConnectionTester:
     """Test mobile connection stability and recovery"""
@@ -117,6 +118,7 @@ class MobileConnectionTester:
             "results": results
         }
     
+@requires_mock_backend
     def test_backend_endpoints(self) -> Dict[str, Any]:
         """Test backend API endpoints using BackendTester"""
         self.logger.testing("Testing backend API endpoints")
@@ -169,11 +171,6 @@ class MobileConnectionTester:
         """Run all mobile connection tests"""
         self.logger.banner("Mobile Connection Tests", 60)
         
-        # Ensure backend is available
-        if not check_backend_or_start_mock():
-            self.logger.error("No backend available for testing")
-            return {"error": "No backend available"}
-        
         results = {
             "timestamp": time.time(),
             "backend_endpoints": self.test_backend_endpoints(),
@@ -204,6 +201,7 @@ class MobileConnectionTester:
         
         return results
 
+@requires_mock_backend("Mobile Connection Tests")
 async def main():
     """Main entry point"""
     tester = MobileConnectionTester()
@@ -213,7 +211,7 @@ async def main():
     with open("mobile_connection_test_results.json", "w") as f:
         json.dump(results, f, indent=2)
     
-    logger.info(f"Results saved to results file")
+    tester.logger.info(f"Results saved to results file")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Test JSON Serialization of Checkpoint Playback Messages
@@ -71,6 +72,7 @@ class TestCheckpointPlaybackJSONSerialization:
         # Set up the playback environment
         self.playback.env = self.mock_env
         self.playback.current_checkpoint_id = "test_checkpoint"
+@requires_real_backend
         
     def test_action_probs_json_serializable(self):
         """Test that action_probs in step_data is JSON serializable"""
@@ -115,6 +117,7 @@ class TestCheckpointPlaybackJSONSerialization:
             assert deserialized['action_probs'] == [0.1, 0.7, 0.15, 0.05]
             
             self.logger.ok("Action probabilities JSON serialization test passed")
+@requires_real_backend
             
     def test_full_message_json_serializable(self):
         """Test that _create_full_message produces JSON serializable output"""
@@ -155,6 +158,7 @@ class TestCheckpointPlaybackJSONSerialization:
         assert deserialized['step_data']['action_probs'] == [0.1, 0.7, 0.15, 0.05]
         
         self.logger.ok("Full message JSON serialization test passed")
+@requires_real_backend
         
     def test_lightweight_message_json_serializable(self):
         """Test that _create_lightweight_message produces JSON serializable output"""
@@ -190,6 +194,7 @@ class TestCheckpointPlaybackJSONSerialization:
         assert deserialized['game_number'] == 1
         
         self.logger.ok("Lightweight message JSON serialization test passed")
+@requires_real_backend
         
     def test_numpy_array_detection_and_conversion(self):
         """Test that numpy arrays are properly detected and converted"""
@@ -232,6 +237,7 @@ class TestCheckpointPlaybackJSONSerialization:
         assert deserialized['nested']['inner_array'] == [1, 2, 3]
         
         self.logger.ok("Numpy array detection and conversion test passed")
+@requires_real_backend
         
     def test_websocket_broadcast_compatibility(self):
         """Test that messages are compatible with WebSocket broadcast"""
@@ -262,6 +268,7 @@ class TestCheckpointPlaybackJSONSerialization:
         assert deserialized['step_data']['action_probs'] == [0.1, 0.7, 0.15, 0.05]
         
         self.logger.ok("WebSocket broadcast compatibility test passed")
+@requires_real_backend
         
     def test_regression_original_error_scenario(self):
         """Test regression of the original error scenario"""
@@ -302,6 +309,7 @@ class TestCheckpointPlaybackJSONSerialization:
             return [self._convert_numpy_to_json_serializable(item) for item in obj]
         else:
             return obj
+@requires_real_backend
 
 def main():
     """Main entry point"""

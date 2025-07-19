@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Training Manager Test Suite
@@ -56,6 +57,7 @@ class MockWebSocketManager:
         """Mock high priority broadcast"""
         self.messages.append({"priority": "high", "message": message})
         return True
+@requires_real_backend
 
 def test_training_manager():
     """Test that training manager can be created and used"""
@@ -96,6 +98,7 @@ def test_training_manager():
     except Exception as e:
         logger.error(f"Training manager test failed: {e}")
         return False
+@requires_real_backend
 
 def test_memory_usage():
     """Test that training manager handles memory properly"""
@@ -149,6 +152,7 @@ def test_memory_usage():
     except Exception as e:
         logger.error(f"Memory usage test failed: {e}")
         return False
+@requires_real_backend
 
 def main():
     """Main entry point"""

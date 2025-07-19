@@ -63,7 +63,7 @@ class ComplianceChecker:
         }
         self.shared_utilities = [
             'TestLogger', 'BackendTester', 'GameTester', 'PlaybackTester',
-            'check_backend_or_start_mock', 'requires_backend', 'with_backend_fallback'
+            'requires_real_backend', 'requires_mock_backend', 'with_backend_fallback'
         ]
         
     def check_file(self, file_path: Path) -> FileCompliance:
@@ -123,6 +123,9 @@ class ComplianceChecker:
         
         # Check for proper imports
         self._check_imports(content, lines, issues)
+        
+        # Check for backend decorator compliance
+        self._check_backend_decorators(content, lines, issues)
         
         # Determine compliance level
         compliance_level = self._determine_compliance_level(issues)
@@ -188,6 +191,59 @@ class ComplianceChecker:
                     if 'test_utils' not in content:
                         issues.append(ComplianceIssue(i, "DIRECT_IMPORT", 
                             f"Direct import that could use test_utils: {line.strip()}", "MINOR"))
+    
+    def _check_backend_decorators(self, content: str, lines: List[str], issues: List[ComplianceIssue]):
+        """Check for backend decorator compliance"""
+        # Check if this is a test file (contains test functions)
+        has_test_functions = any('def test_' in line for line in lines)
+        has_main_function = 'def main():' in content
+        
+        if not (has_test_functions or has_main_function):
+            return  # Not a test file
+        
+        # Check for legacy backend logic
+        legacy_patterns = [
+            'check_backend_or_start_mock',
+            'requires_backend',
+            'check_backend_or_exit'
+        ]
+        
+        for i, line in enumerate(lines, 1):
+            for pattern in legacy_patterns:
+                if pattern in line and not line.strip().startswith('#'):
+                    issues.append(ComplianceIssue(i, "LEGACY_BACKEND_LOGIC", 
+                        f"Legacy backend logic detected: {pattern}. Use @requires_real_backend or @requires_mock_backend instead.", "MAJOR"))
+        
+        # Check for missing backend decorators on test functions
+        test_functions = []
+        for i, line in enumerate(lines, 1):
+            if line.strip().startswith('def test_'):
+                test_functions.append((i, line.strip()))
+        
+        # Check for missing backend decorators on main function
+        main_functions = []
+        for i, line in enumerate(lines, 1):
+            if line.strip().startswith('def main('):
+                main_functions.append((i, line.strip()))
+        
+        # Check if any test functions or main functions are missing backend decorators
+        all_functions = test_functions + main_functions
+        
+        for line_num, func_line in all_functions:
+            # Look for decorators in the lines before this function
+            has_backend_decorator = False
+            for j in range(max(1, line_num - 5), line_num):
+                if j < len(lines):
+                    line_content = lines[j - 1].strip()
+                    if ('@requires_real_backend' in line_content or 
+                        '@requires_mock_backend' in line_content):
+                        has_backend_decorator = True
+                        break
+            
+            if not has_backend_decorator:
+                func_name = func_line.split('(')[0].replace('def ', '')
+                issues.append(ComplianceIssue(line_num, "MISSING_BACKEND_DECORATOR", 
+                    f"Function '{func_name}' missing backend decorator. Use @requires_real_backend or @requires_mock_backend.", "MAJOR"))
     
     def _determine_compliance_level(self, issues: List[ComplianceIssue]) -> ComplianceLevel:
         """Determine compliance level based on issues"""
@@ -280,9 +336,11 @@ class ComplianceChecker:
             print("  2. Ensure all files use TestLogger for output")
             print("  3. Add proper docstrings to all test files")
             print("  4. Include main() functions with __name__ guards")
+            print("  5. Use @requires_real_backend or @requires_mock_backend decorators for all test functions")
+            print("  6. Remove legacy backend logic (check_backend_or_start_mock, requires_backend)")
         if minor_issues:
-            print("  5. Replace print() statements with TestLogger calls")
-            print("  6. Use shared utilities from test_utils where possible")
+            print("  7. Replace print() statements with TestLogger calls")
+            print("  8. Use shared utilities from test_utils where possible")
         
         print("\n" + "=" * 80)
 

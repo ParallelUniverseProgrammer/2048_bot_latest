@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 PWA Install Tests
@@ -24,6 +25,7 @@ class PWAInstallTester:
     def __init__(self):
         self.logger = TestLogger()
         self.backend = BackendTester()
+@requires_mock_backend
     
     def test_qr_code_generation(self) -> bool:
         """Test QR code generation for PWA installation"""
@@ -53,6 +55,7 @@ class PWAInstallTester:
         except Exception as e:
             self.logger.error(f"QR code generation test failed: {e}")
             return False
+@requires_mock_backend
     
     def test_pwa_manifest(self) -> bool:
         """Test PWA manifest configuration"""
@@ -93,6 +96,7 @@ class PWAInstallTester:
         except Exception as e:
             self.logger.error(f"PWA manifest test failed: {e}")
             return False
+@requires_mock_backend
     
     def test_ios_tooltip_functionality(self) -> bool:
         """Test iOS-specific installation tooltip"""
@@ -118,6 +122,7 @@ class PWAInstallTester:
         except Exception as e:
             self.logger.error(f"iOS tooltip test failed: {e}")
             return False
+@requires_mock_backend
     
     def test_no_install_page(self) -> bool:
         """Test that no separate install page is needed"""
@@ -143,6 +148,7 @@ class PWAInstallTester:
         except Exception as e:
             self.logger.error(f"No install page test failed: {e}")
             return False
+@requires_mock_backend
     
     def test_no_install_functionality(self) -> bool:
         """Test that PWA doesn't require manual install steps"""
@@ -168,6 +174,7 @@ class PWAInstallTester:
         except Exception as e:
             self.logger.error(f"No install functionality test failed: {e}")
             return False
+@requires_mock_backend
 
 def main():
     """Main entry point for PWA install tests"""

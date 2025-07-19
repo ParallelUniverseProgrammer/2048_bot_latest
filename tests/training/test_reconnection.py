@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
 """
-Test for reconnection failure during REAL training.
-This test starts actual training with a real checkpoint and then tests reconnection
-during the active training process to reproduce the mobile Safari issue.
+Training Reconnection Test
+==========================
+
+This test verifies that the system can handle reconnections during training
+sessions without losing state or causing issues.
 """
 
 import asyncio
-import json
 import time
+import json
+import sys
+import os
 import websockets
 import requests
-from typing import Dict, Any, List
-from test_utils import TestLogger, BackendTester, check_backend_or_start_mock
+from typing import Dict, Any, List, Optional
+
+# Add project root to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
+
+from tests.utilities.test_utils import TestLogger, BackendTester
+from tests.utilities.backend_manager import requires_mock_backend
 
 class RealTrainingReconnectionTest:
     """Test reconnection during actual training scenarios"""
@@ -259,6 +269,7 @@ class RealTrainingReconnectionTest:
             "reconnection_results": reconnection_results
         }
     
+@requires_mock_backend
     def test_backend_endpoints_during_training(self) -> Dict[str, Any]:
         """Test backend endpoints during active training"""
         self.logger.testing("Testing backend endpoints during active training")
@@ -315,11 +326,6 @@ class RealTrainingReconnectionTest:
         """Run all real training reconnection tests"""
         self.logger.banner("Real Training Reconnection Tests", 60)
         
-        # Ensure backend is available
-        if not check_backend_or_start_mock():
-            self.logger.error("No backend available for testing")
-            return {"error": "No backend available"}
-        
         # Run tests in sequence
         results = {
             "websocket_reconnection_during_training": await self.test_reconnection_during_real_training(),
@@ -360,6 +366,7 @@ class RealTrainingReconnectionTest:
         
         return results
 
+@requires_mock_backend("Real Training Reconnection Tests")
 async def main():
     """Main entry point"""
     test = RealTrainingReconnectionTest()
@@ -369,7 +376,7 @@ async def main():
     with open("real_training_reconnection_test_results.json", "w") as f:
         json.dump(results, f, indent=2)
     
-    logger.info(f"Results saved to results file")
+    test.logger.info(f"Results saved to results file")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

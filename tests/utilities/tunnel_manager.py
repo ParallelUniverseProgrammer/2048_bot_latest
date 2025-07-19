@@ -19,6 +19,7 @@ import requests
 import time
 from typing import Optional, Tuple, Dict, Any
 from tests.utilities.test_utils import TestLogger
+from tests.utilities.backend_manager import requires_mock_backend
 
 class TunnelManager:
     """Utility class for managing cloudflared tunnels"""
@@ -71,6 +72,7 @@ class TunnelManager:
         
         return self.tunnel_url, self.process
     
+    @requires_mock_backend("Tunnel URL Test")
     def test_tunnel_url(self, url: str) -> bool:
         """Test if the tunnel URL is working"""
         self.logger.info("Testing tunnel URL...")
@@ -159,6 +161,7 @@ class TunnelManager:
         
         return True
 
+@requires_mock_backend("Tunnel Manager Demo")
 def main():
     """Main entry point for tunnel manager"""
     logger = TestLogger()

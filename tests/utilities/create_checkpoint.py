@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from tests.utilities.test_utils import TestLogger
+from tests.utilities.backend_manager import requires_mock_backend
 from app.models.game_transformer import GameTransformer
 from app.models.model_config import ModelConfig
 
@@ -170,6 +171,7 @@ class CheckpointCreator:
             self.logger.error(f"Failed to create checkpoint with state: {e}")
             raise
 
+@requires_mock_backend("Create Checkpoint Utility")
 def main():
     """Main entry point for checkpoint creation utility"""
     logger = TestLogger()

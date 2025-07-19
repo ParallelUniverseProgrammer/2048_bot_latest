@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Tunnel Demo Integration Test
@@ -25,6 +26,7 @@ class TunnelDemoTester:
         self.logger = TestLogger()
         self.tunnel_url = tunnel_url
         self.backend = BackendTester("http://localhost:8000", self.logger)
+@requires_real_backend
     
     def test_tunnel_endpoints(self) -> List[Tuple[str, bool, str]]:
         """Test the tunnel endpoints to verify functionality"""
@@ -53,6 +55,7 @@ class TunnelDemoTester:
                 results.append((name, False, str(e)))
         
         return results
+@requires_real_backend
     
     def test_pwa_compatibility(self) -> bool:
         """Test PWA compatibility via tunnel"""
@@ -84,6 +87,7 @@ class TunnelDemoTester:
         except Exception as e:
             self.logger.error(f"PWA Compatibility Error: {e}")
             return False
+@requires_real_backend
     
     def test_api_accessibility(self) -> bool:
         """Test API accessibility via tunnel"""
@@ -166,6 +170,7 @@ class TunnelDemoTester:
         
         self.logger.success("Tunnel demo test suite completed successfully!")
         return True
+@requires_real_backend
 
 def main():
     """Main entry point for tunnel demo integration test"""

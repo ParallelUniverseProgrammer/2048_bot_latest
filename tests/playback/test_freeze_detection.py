@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Real Playback Freeze Detection Test
@@ -206,6 +207,7 @@ class RealPlaybackFreezeTest:
         self.logger.info("2. Timing-dependent")
         self.logger.info("3. Related to system resources")
         self.logger.info("4. Caused by frontend-backend interaction")
+@requires_mock_backend
 
 def main():
     """Main entry point"""

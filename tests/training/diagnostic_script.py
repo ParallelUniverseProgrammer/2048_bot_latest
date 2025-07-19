@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Training Diagnostic Script
@@ -380,6 +381,7 @@ class TrainingDiagnostic:
         finally:
             self.monitoring_active = False
             self.stop_backend()
+@requires_mock_backend
 
 def main():
     """Main entry point"""

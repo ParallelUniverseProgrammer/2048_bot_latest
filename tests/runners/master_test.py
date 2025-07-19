@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Master Checkpoint Directory Test Suite
@@ -190,6 +191,7 @@ class MasterCheckpointTest:
             elapsed = time.time() - start_time
             self.logger.error(f"{operation_name} failed after {elapsed:.2f}s: {e}")
             return False
+@requires_mock_backend
     
     def test_custom_directory_visibility(self) -> bool:
         """Test 1: Backend lists checkpoints from custom directory only"""
@@ -231,6 +233,7 @@ class MasterCheckpointTest:
         except Exception as e:
             self.logger.error(f"Custom directory visibility test failed: {e}")
             return False
+@requires_mock_backend
 
     def test_checkpoint_loading(self) -> bool:
         """Test 2: Backend can load checkpoint using absolute paths"""
@@ -292,6 +295,7 @@ class MasterCheckpointTest:
         except Exception as e:
             self.logger.error(f"Checkpoint loading test failed: {e}")
             return False
+@requires_mock_backend
 
     def test_checkpoint_saving(self) -> bool:
         """Test 3: Backend can save checkpoints to custom directory"""
@@ -329,6 +333,7 @@ class MasterCheckpointTest:
         except Exception as e:
             self.logger.error(f"Checkpoint saving test failed: {e}")
             return False
+@requires_mock_backend
 
     def test_checkpoint_isolation(self) -> bool:
         """Test 4: Checkpoints in test directory don't affect default directory"""
@@ -362,6 +367,7 @@ class MasterCheckpointTest:
         except Exception as e:
             self.logger.error(f"Checkpoint isolation test failed: {e}")
             return False
+@requires_mock_backend
 
     def test_training_progress(self) -> bool:
         """Test 5: Training progresses normally with custom checkpoint directory"""
@@ -399,6 +405,7 @@ class MasterCheckpointTest:
         except Exception as e:
             self.logger.error(f"Training progress test failed: {e}")
             return False
+@requires_mock_backend
     
     def test_checkpoint_loading_all_sizes(self) -> bool:
         """Test: Load all available checkpoints and wait up to 4 minutes for training to start, with progress feedback."""
@@ -569,6 +576,7 @@ class MasterCheckpointTest:
         finally:
             self.monitoring_active = False
             self.stop_backend()
+@requires_mock_backend
 
 def main():
     """Main entry point"""

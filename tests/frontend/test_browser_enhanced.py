@@ -1,38 +1,40 @@
 #!/usr/bin/env python3
 """
 Enhanced Browser Simulation Test
-===============================
+================================
 
-This is an enhanced version of the browser simulation test that addresses
-performance timeout issues by implementing:
+This test provides comprehensive browser simulation for testing frontend
+performance and WebSocket handling under various conditions.
 
-- Adaptive timeouts based on system performance
-- Real-time performance monitoring
-- Better error handling and recovery
+Features:
+- Realistic browser behavior simulation
+- Performance monitoring and metrics
+- Memory pressure testing
+- Network condition simulation
 - Progressive stress testing
-- Graceful degradation under load
-- Performance metrics collection
+- Comprehensive reporting
 """
 
-import sys
-import os
 import asyncio
 import time
 import json
+import sys
+import os
+from typing import Dict, Any, List, Optional, Tuple
+from dataclasses import dataclass, field
+from collections import deque
 import threading
 import psutil
 import gc
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
 import weakref
-from dataclasses import dataclass, field
 
 # Add project root to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
-from backend_availability_manager import BackendAvailabilityManager
-from test_utils import TestLogger
+from tests.utilities.test_utils import TestLogger
+from tests.utilities.backend_manager import BackendAvailabilityManager
 
 @dataclass
 class PerformanceMetrics:

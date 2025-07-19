@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Test script to investigate checkpoint loading issues
@@ -17,6 +18,7 @@ from test_utils import BackendTester, TestLogger
 # Configuration
 BASE_URL = "http://localhost:8000"
 TIMEOUT = 30
+@requires_real_backend
 
 def test_api_endpoint(endpoint: str, method: str = "GET", data: Dict[str, Any] = None) -> Dict[str, Any]:
     """Test an API endpoint and return results"""
@@ -43,6 +45,7 @@ def test_api_endpoint(endpoint: str, method: str = "GET", data: Dict[str, Any] =
         return {"error": "Connection failed - server may not be running"}
     except Exception as e:
         return {"error": f"Unexpected error: {str(e)}"}
+@requires_real_backend
 
 def test_checkpoint_endpoints():
     """Test all checkpoint-related endpoints"""
@@ -96,6 +99,7 @@ def test_checkpoint_endpoints():
         logger.info(f"   Has Data: {result['data'].get('has_data', False)}")
         if result['data'].get('error'):
             logger.error(f"   Error: {result['data']['error']}")
+@requires_real_backend
 
 def test_training_status():
     """Test training status endpoints"""
@@ -112,6 +116,7 @@ def test_training_status():
         logger.error(f"   Error: {result['error']}")
     elif result.get('data'):
         logger.info(f"   Training Status: {result['data']}")
+@requires_real_backend
 
 def test_websocket_connection():
     """Test WebSocket connection"""
@@ -127,6 +132,7 @@ def test_websocket_connection():
         logger.warning("   WARNING:  websocket-client not installed, skipping WebSocket test")
     except Exception as e:
         logger.error(f"   ERROR: WebSocket connection failed: {str(e)}")
+@requires_real_backend
 
 def main():
     """Run all tests with enhanced backend availability checking"""

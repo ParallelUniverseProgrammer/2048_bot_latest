@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Frontend Persistence Fix Tests
@@ -24,6 +25,7 @@ class PersistenceFixTester:
     def __init__(self):
         self.logger = TestLogger()
         self.backend = BackendTester()
+@requires_mock_backend
     
     def test_training_metrics_persistence(self) -> bool:
         """Test that training metrics are properly persisted"""
@@ -58,6 +60,7 @@ class PersistenceFixTester:
         except Exception as e:
             self.logger.error(f"Training metrics persistence test failed: {e}")
             return False
+@requires_mock_backend
     
     def test_local_storage_persistence(self) -> bool:
         """Test local storage functionality"""
@@ -94,6 +97,7 @@ class PersistenceFixTester:
         except Exception as e:
             self.logger.error(f"Local storage persistence test failed: {e}")
             return False
+@requires_mock_backend
 
 def main():
     """Main entry point for persistence fix tests"""

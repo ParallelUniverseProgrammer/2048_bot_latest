@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Mobile Basic Tests
@@ -25,6 +26,7 @@ class MobileBasicTester:
     def __init__(self):
         self.logger = TestLogger()
         self.backend = BackendTester()
+@requires_mock_backend
     
     def test_mobile_basic_functionality(self) -> Dict[str, Any]:
         """Test basic mobile functionality"""
@@ -229,6 +231,7 @@ class MobileBasicTester:
         except Exception as e:
             self.logger.error(f"Accessibility test failed: {e}")
             return False
+@requires_mock_backend
 
 def main():
     """Main entry point for mobile basic tests"""

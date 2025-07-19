@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Mock Backend Integration Test
@@ -26,8 +27,8 @@ from typing import Dict, Any, List
 # Add project root to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from backend_availability_manager import BackendAvailabilityManager
-from test_utils import TestLogger, BackendTester
+from tests.utilities.backend_manager import BackendAvailabilityManager
+from tests.utilities.test_utils import TestLogger, BackendTester
 
 class MockBackendIntegrationTest:
     """Test suite for mock backend integration"""
@@ -64,6 +65,7 @@ class MockBackendIntegrationTest:
         
         # Print summary
         self.print_test_summary()
+@requires_real_backend
         
     def test_basic_availability_management(self):
         """Test basic backend availability management"""
@@ -96,6 +98,7 @@ class MockBackendIntegrationTest:
         })
         
         self._record_test_results("Basic Availability Management", test_results)
+@requires_real_backend
         
     def test_seamless_backend_switching(self):
         """Test seamless switching between real and mock backends"""
@@ -143,6 +146,7 @@ class MockBackendIntegrationTest:
         })
         
         self._record_test_results("Seamless Backend Switching", test_results)
+@requires_real_backend
         
     def test_api_endpoint_compatibility(self):
         """Test API endpoint compatibility between real and mock backends"""
@@ -188,6 +192,7 @@ class MockBackendIntegrationTest:
                 })
         
         self._record_test_results("API Endpoint Compatibility", test_results)
+@requires_real_backend
         
     def test_context_manager_usage(self):
         """Test context manager usage patterns"""
@@ -227,6 +232,7 @@ class MockBackendIntegrationTest:
         })
         
         self._record_test_results("Context Manager Usage", test_results)
+@requires_real_backend
         
     def test_error_handling_recovery(self):
         """Test error handling and recovery mechanisms"""
@@ -267,6 +273,7 @@ class MockBackendIntegrationTest:
         })
         
         self._record_test_results("Error Handling and Recovery", test_results)
+@requires_real_backend
         
     def test_performance_load_testing(self):
         """Test performance under load"""
@@ -306,6 +313,7 @@ class MockBackendIntegrationTest:
         })
         
         self._record_test_results("Performance and Load Testing", test_results)
+@requires_real_backend
         
     def test_concurrent_access_handling(self):
         """Test concurrent access handling"""
@@ -395,6 +403,7 @@ class MockBackendIntegrationTest:
         else:
             self.logger.error("Mock Backend Integration: POOR")
 
+@requires_real_backend
 
 def main():
     """Run the mock backend integration test suite"""

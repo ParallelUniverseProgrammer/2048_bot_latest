@@ -10,7 +10,8 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
 
-from tests.utilities.test_utils import BackendTester, TestLogger, check_backend_or_start_mock, requires_backend
+from tests.utilities.test_utils import BackendTester, TestLogger
+from tests.utilities.backend_manager import requires_mock_backend
 
 class SpeedControlTester:
     """Test suite for playback speed control functionality"""
@@ -36,7 +37,7 @@ class SpeedControlTester:
         if details:
             self.logger.info(f"   Details: {details}")
     
-    @requires_backend("Speed Control Tests")
+    @requires_mock_backend("Speed Control Tests")
     def test_get_current_speed(self) -> bool:
         """Test getting current playback speed"""
         self.log_test_start("Get Current Speed Test")
@@ -53,7 +54,7 @@ class SpeedControlTester:
             self.log_test_result("Get Current Speed Test", False, f"Exception: {str(e)}")
             return False
     
-    @requires_backend("Speed Control Tests")
+    @requires_mock_backend("Speed Control Tests")
     def test_set_speed_values(self) -> bool:
         """Test setting different speed values"""
         self.log_test_start("Set Speed Values Test")
@@ -76,7 +77,7 @@ class SpeedControlTester:
         self.log_test_result("Set Speed Values Test", success, f"{success_count}/{len(test_speeds)} speeds set successfully")
         return success
     
-    @requires_backend("Speed Control Tests")
+    @requires_mock_backend("Speed Control Tests")
     def test_invalid_speed_values(self) -> bool:
         """Test that invalid speed values are properly rejected"""
         self.log_test_start("Invalid Speed Values Test")
@@ -102,7 +103,7 @@ class SpeedControlTester:
         self.log_test_result("Invalid Speed Values Test", success, f"{rejected_count}/{len(invalid_speeds)} invalid speeds rejected")
         return success
     
-    @requires_backend("Speed Control Tests")
+    @requires_mock_backend("Speed Control Tests")
     def test_speed_in_status(self) -> bool:
         """Test that speed is included in playback status"""
         self.log_test_start("Speed in Status Test")
@@ -119,7 +120,7 @@ class SpeedControlTester:
             self.log_test_result("Speed in Status Test", False, f"Exception: {str(e)}")
             return False
     
-    @requires_backend("Speed Control Tests")
+    @requires_mock_backend("Speed Control Tests")
     def test_speed_with_playback(self) -> bool:
         """Test speed control during actual playback"""
         self.log_test_start("Speed with Playback Test")
@@ -222,12 +223,10 @@ class SpeedControlTester:
         self.logger.info("  • Speed integration with playback status")
         self.logger.info("  • Speed changes during active playback")
 
+@requires_mock_backend("Speed Control Tests")
 def main():
     """Main test runner"""
-    # Check if backend is available or start mock backend
-    if not check_backend_or_start_mock():
-        logger.error("Failed to start backend for testing")
-        return 1
+    logger = TestLogger()
     
     # Run the test suite
     tester = SpeedControlTester()

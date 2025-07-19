@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 PWA Origin Unification Test
@@ -28,6 +29,7 @@ class PWAOriginTester:
         self.local_url = local_url
         self.tunnel_url = tunnel_url
         self.backend = BackendTester(local_url, self.logger)
+@requires_mock_backend
     
     def test_endpoints(self, base_url: str, description: str) -> List[Tuple[str, bool, str]]:
         """Test all key endpoints for a given base URL"""
@@ -70,6 +72,7 @@ class PWAOriginTester:
                 results.append((name, False, str(e)))
         
         return results
+@requires_mock_backend
     
     def test_pwa_configuration(self) -> bool:
         """Test PWA-specific configuration"""
@@ -102,6 +105,7 @@ class PWAOriginTester:
         except Exception as e:
             self.logger.error(f"PWA Configuration Error: {e}")
             return False
+@requires_mock_backend
     
     def test_api_origin_detection(self) -> bool:
         """Test if the frontend correctly detects tunnel origins"""
@@ -188,6 +192,7 @@ class PWAOriginTester:
         else:
             self.logger.warning("PWA origin unification has some issues")
             return False
+@requires_mock_backend
 
 def main():
     """Main entry point for PWA origin unification test"""

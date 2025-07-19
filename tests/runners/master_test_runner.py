@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Master Test Runner for 2048 AI Checkpoint System
@@ -266,6 +267,7 @@ class MasterTestRunner:
             self.logger.log("  Files:")
             for test in suite['tests']:
                 self.logger.log(f"    - {test}")
+@requires_mock_backend
 
 def main():
     """Main entry point"""

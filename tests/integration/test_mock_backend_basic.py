@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Test Mock Backend Server
@@ -57,6 +58,7 @@ class MockBackendTester:
         if self.mock_server:
             self.mock_server.stop()
             self.logger.ok("Mock server stopped")
+@requires_real_backend
     
     def test_basic_connectivity(self) -> bool:
         """Test basic connectivity to mock server"""
@@ -78,6 +80,7 @@ class MockBackendTester:
         except Exception as e:
             self.logger.error(f"Connectivity test failed: {e}")
             return False
+@requires_real_backend
     
     def test_checkpoints_endpoint(self) -> bool:
         """Test checkpoints endpoint"""
@@ -110,6 +113,7 @@ class MockBackendTester:
         except Exception as e:
             self.logger.error(f"Checkpoints test failed: {e}")
             return False
+@requires_real_backend
     
     def test_checkpoint_stats(self) -> bool:
         """Test checkpoint stats endpoint"""
@@ -137,6 +141,7 @@ class MockBackendTester:
         except Exception as e:
             self.logger.error(f"Stats test failed: {e}")
             return False
+@requires_real_backend
     
     def test_individual_checkpoint(self) -> bool:
         """Test loading individual checkpoint"""
@@ -172,6 +177,7 @@ class MockBackendTester:
         except Exception as e:
             self.logger.error(f"Individual checkpoint test failed: {e}")
             return False
+@requires_real_backend
     
     def test_training_status(self) -> bool:
         """Test training status endpoint"""
@@ -198,6 +204,7 @@ class MockBackendTester:
         except Exception as e:
             self.logger.error(f"Training status test failed: {e}")
             return False
+@requires_real_backend
     
     def test_playback_endpoints(self) -> bool:
         """Test playback endpoints"""
@@ -249,6 +256,7 @@ class MockBackendTester:
         except Exception as e:
             self.logger.error(f"Playback test failed: {e}")
             return False
+@requires_real_backend
     
     def test_error_handling(self) -> bool:
         """Test error handling for invalid requests"""
@@ -340,27 +348,28 @@ class MockBackendTester:
         else:
             self.logger.warning(f"{total - passed} tests failed")
 
+@requires_real_backend
 
 def main():
-    """Main test execution function"""
+    """Main entry point"""
+    logger = TestLogger()
+    
+    logger.banner("Mock Backend Basic Test Suite", 60)
+    
     try:
         tester = MockBackendTester()
         success = tester.run_all_tests()
         
         if success:
-            logger.success("Mock backend is working correctly!")
-            logger.info("You can now use the mock backend for offline testing.")
+            logger.success("All mock backend tests passed!")
+            return 0
         else:
             logger.warning("Mock backend has issues that need to be addressed.")
-            sys.exit(1)
+            return 1
             
-    except KeyboardInterrupt:
-        logger.warning("Tests interrupted by user")
-        sys.exit(1)
     except Exception as e:
         logger.error(f"Test suite failed: {str(e)}")
-        sys.exit(1)
-
+        return 1
 
 if __name__ == "__main__":
-    main() 
+    exit(main()) 

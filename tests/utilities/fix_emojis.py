@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
 from tests.utilities.test_utils import TestLogger
+from tests.utilities.backend_manager import requires_mock_backend
 
 class EmojiFixer:
     """Utility class for fixing emoji encoding issues"""
@@ -407,6 +408,7 @@ class EmojiFixer:
             self.logger.error(f"Failed to cleanup backups: {e}")
             return 0
 
+@requires_mock_backend("Fix Emojis Utility")
 def main():
     """Main entry point for emoji fixing utility"""
     logger = TestLogger()

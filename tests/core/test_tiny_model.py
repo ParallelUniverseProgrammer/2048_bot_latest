@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Tiny Model Test Suite
@@ -39,6 +40,7 @@ except ImportError as e:
     logger.info(f"Backend path: {backend_path}")
     logger.info(f"Available in backend: {os.listdir(backend_path) if os.path.exists(backend_path) else 'Path does not exist'}")
     raise
+@requires_real_backend
 
 def test_tiny_model():
     """Test that tiny model can be created and used"""
@@ -79,6 +81,7 @@ def test_tiny_model():
     except Exception as e:
         logger.error(f"Tiny model test failed: {e}")
         return False
+@requires_real_backend
 
 def test_tiny_model_speed():
     """Test that tiny model is fast enough for real-time use"""
@@ -132,6 +135,7 @@ def test_tiny_model_speed():
     except Exception as e:
         logger.error(f"Tiny model speed test failed: {e}")
         return False
+@requires_real_backend
 
 def main():
     """Main entry point"""

@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Playback Controls Test
@@ -125,6 +126,7 @@ class PlaybackControlTester:
         except Exception as e:
             self.logger.error(f"Error stopping playback: {e}")
             return False
+@requires_mock_backend
     
     def test_pause_resume_button_logic(self) -> bool:
         """Test the pause/resume button logic that should be used in frontend"""
@@ -152,6 +154,7 @@ class PlaybackControlTester:
         else:
             self.logger.ok("Button logic is correct")
             return True
+@requires_mock_backend
     
     def test_pause_resume_cycle(self) -> bool:
         """Test full pause/resume cycle"""
@@ -214,6 +217,7 @@ class PlaybackControlTester:
         except Exception as e:
             self.logger.error(f"Pause/resume cycle test failed: {e}")
             return False
+@requires_mock_backend
     
     def test_reset_behavior(self) -> bool:
         """Test reset behavior - should not briefly show idle"""
@@ -319,6 +323,7 @@ class PlaybackControlTester:
         except Exception as e:
             self.logger.error(f"Playback control test failed: {e}")
             return False
+@requires_mock_backend
 
 def main():
     """Main entry point for playback control tests"""

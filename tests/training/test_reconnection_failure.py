@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """
-Test for training reconnection failure issue.
-This test reproduces the specific problem where:
-1. Training is running
-2. Connection is closed (intentionally or unintentionally)
-3. Attempt to reconnect fails
-4. User is stuck in disconnected state
+Training Reconnection Failure Test
+==================================
 
-This is the core issue: inability to reconnect during active training.
+This test simulates training scenarios with connection failures to ensure
+the system handles disconnections gracefully during training sessions.
 """
 
 import asyncio
-import json
 import time
+import json
+import sys
+import os
 import websockets
-from typing import Dict, Any, List
-from test_utils import TestLogger, BackendTester, check_backend_or_start_mock
+from typing import Dict, Any, List, Optional
+
+# Add project root to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
+
+from tests.utilities.test_utils import TestLogger, BackendTester
+from tests.utilities.backend_manager import requires_mock_backend
 
 class TrainingReconnectionFailureTest:
     """Test reconnection failure during training scenarios"""
@@ -173,6 +178,7 @@ class TrainingReconnectionFailureTest:
             "reconnection_results": reconnection_results
         }
     
+@requires_mock_backend
     def test_backend_endpoints_after_disconnection(self) -> Dict[str, Any]:
         """Test if backend endpoints become unresponsive after disconnection"""
         self.logger.testing("Testing backend endpoints after disconnection")
@@ -361,11 +367,6 @@ class TrainingReconnectionFailureTest:
         """Run all training reconnection failure tests"""
         self.logger.banner("Training Reconnection Failure Tests", 60)
         
-        # Ensure backend is available
-        if not check_backend_or_start_mock():
-            self.logger.error("No backend available for testing")
-            return {"error": "No backend available"}
-        
         # Run tests in sequence
         results = {
             "websocket_reconnection": await self.test_reconnection_during_training_simulation(),
@@ -409,6 +410,7 @@ class TrainingReconnectionFailureTest:
         
         return results
 
+@requires_mock_backend("Training Reconnection Failure Tests")
 async def main():
     """Main entry point"""
     test = TrainingReconnectionFailureTest()
@@ -418,7 +420,7 @@ async def main():
     with open("training_reconnection_failure_test_results.json", "w") as f:
         json.dump(results, f, indent=2)
     
-    logger.info(f"Results saved to results file")
+    test.logger.info(f"Results saved to results file")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

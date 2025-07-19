@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Training Speed Performance Tests
@@ -25,6 +26,7 @@ class TrainingSpeedTester:
     def __init__(self):
         self.logger = TestLogger()
         self.backend = BackendTester()
+@requires_real_backend
     
     def test_training_speed(self) -> Dict[str, Any]:
         """Test training speed and performance characteristics"""
@@ -202,6 +204,7 @@ class TrainingSpeedTester:
         except Exception as e:
             self.logger.error(f"Performance metrics collection failed: {e}")
             return {}
+@requires_real_backend
 
 def main():
     """Main entry point for training speed tests"""

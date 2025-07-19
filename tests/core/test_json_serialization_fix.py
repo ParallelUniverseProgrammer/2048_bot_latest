@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Test JSON Serialization Fix Implementation
@@ -32,6 +33,7 @@ class TestJSONSerializationFix:
     
     def __init__(self):
         self.logger = TestLogger()
+@requires_real_backend
     
     def test_numpy_array_serialization_error(self):
         """Test that numpy arrays cause JSON serialization errors without fix"""
@@ -56,6 +58,7 @@ class TestJSONSerializationFix:
             else:
                 self.logger.error(f"Unexpected error: {e}")
                 return False
+@requires_real_backend
     
     def test_numpy_array_conversion_fix(self):
         """Test that the fix properly converts numpy arrays"""
@@ -92,6 +95,7 @@ class TestJSONSerializationFix:
         except Exception as e:
             self.logger.error(f"Fix failed: {e}")
             return False
+@requires_real_backend
     
     def test_step_data_structure_serialization(self):
         """Test serialization of complete step data structure"""
@@ -129,6 +133,7 @@ class TestJSONSerializationFix:
         
         self.logger.ok("Step data structure serialization works correctly")
         return True
+@requires_real_backend
     
     def test_full_checkpoint_playback_message_serialization(self):
         """Test serialization of full checkpoint playback message"""
@@ -179,6 +184,7 @@ class TestJSONSerializationFix:
         
         self.logger.ok("Full checkpoint playback message serialization works correctly")
         return True
+@requires_real_backend
     
     def test_lightweight_checkpoint_playback_message_serialization(self):
         """Test serialization of lightweight checkpoint playback message"""
@@ -229,6 +235,7 @@ class TestJSONSerializationFix:
         
         self.logger.ok("Lightweight checkpoint playback message serialization works correctly")
         return True
+@requires_real_backend
     
     def test_edge_cases_with_none_values(self):
         """Test handling of None values and edge cases"""
@@ -260,6 +267,7 @@ class TestJSONSerializationFix:
         
         self.logger.ok("Edge cases with None values handled correctly")
         return True
+@requires_real_backend
     
     def test_various_numpy_types(self):
         """Test various numpy types and their conversion"""
@@ -313,6 +321,7 @@ class TestJSONSerializationFix:
             return [self._convert_numpy_to_json_serializable(item) for item in obj]
         else:
             return obj
+@requires_real_backend
 
 def main():
     """Main entry point"""

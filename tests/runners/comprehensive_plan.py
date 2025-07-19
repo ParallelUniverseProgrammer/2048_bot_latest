@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Comprehensive Checkpoint System Testing Plan
@@ -124,6 +125,7 @@ class CheckpointTestSuite:
     # ============================================================================
     # BACKEND API TESTS
     # ============================================================================
+@requires_mock_backend
     
     def test_backend_connectivity(self) -> bool:
         """Test basic backend connectivity"""
@@ -132,6 +134,7 @@ class CheckpointTestSuite:
             return response.status_code == 200
         except Exception:
             return False
+@requires_mock_backend
     
     def test_checkpoints_list_endpoint(self) -> Dict[str, Any]:
         """Test the checkpoints list endpoint"""
@@ -148,6 +151,7 @@ class CheckpointTestSuite:
             "count": len(checkpoints),
             "checkpoints": checkpoints[:3] if checkpoints else []  # First 3 for details
         }
+@requires_mock_backend
     
     def test_checkpoints_stats_endpoint(self) -> Dict[str, Any]:
         """Test the checkpoints stats endpoint"""
@@ -161,6 +165,7 @@ class CheckpointTestSuite:
             "success": True,
             "stats": stats
         }
+@requires_mock_backend
     
     def test_playback_status_endpoint(self) -> Dict[str, Any]:
         """Test the playback status endpoint"""
@@ -178,6 +183,7 @@ class CheckpointTestSuite:
     # ============================================================================
     # CHECKPOINT LOADING TESTS
     # ============================================================================
+@requires_mock_backend
     
     def test_checkpoint_metadata_validation(self) -> Dict[str, Any]:
         """Test that checkpoint metadata is valid"""
@@ -202,6 +208,7 @@ class CheckpointTestSuite:
             "errors": errors,
             "valid_checkpoints": valid_checkpoints[:3]  # First 3 for reference
         }
+@requires_mock_backend
     
     def test_checkpoint_file_accessibility(self) -> Dict[str, Any]:
         """Test that checkpoint files are accessible"""
@@ -337,6 +344,7 @@ class CheckpointTestSuite:
     # ============================================================================
     # PERFORMANCE TESTS
     # ============================================================================
+@requires_mock_backend
     
     def test_checkpoint_loading_performance(self) -> Dict[str, Any]:
         """Test checkpoint loading performance"""
@@ -405,6 +413,7 @@ class CheckpointTestSuite:
     # ============================================================================
     # ERROR HANDLING TESTS
     # ============================================================================
+@requires_mock_backend
     
     def test_invalid_checkpoint_access(self) -> Dict[str, Any]:
         """Test accessing non-existent checkpoints"""
@@ -417,6 +426,7 @@ class CheckpointTestSuite:
             "status_code": response.status_code,
             "expected": 404
         }
+@requires_mock_backend
     
     def test_invalid_playback_start(self) -> Dict[str, Any]:
         """Test starting playback with invalid checkpoint"""
@@ -436,6 +446,7 @@ class CheckpointTestSuite:
     # ============================================================================
     # FRONTEND INTEGRATION TESTS
     # ============================================================================
+@requires_mock_backend
     
     def test_frontend_checkpoint_display(self) -> Dict[str, Any]:
         """Test that frontend can display checkpoints correctly"""
@@ -636,6 +647,7 @@ class CheckpointTestSuite:
                 if test.details and "performance_ok" in test.details:
                     status = "OK:" if test.details["performance_ok"] else "WARNING:"
                     self.logger.info(f"  {status} {test.name}: {'Good' if test.details['performance_ok'] else 'Needs attention'}")
+@requires_mock_backend
 
 def main():
     """Main entry point"""

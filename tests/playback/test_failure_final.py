@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Test: Final Checkpoint Playback Failure Detection
@@ -200,6 +201,7 @@ class FinalCheckpointFailureDetector:
         }
         
         return scenario
+@requires_mock_backend
     
     def test_backend_endpoints(self) -> Dict[str, Any]:
         """Test backend endpoints to understand current state"""

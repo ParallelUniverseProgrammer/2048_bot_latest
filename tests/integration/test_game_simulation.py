@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Game Simulation Tests
@@ -213,6 +214,7 @@ class TestGamePlayback:
             playback.env = Gym2048Env()
         
         return playback
+@requires_real_backend
     
     def test_single_game(self, timeout_seconds=10):
         """Test playing a single game with timeout"""

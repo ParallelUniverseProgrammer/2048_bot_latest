@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Freeze Diagnostics Test Suite
@@ -572,6 +573,7 @@ class FreezeDiagnostics:
         
         self.logger.info(f"Diagnostic report saved to: {filename}")
 
+@requires_mock_backend
 
 def main():
     """Main entry point"""

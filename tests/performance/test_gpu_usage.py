@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 GPU Usage Performance Tests
@@ -24,6 +25,7 @@ class GPUUsageTester:
     def __init__(self):
         self.logger = TestLogger()
         self.backend = BackendTester()
+@requires_real_backend
     
     def test_gpu_usage(self) -> Dict[str, Any]:
         """Test GPU usage and performance characteristics"""
@@ -190,6 +192,7 @@ class GPUUsageTester:
         except Exception as e:
             self.logger.error(f"Performance metrics collection failed: {e}")
             return {}
+@requires_real_backend
 
 def main():
     """Main entry point for GPU usage tests"""

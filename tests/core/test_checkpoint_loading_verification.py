@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Checkpoint Loading Verification Test
@@ -35,6 +36,7 @@ class CheckpointVerificationTester:
         self.logger = TestLogger()
         self.training_manager = None
         self.checkpoint_path = None
+@requires_real_backend
     
     def test_checkpoint_loading_fix(self) -> bool:
         """Test that checkpoint loading properly updates trainer configuration"""
@@ -123,6 +125,7 @@ class CheckpointVerificationTester:
                 
         except Exception as e:
             self.logger.warning(f"Error during cleanup: {e}")
+@requires_real_backend
 
 def main():
     """Main entry point for checkpoint loading verification test"""

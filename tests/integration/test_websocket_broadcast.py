@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 WebSocket Broadcast Tests
@@ -35,6 +36,7 @@ class TestWebSocketBroadcastFix:
         """Setup test environment"""
         self.logger = TestLogger()
         self.websocket_manager = WebSocketManager()
+@requires_real_backend
     
     def test_broadcast_with_numpy_arrays_fails_before_fix(self):
         """Test that broadcast fails with numpy arrays before the fix"""
@@ -66,6 +68,7 @@ class TestWebSocketBroadcastFix:
         except Exception as e:
             self.logger.error(f"Test failed: {e}")
             return False
+@requires_real_backend
     
     def test_broadcast_with_converted_arrays_works_after_fix(self):
         """Test that broadcast works with converted arrays after the fix"""
@@ -98,6 +101,7 @@ class TestWebSocketBroadcastFix:
             self.logger.error(f"Test failed: {e}")
             return False
     
+@requires_real_backend
     @patch('app.api.websocket_manager.WebSocketManager.get_connection_count')
     def test_websocket_manager_broadcast_method_json_serialization(self, mock_get_connection_count):
         """Test WebSocket manager broadcast method JSON serialization"""
@@ -141,6 +145,7 @@ class TestWebSocketBroadcastFix:
         except Exception as e:
             self.logger.error(f"Test failed: {e}")
             return False
+@requires_real_backend
     
     def test_training_update_message_serialization(self):
         """Test training update message serialization"""
@@ -187,6 +192,7 @@ class TestWebSocketBroadcastFix:
         except Exception as e:
             self.logger.error(f"Test failed: {e}")
             return False
+@requires_real_backend
     
     def test_regression_original_error_message_structure(self):
         """Test regression to ensure original error message structure is preserved"""
@@ -227,6 +233,7 @@ class TestWebSocketBroadcastFix:
         except Exception as e:
             self.logger.error(f"Test failed: {e}")
             return False
+@requires_real_backend
 
 def main():
     """Main entry point for WebSocket broadcast tests"""

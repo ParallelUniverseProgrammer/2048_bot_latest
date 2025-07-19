@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_real_backend
 #!/usr/bin/env python3
 """
 Live Playback Test Suite
@@ -64,6 +65,7 @@ class LivePlaybackTester:
         self.logger.info(f"{status} {test_name}")
         if details:
             self.logger.info(f"   Details: {details}")
+@requires_real_backend
     
     def test_basic_playback(self) -> bool:
         """Test basic checkpoint playback functionality"""
@@ -101,6 +103,7 @@ class LivePlaybackTester:
         except Exception as e:
             self.log_test_result("Basic Playback Test", False, f"Exception: {str(e)}")
             return False
+@requires_real_backend
     
     def test_speed_control(self) -> bool:
         """Test playback speed control functionality"""
@@ -136,6 +139,7 @@ class LivePlaybackTester:
         except Exception as e:
             self.log_test_result("Speed Control Test", False, f"Exception: {str(e)}")
             return False
+@requires_real_backend
     
     def test_websocket_stability(self) -> bool:
         """Test WebSocket connection stability during playback"""
@@ -174,6 +178,7 @@ class LivePlaybackTester:
         except Exception as e:
             self.log_test_result("WebSocket Stability Test", False, f"Exception: {str(e)}")
             return False
+@requires_real_backend
     
     def test_memory_management(self) -> bool:
         """Test memory usage during extended playback sessions"""
@@ -228,6 +233,7 @@ class LivePlaybackTester:
         except Exception as e:
             self.log_test_result("Memory Management Test", False, f"Exception: {str(e)}")
             return False
+@requires_real_backend
     
     def test_error_recovery(self) -> bool:
         """Test error recovery during playback"""
@@ -313,6 +319,7 @@ class LivePlaybackTester:
             
             self.logger.info(f"Memory Usage: {min_memory:.1f}MB - {max_memory:.1f}MB (avg: {avg_memory:.1f}MB)")
 
+@requires_real_backend
 
 def main():
     """Main test execution function"""

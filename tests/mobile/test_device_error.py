@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Device Error Tests
@@ -24,6 +25,7 @@ class DeviceErrorTester:
     def __init__(self):
         self.logger = TestLogger()
         self.backend = BackendTester()
+@requires_mock_backend
     
     def test_device_compatibility(self) -> Dict[str, Any]:
         """Test device compatibility error handling"""
@@ -178,6 +180,7 @@ class DeviceErrorTester:
         except Exception as e:
             self.logger.error(f"Error recovery test failed: {e}")
             return False
+@requires_mock_backend
 
 def main():
     """Main entry point for device error tests"""

@@ -1,3 +1,4 @@
+from tests.utilities.backend_manager import requires_mock_backend
 #!/usr/bin/env python3
 """
 Freeze Reproduction Test Suite
@@ -398,6 +399,7 @@ class FreezeReproductionTest:
         else:
             self.logger.ok("All tests passed - no obvious freezing issues detected")
             self.logger.info("The freezing might be related to specific conditions not covered by these tests.")
+@requires_mock_backend
 
 def main():
     """Main entry point"""
