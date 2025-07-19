@@ -1,4 +1,4 @@
-# 🔢 2048 Bot: Real-Time AI Training & Visualization
+# <img src="./project_icon.png" alt="2048 Bot Icon" width="32" height="32" style="vertical-align: middle; margin-right: 8px;"> 2048 Bot: Real-Time AI Training & Visualization
 
 > A high-performance, real-time platform for training a Mixture-of-Experts (MoE) Transformer to master the game of 2048. Features a unified design system with mobile-first responsive layout, consistent component patterns, and smooth animations powered by Framer Motion.
 
