@@ -177,6 +177,9 @@ typings/
 .nuxt
 dist
 
+# Vite temporary files
+vite.config.temp.ts
+
 # Gatsby files
 .cache/
 public
