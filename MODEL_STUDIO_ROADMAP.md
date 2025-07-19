@@ -1,513 +1,566 @@
-# 🧠 Model Studio Roadmap  
-Visual Model Architecture Designer for the "2048 Bot" Platform
+# 📐 Model Studio – Mobile-First Visual Designer (Grounded, Step-by-Step Edition)  
 
-## 📑 Table of Contents
-1. Conceptual Overview  
-2. Phase-by-Phase Plan  
- 2.0 Prerequisites & Foundation  
- 2.1 Core Block-Based Interface  
- 2.2 Model Library & Checkpoint Integration  
- 2.3 Training Pipeline Integration  
- 2.4 Advanced MoE Visualization  
- 2.5 Export & Universal Formats  
- 2.6 Mobile Optimization & Performance  
- 2.7 Advanced Features & Polish  
- 2.8 Future Game Preparation  
-3. Implementation Checklists  
-4. Success Criteria  
-5. Technical Architecture  
-6. Future Enhancements
+Integrates tightly with your live Python stack:
+
+- `app/training/ppo_trainer.py`  
+- `app/training/training_manager.py`  
+- `app/models/game_transformer.py`  
+- `app/models/model_config.py`  
+- `app/environment/gym_2048_env.py`
+
+Scope = one **Model Studio** tab.  
+Everything executes on a phone; desktop is irrelevant.
 
 ---
 
-## 1 Conceptual Overview
+## 0  High-Level Flow  
 
-The Model Studio transforms your 2048 Bot platform into a visual playground for understanding and experimenting with transformer architectures. Think "Scratch for Machine Learning" - a block-based drag-and-drop interface where users can:
+1. User drags blocks → JSON \(ModelArchitecture\).  
+2. `POST /api/designs/{id}/compile` turns JSON into a concrete `GeneratedModel`
+   that extends `GameTransformer`.  
+3. `POST /api/designs/{id}/train` spins up `TrainingManager` with the compiled
+   model.  
+4. TrainingManager streams metrics already expected by the FE.
 
-- **Design visually**: Drag blocks representing layers, attention mechanisms, and MoE components
-- **Learn interactively**: See real-time parameter counts, memory usage, and architecture validation
-- **Experiment freely**: Import existing models, modify them, and test novel architectures
-- **Train seamlessly**: Send designs directly to your existing training pipeline
-- **Export universally**: Generate PyTorch, ONNX, or other standard formats
-
-**Core Philosophy**: Educational first, experimental second. Beginners can build working models with guided templates, while experts can dive deep into custom attention mechanisms and routing strategies.
+Keep those four hops in mind; every section below maps to one of them.
 
 ---
 
-## 2 Phase-by-Phase Plan
+## 1  New Files & Folders  
 
-### 2.0 Prerequisites & Foundation (Week 1)
-Goal: Establish the technical foundation for visual model design.
+```
+app/
+├── api/
+│   └── design_router.py          # new FastAPI router
+├── models/
+│   └── generated/
+│       └── <design_id>.py        # auto-generated model
+├── utils/
+│   └── codegen.py                # architecture → source code
+frontend/
+├── src/
+│   ├── stores/designStore.ts
+│   ├── workers/design_worker.ts
+│   └── ModelStudioTab.tsx
+```
 
-**Backend Infrastructure:**
+---
+
+## 2  Backend API – Explicit Contract  
+
 ```python
-# New API endpoints for model management
-POST /api/models/designs          # Save model design
-GET  /api/models/designs          # List user designs  
-GET  /api/models/designs/{id}     # Load specific design
-POST /api/models/designs/{id}/train  # Start training
-GET  /api/models/templates        # Get architecture templates
-POST /api/models/validate         # Validate architecture
+# app/api/design_router.py  (pseudo-code)
+
+router = APIRouter(prefix="/api/designs")
+
+@router.post("", status_code=201)
+def create_design() -> DesignMeta:
+    """Create empty design and return id"""
+
+@router.get("/{design_id}")
+def fetch_design(design_id) -> ModelArchitecture:
+    """Return stored JSON"""
+
+@router.post("/{design_id}/validate")
+def validate_design(design_id, body: ModelArchitecture) -> ValidationResult:
+    """Fast rule-based validation (no compilation)"""
+
+@router.post("/{design_id}/compile")
+def compile_design(design_id) -> CompileResult:
+    """
+    1. Pull JSON from DB.
+    2. Run generate_model_code(JSON) -> (source, config_dict, param_count).
+    3. Write to app/models/generated/<id>.py
+    4. Return import_path & param_count
+    """
+
+@router.post("/{design_id}/train", status_code=202)
+async def train_design(design_id) -> dict:
+    """
+    1. import_module(f"app.models.generated.{id}")
+    2. cfg = DynamicModelConfig.from_architecture(JSON)
+    3. trainer = PPOTrainer(config=cfg)
+    4. manager = TrainingManager(global_ws)
+    5. manager.trainer = trainer
+    6. manager.reset_to_fresh_model()
+    7. manager.start()
+    """
 ```
 
-**Frontend Foundation:**
+Schema objects (FastAPI `pydantic`):
+
+```python
+class ModelComponent(BaseModel):
+    id: str
+    type: str
+    props: Dict[str, Union[int, float, str, bool]]
+
+class ModelArchitecture(BaseModel):
+    id: str
+    name: str
+    components: List[ModelComponent]
+    edges: List[Tuple[str, str]]
+
+class ValidationResult(BaseModel):
+    valid: bool
+    paramCount: float   # millions
+    estimatedMemory: int  # MB
+    errors: List[str] = []
+
+class CompileResult(BaseModel):
+    import_path: str
+    paramCount: float
+    config: Dict[str, Any]
+```
+
+DB helper (pseudo):
+
+```python
+def _save(id: str, doc: dict):
+    db.model_designs.update_one({"_id": id}, {"$set": doc}, upsert=True)
+```
+
+---
+
+## 3  Frontend Store & Worker Skeleton  
+
+### 3.1 Zustand Store  
+
 ```typescript
-// New Zustand store slice for model design
-interface ModelDesignStore {
-  currentDesign: ModelArchitecture | null
-  modelLibrary: ModelDesign[]
-  isDesigning: boolean
-  validationErrors: string[]
-  parameterCount: number
-  estimatedMemory: number
-  // ... other design state
+// src/stores/designStore.ts
+import create from "zustand"
+
+export const useDesignStore = create<DesignStore>((set) => ({
+  currentDesign: null,
+  validation: null,
+  paramCount: 0,
+  estimatedMemory: 0,
+  // mutate helpers
+  setDesign: (d) => set({ currentDesign: d }),
+  setValidation: (v) => set({ validation: v }),
+}))
+```
+
+### 3.2 Web-Worker for Validation  
+
+```typescript
+// src/workers/design_worker.ts
+self.onmessage = async (e) => {
+  const design = e.data as ModelArchitecture
+  const result = validate(design)          // see pseudo-rules below
+  postMessage(result)
 }
-```
 
-**Model Architecture Schema:**
-```typescript
-interface ModelArchitecture {
-  id: string
-  name: string
-  description: string
-  gameType: '2048' | 'generic'  // Future extensibility
-  components: ModelComponent[]
-  connections: ComponentConnection[]
-  metadata: {
-    created: Date
-    modified: Date
-    author: string
-    version: string
+// Pure JS rules – must mirror Section 4.1
+function validate(design) {
+  const errors: string[] = []
+
+  const dModel = design.meta?.d_model || 128
+  if (dModel % 8 !== 0) errors.push("d_model must be multiple of 8")
+
+  const nHeads = design.meta?.n_heads || 4
+  if (dModel % nHeads !== 0) errors.push("n_heads must divide d_model")
+
+  const nExperts = design.meta?.n_experts || 4
+  if (nExperts > 8) errors.push("max 8 experts supported")
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    paramCount: estimateParams(design),
+    estimatedMemory: estimateMem(design),
   }
 }
 ```
 
-**Checkpoint Integration:**
-```python
-# Extend checkpoint metadata to include architecture
-class CheckpointMetadata:
-    # ... existing fields
-    model_architecture: ModelArchitecture
-    architecture_hash: str  # For validation
-    design_id: str         # Reference to design
-```
+---
 
-### 2.1 Phase 1: Core Block-Based Interface (Week 2-3)
-Goal: Implement the visual drag-and-drop interface with real-time feedback.
+## 4  Week-by-Week Roadmap (Detailed)  
 
-**Block System:**
+### Week 0 – “Hello, Blank Canvas”
+
+- Backend  
+  - Add `design_router` to `main.py`.
+  - Stub DB functions.
+
+- Frontend  
+  - Create `ModelStudioTab.tsx` with a single “+ Add Block” button.
+  - Hook worker; on every store update send design to worker.
+
+Expected outcome: `curl -X POST /api/designs` returns id; UI shows empty grid.
+
+---
+
+### Week 1 – Touch Drag & Snap
+
+Step-by-step:
+
+1. Install libs  
+   ```bash
+   pnpm i react-konva react-dnd-touch-backend
+   ```
+
+2. Build Block component:  
+
+   ```tsx
+   const Block: FC<{ data: ModelComponent }> = ({ data }) => (
+     <Group draggable>
+       <Rect width={56} height={56} fill="#2D9CDB" cornerRadius={8} />
+       <Text text={data.type} fontSize={10} width={56} align="center" />
+     </Group>
+   )
+   ```
+
+3. Canvas panning: pinch-zoom ↔ `stage.scale()`.
+
+4. On `dragend`, update `currentDesign.components[index].props.xy`.
+
+5. Persist store to `IndexedDB`:
+
+   ```typescript
+   subscribe((state) => save("design", state.currentDesign), { equalityFn: shallow })
+   ```
+
+---
+
+### Week 2 – Real-Time Validation
+
+1. Every `300 ms` debounce, post current design to worker.  
+2. Worker replies `ValidationResult`; show a floating banner:
+   - Green ✅ if `valid`.
+   - Red ❌ if any error; list first three.
+
+3. Auto-update `parameterCount` + `estimatedMemory` overlay bottom-right.
+
+Pseudo-formula:
+
 ```typescript
-// Core block types for 2048-specific models
-enum BlockType {
-  // Input/Output
-  BOARD_INPUT = 'board_input',      // 4x4 board input
-  ACTION_OUTPUT = 'action_output',  // 4 action probabilities
-  VALUE_HEAD = 'value_head',        // Value estimation
-  
-  // Transformer Core
-  EMBEDDING = 'embedding',          // Token embedding
-  POSITIONAL_ENCODING = 'pos_encoding',
-  TRANSFORMER_LAYER = 'transformer_layer',
-  ATTENTION_HEAD = 'attention_head',
-  
-  // MoE Components
-  MOE_LAYER = 'moe_layer',
-  EXPERT = 'expert',
-  ROUTER = 'router',
-  
-  // Utility
-  DENSE_LAYER = 'dense_layer',
-  NORMALIZATION = 'normalization',
-  ACTIVATION = 'activation',
-  DROPOUT = 'dropout'
-}
-```
-
-**Visual Interface Features:**
-- **Drag & Drop Canvas**: HTML5 Canvas with smooth animations
-- **Block Palette**: Categorized blocks on the left sidebar
-- **Connection Lines**: Visual representation of data flow
-- **Real-time Validation**: Syntax highlighting for errors
-- **Parameter Counter**: Live updates as blocks are added/removed
-- **Memory Estimator**: GPU memory usage based on model size
-
-**Mobile-First Design:**
-- **Touch Gestures**: Pinch to zoom, drag with finger
-- **Responsive Layout**: Adapts to screen size
-- **Simplified Mode**: Hide advanced options on small screens
-- **Block Grouping**: Collapsible sections for complex architectures
-
-### 2.2 Phase 2: Model Library & Checkpoint Integration (Week 4)
-Goal: Seamless integration with existing checkpoint system and model management.
-
-**Model Library Interface:**
-```typescript
-interface ModelLibrary {
-  templates: ModelTemplate[]        // Pre-built architectures
-  userDesigns: ModelDesign[]        // User-created designs
-  importedModels: ModelDesign[]     // From checkpoints
-  favorites: string[]               // Bookmarked designs
-}
-```
-
-**Checkpoint Import Process:**
-1. **Scan Checkpoints**: Automatically detect architecture info in existing checkpoints
-2. **Visual Reconstruction**: Rebuild the visual design from checkpoint metadata
-3. **Editable Import**: Allow modification of imported architectures
-4. **Version Tracking**: Link modified designs back to original checkpoints
-
-**Template System:**
-```typescript
-// Pre-built templates for different use cases
-const TEMPLATES = {
-  'beginner_2048': {
-    name: 'Simple 2048 Model',
-    description: 'Basic transformer for learning',
-    complexity: 'beginner',
-    estimatedTrainingTime: '2-4 hours'
-  },
-  'expert_moe_2048': {
-    name: 'Advanced MoE 2048',
-    description: 'Mixture of Experts with custom routing',
-    complexity: 'expert',
-    estimatedTrainingTime: '6-8 hours'
-  },
-  'research_experimental': {
-    name: 'Research Template',
-    description: 'Bare-bones for custom experiments',
-    complexity: 'expert',
-    estimatedTrainingTime: 'variable'
-  }
-}
-```
-
-### 2.3 Phase 3: Training Pipeline Integration (Week 5)
-Goal: Direct integration with existing training system.
-
-**Training Integration:**
-```python
-# Extend training manager to handle custom architectures
-class TrainingManager:
-    def start_training_from_design(self, design_id: str, model_size: str):
-        # Load design from database
-        # Generate PyTorch model code
-        # Initialize training with custom architecture
-        # Return training session ID
-```
-
-**Model Code Generation:**
-```python
-# Convert visual design to PyTorch code
-def generate_model_code(architecture: ModelArchitecture) -> str:
-    """Generate executable PyTorch model from visual design"""
-    code = []
-    code.append("import torch")
-    code.append("import torch.nn as nn")
-    code.append("")
-    code.append("class CustomGameTransformer(nn.Module):")
-    # ... generate model code based on visual blocks
-    return "\n".join(code)
-```
-
-**Training Dashboard Updates:**
-- **Model Info Panel**: Show current model architecture
-- **Architecture Visualization**: Mini-view of the model being trained
-- **Design While Training**: Allow new designs while training continues
-- **Model Comparison**: Side-by-side training metrics for different architectures
-
-### 2.4 Phase 4: Advanced MoE Visualization (Week 6)
-Goal: Deep insights into MoE behavior and expert specialization.
-
-**Expert Analysis Dashboard:**
-```typescript
-interface ExpertAnalysis {
-  routingPatterns: {
-    expertId: string
-    usageFrequency: number
-    inputTypes: string[]
-    specialization: string
-  }[]
-  loadBalancing: {
-    variance: number
-    efficiency: number
-    recommendations: string[]
-  }
-  specializationClusters: {
-    clusterId: string
-    experts: string[]
-    commonPatterns: string[]
-  }[]
-}
-```
-
-**Visual Components:**
-- **Expert Usage Heatmap**: Real-time visualization of which experts are active
-- **Routing Decision Tree**: Visual representation of routing logic
-- **Load Balancing Metrics**: Charts showing expert utilization over time
-- **Specialization Analysis**: Automated detection of expert roles
-- **Performance Correlation**: Link expert usage to game performance
-
-**Interactive Features:**
-- **Expert Inspection**: Click on experts to see their internal structure
-- **Routing Simulation**: Test routing decisions with sample inputs
-- **Load Balancing Tuning**: Adjust capacity factors and routing parameters
-- **Expert Pruning**: Remove underutilized experts and retrain
-
-### 2.5 Phase 5: Export & Universal Formats (Week 7)
-Goal: Export models in standard formats for external use.
-
-**Export Formats:**
-```python
-# Multiple export options
-EXPORT_FORMATS = {
-    'pytorch': {
-        'extension': '.pt',
-        'description': 'PyTorch model file',
-        'includes': ['weights', 'architecture', 'metadata']
-    },
-    'onnx': {
-        'extension': '.onnx', 
-        'description': 'ONNX format for deployment',
-        'includes': ['weights', 'architecture']
-    },
-    'python_code': {
-        'extension': '.py',
-        'description': 'Standalone Python class',
-        'includes': ['architecture', 'initialization']
-    },
-    'json_config': {
-        'extension': '.json',
-        'description': 'Architecture configuration',
-        'includes': ['architecture', 'hyperparameters']
+function estimateParams(design) {
+  let params = 0
+  for (const c of design.components) {
+    switch (c.type) {
+      case "embedding":
+        params += 4 * 4 * c.props.d_model
+        break
+      case "transformer_layer":
+        params += 2 * c.props.d_model ** 2
+        break
+      case "moe_layer":
+        params += c.props.n_experts * c.props.d_model ** 2
+        break
     }
+  }
+  return (params / 1e6).toFixed(2)
 }
 ```
-
-**Export Process:**
-1. **Validation**: Ensure model is complete and valid
-2. **Code Generation**: Create clean, documented code
-3. **Dependency Analysis**: Include required imports and dependencies
-4. **Documentation**: Auto-generate usage examples
-5. **Testing**: Validate exported model works correctly
-
-**Integration with Existing Models:**
-- **Convert Current Models**: Transform existing hardcoded models into visual designs
-- **Template Library**: Add current models as starting templates
-- **Migration Path**: Smooth transition from old to new system
-
-### 2.6 Phase 6: Mobile Optimization & Performance (Week 8)
-Goal: Ensure excellent performance on mobile devices.
-
-**Web Worker Implementation:**
-```typescript
-// Model validation and code generation in background
-class ModelDesignWorker {
-  validateArchitecture(design: ModelArchitecture): ValidationResult
-  generateCode(design: ModelArchitecture): GeneratedCode
-  estimateMemory(design: ModelArchitecture): MemoryEstimate
-  calculateParameters(design: ModelArchitecture): ParameterCount
-}
-```
-
-**Performance Optimizations:**
-- **Lazy Loading**: Load complex visualizations only when needed
-- **Canvas Optimization**: Efficient rendering for large architectures
-- **Memory Management**: Clean up unused design objects
-- **Caching**: Cache validation results and parameter calculations
-- **Progressive Loading**: Load design components incrementally
-
-**Mobile-Specific Features:**
-- **Touch Gestures**: Intuitive mobile interactions
-- **Responsive Blocks**: Blocks that adapt to screen size
-- **Simplified Mode**: Hide advanced features on small screens
-- **Offline Capability**: Design models without internet connection
-- **Cloud Sync**: Sync designs across devices
-
-### 2.7 Phase 7: Advanced Features & Polish (Week 9)
-Goal: Add expert-level features and polish the user experience.
-
-**Advanced Block Types:**
-```typescript
-// Expert-level components
-enum AdvancedBlockType {
-  CUSTOM_ATTENTION = 'custom_attention',
-  MULTI_HEAD_ROUTING = 'multi_head_routing',
-  ADAPTIVE_EXPERTS = 'adaptive_experts',
-  AUXILIARY_TASKS = 'auxiliary_tasks',
-  CUSTOM_LOSS = 'custom_loss',
-  GRADIENT_CHECKPOINTING = 'gradient_checkpointing'
-}
-```
-
-**Expert Features:**
-- **Custom Attention Mechanisms**: Visual design of attention patterns
-- **Advanced Routing**: Custom expert selection strategies
-- **Auxiliary Tasks**: Add prediction tasks beyond main game
-- **Hyperparameter Tuning**: Visual interface for training parameters
-- **Architecture Search**: Automated exploration of design space
-
-**User Experience Polish:**
-- **Tutorial System**: Interactive guided tours
-- **Error Recovery**: Smart suggestions for fixing design issues
-- **Undo/Redo**: Full history of design changes
-- **Collaboration**: Share designs (future feature)
-- **Performance Profiling**: Identify bottlenecks in designs
-
-### 2.8 Phase 8: Future Game Preparation (Week 10)
-Goal: Prepare for extensibility to other games and tasks.
-
-**Generic Architecture Framework:**
-```typescript
-interface GameConfig {
-  gameType: '2048' | 'chess' | 'go' | 'custom'
-  inputShape: number[]
-  outputShape: number[]
-  actionSpace: ActionSpace
-  observationSpace: ObservationSpace
-  rewardFunction: RewardFunction
-}
-```
-
-**Template System Enhancement:**
-- **Game-Specific Templates**: Pre-built architectures for different games
-- **Transfer Learning**: Adapt 2048 models to other games
-- **Multi-Task Learning**: Single model for multiple games
-- **Domain Adaptation**: Visual tools for adapting to new environments
-
-**Extensibility Features:**
-- **Plugin System**: Allow custom block types
-- **Custom Games**: Define new game types visually
-- **Import/Export**: Share game configurations
-- **Community Templates**: User-contributed architectures
 
 ---
 
-## 3 Implementation Checklists
+### Week 3 – Server-Side Compilation
 
-### Development Setup
-- [ ] Backend API endpoints for model management
-- [ ] Frontend Zustand store for design state
-- [ ] Web Worker for background processing
-- [ ] Canvas-based drag-and-drop interface
-- [ ] Block system with validation
+Add `app/utils/codegen.py`.
 
-### Core Features
-- [ ] Visual model designer with real-time feedback
-- [ ] Model library and template system
-- [ ] Checkpoint import and export
-- [ ] Training pipeline integration
-- [ ] MoE visualization and analysis
-
-### Mobile Optimization
-- [ ] Touch-friendly interface
-- [ ] Responsive design for all screen sizes
-- [ ] Performance optimization for mobile devices
-- [ ] Offline capability for design work
-- [ ] Cloud sync for designs
-
-### Advanced Features
-- [ ] Expert-level block types
-- [ ] Custom attention mechanisms
-- [ ] Advanced MoE routing
-- [ ] Architecture search capabilities
-- [ ] Export to multiple formats
-
-### Integration Testing
-- [ ] End-to-end design-to-training workflow
-- [ ] Checkpoint compatibility testing
-- [ ] Mobile device testing
-- [ ] Performance benchmarking
-- [ ] User experience validation
-
----
-
-## 4 Success Criteria
-
-**Educational Impact:**
-- Beginners can create working models in <30 minutes
-- Visual feedback helps users understand transformer concepts
-- Template system provides clear learning progression
-
-**Experimental Capability:**
-- Experts can implement novel architectures quickly
-- MoE analysis provides insights into model behavior
-- Export system enables external research and deployment
-
-**Technical Performance:**
-- Design interface responds in <100ms on mobile devices
-- Model validation completes in <1 second
-- Training integration works seamlessly with existing pipeline
-
-**User Experience:**
-- Intuitive drag-and-drop interface requires no documentation
-- Real-time feedback prevents design errors
-- Mobile experience matches desktop functionality
-
----
-
-## 5 Technical Architecture
-
-**Frontend Architecture:**
-```typescript
-// Component hierarchy
-ModelStudio/
-├── Canvas/           # Main design area
-├── BlockPalette/     # Available blocks
-├── PropertyPanel/    # Block configuration
-├── ValidationPanel/  # Error display
-├── LibraryPanel/     # Model library
-└── ExportPanel/      # Export options
-```
-
-**Backend Integration:**
 ```python
-# Model management API
-class ModelDesignAPI:
-    def save_design(self, design: ModelArchitecture)
-    def load_design(self, design_id: str) -> ModelArchitecture
-    def validate_design(self, design: ModelArchitecture) -> ValidationResult
-    def generate_code(self, design: ModelArchitecture) -> str
-    def start_training(self, design_id: str, config: TrainingConfig)
+# pseudo-code
+TEMPLATE = """
+from app.models.game_transformer import GameTransformer
+import torch.nn as nn
+
+class GeneratedModel(GameTransformer):
+    def __init__(self, **cfg):
+        super().__init__(**cfg)
+{layers}
+
+    def forward(self, x):
+{forward_body}
+"""
+
+def generate_model_code(arch: dict) -> Tuple[str, dict, float]:
+    layers = []
+    forward = ["        h = x"]
+    for i, comp in enumerate(arch["components"]):
+        if comp["type"] == "transformer_layer":
+            layers.append(f"        self.t{i} = nn.TransformerEncoderLayer("
+                          f"d_model={comp['props']['d_model']}, "
+                          f"nhead={comp['props']['n_heads']})")
+            forward.append(f"        h = self.t{i}(h)")
+        elif comp["type"] == "moe_layer":
+            layers.append(f"        self.m{i} = nn.MoELayer("
+                          f"d_model={comp['props']['d_model']}, "
+                          f"n_experts={comp['props']['n_experts']})")
+            forward.append(f"        h = self.m{i}(h)")
+    forward.append("        return self.head(h)")
+    code = TEMPLATE.format(layers="\n".join(layers),
+                           forward_body="\n".join(forward))
+    params = _count_params(code)            # helper
+    cfg = {
+        "d_model": arch["meta"]["d_model"],
+        "n_heads": arch["meta"]["n_heads"],
+        "n_layers": sum(1 for c in arch["components"]
+                        if c["type"] == "transformer_layer"),
+        "n_experts": max(c["props"]["n_experts"] for c in arch["components"]
+                         if c["type"] == "moe_layer") if any(...) else 0,
+    }
+    return code, cfg, params
 ```
 
-**Data Flow:**
-1. User drags blocks onto canvas
-2. Frontend validates connections and updates state
-3. Web Worker calculates parameters and memory usage
-4. Backend validates architecture and generates code
-5. Training manager initializes custom model
-6. Existing dashboard displays training progress
+`compile_design` writes file, then:
+
+```python
+with open(path, "w") as f:
+    f.write(source_code)
+return {"import_path": f"app.models.generated.{id}",
+        "paramCount": params, "config": cfg}
+```
 
 ---
 
-## 6 Future Enhancements
+### Week 4 – One-Tap Train Hook
 
-**Community Features:**
-- Public model library with ratings and reviews
-- Fork and remix capabilities for designs
-- Collaborative design sessions
-- Architecture sharing and social features
+Backend function in router:
 
-**Advanced AI Features:**
-- Automated architecture optimization
-- Neural architecture search integration
-- Performance prediction models
-- Intelligent design suggestions
+```python
+@router.post("/{design_id}/train")
+async def train_design(design_id: str):
+    arch = db.model_designs.find_one({"_id": design_id})
+    mod = import_module(f"app.models.generated.{design_id}")
+    model_cls = mod.GeneratedModel
 
-**Research Tools:**
-- Experiment tracking and comparison
-- A/B testing for different architectures
-- Automated hyperparameter optimization
-- Research paper integration
+    cfg = DynamicModelConfig.from_architecture(arch)
+    trainer = PPOTrainer(config=cfg)
+    manager = TrainingManager(global_ws_manager)   # already in memory
+    manager.trainer = trainer
+    manager.reset_to_fresh_model()                 # frees GPU if any
+    manager.start()                                # non-blocking
+    return {"run_id": f"run_{design_id}_{int(time.time())}"}
+```
 
-**Enterprise Features:**
-- Team collaboration tools
-- Version control for model designs
-- Enterprise deployment integration
-- Advanced security and access controls
+No edits to TrainingManager needed; it already supports external trainer
+injection.
 
 ---
 
-**Implementation Timeline**: 10 weeks, high complexity, transforms the platform into a comprehensive ML education and research tool.
+### Week 5 – MoE Heat-Map
 
-**Key Innovation**: First visual transformer designer specifically for reinforcement learning, with deep MoE integration and seamless training pipeline connection. 
+Extend TrainingManager.build_metrics:
+
+```python
+# --- Roadmap Week 5 ---
+moe_metrics = {
+    "expert_usage": trainer_metrics["expert_usage"],
+    "lb_reward": self._load_balancing_metrics[-1] if self._load_balancing_metrics else 0.0,
+}
+metrics["moe"] = moe_metrics
+```
+
+Frontend:
+
+```tsx
+// Inside BlockRenderer for MOE_LAYER
+const usage = props.metrics?.moe?.expert_usage || []
+const color = valueToHeat(usage[block.props.expertIndex])
+<Rect fill={color} .../>
+```
+
+---
+
+### Week 6 – Export Center
+
+Router:
+
+```python
+@router.get("/{design_id}/export")
+def export_model(design_id: str, fmt: str = Query("pt")):
+    ckpt = checkpoints.latest_for_design(design_id)
+    mod = import_module(f"app.models.generated.{design_id}")
+    model = mod.GeneratedModel(**ckpt["config"])
+    model.load_state_dict(torch.load(ckpt["path"])["model_state_dict"])
+    dummy = torch.randn(1, 16, model.d_model)
+    if fmt == "onnx":
+        f = f"/tmp/{design_id}.onnx"
+        torch.onnx.export(model, dummy, f, opset_version=15)
+        return FileResponse(f, media_type="application/octet-stream")
+    ...
+```
+
+---
+
+### Week 7 – Advanced Blocks & Codegen Enhancements
+
+Add block types:
+
+- `LOAD_BALANCE_ROUTER`
+- `AUX_LOSS_HEAD`
+- `GRAD_CHECKPOINT`
+
+Codegen updates:
+
+```python
+if comp["type"] == "load_balance_router":
+    cfg["lb_reward_coef"] = comp["props"]["reward_coef"]
+elif comp["type"] == "aux_loss_head":
+    layers.append(f"        self.aux{i} = nn.Linear("
+                  f"{comp['props']['d_model']}, 1)")
+    forward.append(f"        aux_out = self.aux{i}(h.mean(1))")
+    outputs.append("aux_out")
+elif comp["type"] == "grad_checkpoint":
+    forward_body = "torch.utils.checkpoint.checkpoint(self.t{}, h)".format(i)
+```
+
+---
+
+### Week 8 – Performance & UI Polish  
+
+1. Virtualize canvas at zoom < 0.4×:
+   - Render single colored rectangles instead of full SVG labels.
+
+2. Debounce pinch events to 60 fps:  
+
+   ```tsx
+   const raf = useRef(0)
+   const onWheel = (e) => {
+     cancelAnimationFrame(raf.current)
+     raf.current = requestAnimationFrame(() => setScale(newScale))
+   }
+   ```
+
+3. Long-press block → duplicate.  
+4. Undo/redo: keep `past[]` `present` `future[]` stacks in Zustand.
+
+---
+
+### Week 9 – QA Handoff Prep  
+
+- Add `npm run schema-lint` that validates every template JSON
+  against `ModelArchitecture` schema.  
+- Provide `scripts/dump_designs.py` to export all DB designs to
+  `ci/artifacts/designs/*.json` for automated CI.
+
+(No physical device matrix here.)
+
+---
+
+### Week 10 – Telemetry & Launch  
+
+FE:
+
+```typescript
+analytics.track("compile_success", {
+  designId,
+  paramCount,
+  time_ms: performance.now() - t0,
+})
+analytics.track("train_started", { designId })
+```
+
+Backend:
+
+```python
+router.middleware("http")
+async def add_request_id(request, call_next):
+    request.state.req_id = uuid4().hex
+    response = await call_next(request)
+    response.headers["x-request-id"] = request.state.req_id
+    return response
+```
+
+---
+
+## 5  Changes to Existing Source Files  
+
+### 5.1 `app/models/game_transformer.py`
+
+```python
+# Roadmap Week 3
+class GameTransformer(nn.Module):
+    ...
+    @staticmethod
+    def from_architecture(arch: dict) -> "GameTransformer":
+        cfg = DynamicModelConfig.from_architecture(arch)
+        mod = import_module(f"app.models.generated.{arch['id']}")
+        return mod.GeneratedModel(**cfg.__dict__)
+```
+
+### 5.2 `app/models/model_config.py`
+
+```python
+# Roadmap Week 4
+@classmethod
+def from_architecture(cls, arch: dict) -> "DynamicModelConfig":
+    return cls(
+        d_model=arch["meta"]["d_model"],
+        n_heads=arch["meta"]["n_heads"],
+        n_experts=max(
+            (c["props"]["n_experts"] for c in arch["components"]
+             if c["type"] == "moe_layer"),
+            default=0
+        ),
+        n_layers=sum(1 for c in arch["components"]
+                     if c["type"] == "transformer_layer"),
+    )
+```
+
+### 5.3 `app/training/ppo_trainer.py`
+
+Ensure any generated model sets `self.latest_lb_loss`:
+
+```python
+# In calculate_load_balancing_reward()
+self.model.latest_lb_loss = torch.tensor(lb_reward, device=self.device)
+```
+
+### 5.4 `app/training/training_manager.py`
+
+Add helper:
+
+```python
+def adopt_external_trainer(self, trainer: PPOTrainer):
+    self.trainer = trainer
+    self.env_trainers = [trainer] * len(self.envs)
+```
+
+Used by Week 4 train endpoint.
+
+---
+
+## 6  Validation Rules Cheat-Sheet (mirrors worker & server)  
+
+1. \(d_{\text{model}} \mod 8 = 0\).  
+2. \(d_{\text{model}} / n_{\text{heads}} \in \mathbb{N}\).  
+3. \(n_{\text{experts}} \le 8\).  
+4. At least one `BOARD_INPUT` and one `ACTION_OUTPUT`.  
+5. Graph must be acyclic and all nodes reachable from input.  
+
+Failure → HTTP 422 with list of errors.
+
+---
+
+## 7  Definition of Done  
+
+- Create new design, press Compile → server writes `generated/<id>.py`, returns
+  param count.  
+- Press Train → `TrainingManager` begins episodes and streams `training_update`
+  with `moe.expert_usage` array.  
+- Stop, Export as `.onnx`, file downloads and can be loaded via `onnxruntime`.  
+
+All within a clean phone browser session; no desktop workflows involved.
+
+---
+
+## 8  Quick-Start for a Junior Dev  
+
+```bash
+# 1. backend
+uvicorn app.main:app --reload
+# 2. frontend
+cd frontend && pnpm dev
+# 3. open http://<phone-ip>:5173/model-studio
+```
+
+Cheat sheet:
+
+1. Add “Transform-er” block → validates red if d\_model not multiple of 8.  
+2. Tap ‘Compile’ → watch backend log `Writing generated/<id>.py`.  
+3. Tap ‘Train’ → observe live score chart and MoE heat-map.
+
+Welcome aboard.
