@@ -1,11 +1,12 @@
 # 2048 Bot Training Launcher
 
-A modern, feature-rich launcher for the 2048 Bot Training system with **ultra-smooth animations** and professional terminal UI.
+A modern, feature-rich launcher for the 2048 Bot Training system with **ultra-smooth animations**, **desktop GUI support**, and professional terminal UI.
 
 ## Overview
 
 The launcher provides a **smooth, professional experience** for starting the 2048 Bot Training system, featuring:
 
+- **Desktop GUI Mode** - Modern desktop window with system tray integration
 - **Ultra-smooth 60fps progress animations** with precise timing
 - **Non-blocking architecture** - UI never freezes during operations
 - **Enhanced terminal compatibility** with Unicode/ASCII fallbacks
@@ -13,6 +14,16 @@ The launcher provides a **smooth, professional experience** for starting the 204
 - **Professional visual effects** - Smooth easing, proper timing, polished animations
 
 ## Features
+
+### 🖥️ **Desktop GUI Mode**
+- **Modern desktop window** with CustomTkinter for native appearance
+- **Service management controls** - Stop, restart, and view logs directly from GUI
+- **One-click URL copying** with visual feedback and clipboard integration
+- **Real-time status indicators** with animated status lights
+- **Progress tracking** with smooth progress bars and step indicators
+- **Cross-platform compatibility** - Works on Windows, macOS, and Linux
+
+**Note**: System tray integration is implemented but may have compatibility issues on some platforms. The desktop window provides full functionality for service management and monitoring.
 
 ### 🎯 **Ultra-Smooth Animations**
 - **60fps animation loop** with precise `time.perf_counter()` timing
@@ -52,6 +63,18 @@ The launcher provides a **smooth, professional experience** for starting the 204
 
 ## Enhanced Features
 
+### **Desktop GUI Mode**
+Launch with `python launcher.py --gui` for a modern desktop experience:
+
+- **Professional Window Interface** - Clean, modern window with project branding
+- **Service Management** - One-click stop/restart services and view logs
+- **URL Management** - Copy access URLs with one click and visual feedback
+- **Status Monitoring** - Real-time status indicators for backend, frontend, and tunnel
+- **Progress Tracking** - Smooth progress bars with step-by-step feedback
+- **Error Handling** - Clear error display with actionable information
+
+**Note**: System tray integration is implemented but may have compatibility issues on some platforms. The desktop window provides full functionality for service management and monitoring.
+
 ### **Ultra-Smooth Animation System**
 The launcher features a **professional-grade animation system** that rivals modern desktop applications:
 
@@ -84,8 +107,11 @@ Works seamlessly across all terminal environments:
 
 ### Basic Usage
 ```bash
-# Start with QR code for mobile access
+# Start with QR code for mobile access (console mode)
 python launcher.py
+
+# Launch with desktop GUI window
+python launcher.py --gui
 
 # LAN-only mode (no tunnel)
 python launcher.py --lan-only
@@ -107,9 +133,41 @@ python launcher.py --skip-deps
 
 # Skip build process
 python launcher.py --skip-build
+
+# Force kill processes using required ports
+python launcher.py --force-ports
 ```
 
+### GUI Mode Features
+When using `--gui` mode, you get access to:
+
+- **Desktop Window** - Professional window interface with project branding
+- **Service Controls** - Stop, restart, and view logs directly from the GUI
+- **URL Copying** - One-click copying of access URLs with visual feedback
+- **Status Monitoring** - Real-time status indicators for all services
+- **Progress Tracking** - Smooth progress bars with detailed step information
+
+**Note**: System tray integration is implemented but may have compatibility issues on some platforms. The desktop window provides full functionality for service management and monitoring.
+
 ## Technical Architecture
+
+### **GUI Architecture**
+```python
+# Modern CustomTkinter-based GUI
+class GUIWindow:
+    def __init__(self, logger: Logger):
+        # Configure for vibrant PC-forward appearance
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
+        
+        # Create compact main window
+        self.window = ctk.CTk()
+        self.window.title("2048 Bot Launcher")
+        self.window.geometry("450x420")
+        
+        # Service management and status monitoring
+        self._setup_service_controls()
+```
 
 ### **Animation System**
 ```python
@@ -156,14 +214,18 @@ else:
 - ✅ **Background processing** - Heavy operations don't affect animations
 - ✅ **Memory efficient** - Content change detection prevents unnecessary renders
 - ✅ **CPU optimized** - Ultra-precise sleep timing for better responsiveness
+- ✅ **Desktop GUI** - Native window interface with system tray integration
 
 ## Compatibility
 
-- ✅ **Windows** - PowerShell, Command Prompt, Windows Terminal
-- ✅ **macOS** - Terminal, iTerm2, Alacritty
-- ✅ **Linux** - GNOME Terminal, Konsole, Alacritty
+- ✅ **Windows** - PowerShell, Command Prompt, Windows Terminal, GUI mode
+- ✅ **macOS** - Terminal, iTerm2, Alacritty, GUI mode
+- ✅ **Linux** - GNOME Terminal, Konsole, Alacritty, GUI mode
 - ✅ **Basic terminals** - ASCII fallbacks for limited environments
 - ✅ **Remote terminals** - SSH, WSL, Docker containers
+- ✅ **Desktop environments** - Full GUI support with service management
+
+**Note**: System tray integration is implemented but may have compatibility issues on some platforms. The desktop window provides full functionality for service management and monitoring.
 
 ## Requirements
 
@@ -171,14 +233,28 @@ else:
 - Poetry (for backend dependencies)
 - Node.js 16+ and npm (for frontend dependencies)
 - Cloudflared (optional, for tunnel access)
+- CustomTkinter (for GUI mode) - automatically installed if missing
 
 ## Installation
 
 1. Clone the repository
 2. Install Python dependencies: `poetry install`
 3. Install frontend dependencies: `cd frontend && npm install`
-4. Run the launcher: `python launcher.py`
+4. Run the launcher: `python launcher.py` or `python launcher.py --gui`
+
+## GUI Mode Dependencies
+
+The GUI mode automatically installs required dependencies:
+- `customtkinter` - Modern GUI framework
+- `pillow` - Image processing for icons and QR codes
+
+**Note**: System tray integration (`pystray`) is implemented but may have compatibility issues on some platforms. The desktop window provides full functionality for service management and monitoring.
+
+If you encounter issues with GUI mode, manually install:
+```bash
+pip install customtkinter pillow
+```
 
 ---
 
-**The launcher now provides a truly professional, ultra-smooth experience that rivals modern desktop applications!** 🚀 
+**The launcher now provides a truly professional, ultra-smooth experience that rivals modern desktop applications with both console and GUI modes!** 🚀 

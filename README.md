@@ -10,7 +10,11 @@
 
 ## ✨ What's New?
 
-• **🎨 Unified Design System** – Comprehensive style guide implementation with consistent component patterns, standardized animations, and unified color palette. All components now follow the same layout structure, button patterns, and visual hierarchy for a cohesive experience.
+• **🖥️ Desktop GUI Launcher** – **NEW!** Launch with `python launcher.py --gui` for a modern desktop window with progress tracking, status indicators, and service management. Features smooth animations, one-click URL copying, and real-time status monitoring.
+
+• **🎨 Enhanced Console UI** – **IMPROVED!** Ultra-smooth 60fps animations with precise timing, non-blocking architecture, and professional visual effects. Features double-buffered rendering, content change detection, and graceful terminal compatibility.
+
+• **🎯 Unified Design System** – Comprehensive style guide implementation with consistent component patterns, standardized animations, and unified color palette. All components now follow the same layout structure, button patterns, and visual hierarchy for a cohesive experience.
 
 • **🎯 Component Pattern Standardization** – CheckpointManager, GameBoard, and TrainingDashboard now share identical layout architecture with consistent card-glass styling, standardized spacing, and unified animation system using Framer Motion.
 
@@ -70,6 +74,8 @@
 
 • **Mobile-First Design** – Responsive layout that adapts perfectly to any screen size, with touch-optimized controls and efficient use of screen real estate.
 
+• **Desktop GUI Launcher** – Modern desktop window with progress tracking, status indicators, and service management for seamless operation.
+
 ---
 
 ## Technology Stack
@@ -83,6 +89,7 @@
 | Charts | Chart.js (mobile-optimised) |
 | Testing | pytest, Jest & custom runners |
 | Packaging | Poetry (Python) / npm (Node) |
+| Launcher | **CustomTkinter / Console UI / System Tray** |
 
 ---
 
@@ -94,6 +101,9 @@ $ git clone https://github.com/krdge/2048_bot_latest.git && cd 2048_bot_latest
 
 # Fire up everything via the launcher (backend, frontend & tunnel/QR)
 $ python launcher.py
+
+# Or launch with desktop GUI window
+$ python launcher.py --gui
 
 # Open http://localhost:8000  (QR code displayed prominently in terminal)
 ```
@@ -107,6 +117,9 @@ The launcher supports multiple deployment modes:
 ```bash
 # Development mode (LAN only, hot reload)
 python launcher.py --dev
+
+# Desktop GUI mode with system tray
+python launcher.py --gui
 
 # LAN access only (no tunnel, faster startup)
 python launcher.py --lan-only
@@ -287,6 +300,7 @@ See [tests/README.md](./tests/README.md) for comprehensive testing documentation
 | **WebSocket disconnects on mobile Safari** | iOS limitations | Fallback polling activates automatically; try Chrome or ensure same Wi-Fi LAN |
 | **CUDA out-of-memory** | Model too large | The backend auto-switches to CPU; lower model size via dropdown before starting training |
 | **Port already in use** | Previous run crashed | kill -9 $(lsof -ti:3000,8000) (or use Task Manager on Windows) |
+| **GUI launcher not working** | Missing dependencies | Run `pip install customtkinter pillow` to install GUI dependencies |
 
 More in `docs/TROUBLESHOOTING.md` (coming soon).
 
@@ -306,9 +320,34 @@ More in `docs/TROUBLESHOOTING.md` (coming soon).
 **Q:** *How does the mobile experience work?*  
 **A:** The interface is fully responsive and touch-optimized. Double-tap charts to expand them, and all controls are designed for mobile interaction.
 
+**Q:** *What's the difference between console and GUI launcher?*  
+**A:** Console launcher provides ultra-smooth animations and QR-focused display. GUI launcher offers a desktop window with system tray integration, one-click URL copying, and service management controls.
+
 ---
 
 ## 🚀 Development Roadmap
+
+### Desktop GUI Launcher ✅ **COMPLETED**
+We've successfully implemented a **modern desktop GUI launcher** that transforms the development experience:
+
+• **Desktop Window Interface** – Launch with `python launcher.py --gui` for a professional desktop window
+• **Progress Tracking** – Real-time progress bars and status indicators with smooth animations
+• **Service Management** – One-click stop/restart services and view logs directly from the GUI
+• **URL Management** – One-click copying of access URLs with visual feedback
+• **Status Monitoring** – Real-time status indicators for backend, frontend, and tunnel services
+• **Cross-Platform** – Works seamlessly on Windows, macOS, and Linux with native appearance
+
+**Note**: System tray integration is implemented but may have compatibility issues on some platforms. The desktop window provides full functionality for service management and monitoring.
+
+### Enhanced Console UI ✅ **COMPLETED**
+We've completely redesigned the console interface to provide a **professional-grade experience**:
+
+• **Ultra-Smooth 60fps Animations** – Precise timing with `time.perf_counter()` for microsecond accuracy
+• **Non-Blocking Architecture** – All heavy operations run in background threads, UI never freezes
+• **Double-Buffered Rendering** – Eliminates screen flickering and visual artifacts
+• **Content Change Detection** – Hash-based diffing for efficient updates
+• **Professional Visual Effects** – Smooth easing, typing effects, pulse animations
+• **Terminal Compatibility** – Graceful fallbacks for Unicode/ASCII and color support
 
 ### UI/UX Improvements ✅ COMPLETED
 We've successfully redesigned the Training Dashboard with a focus on mobile-first design and user experience:
