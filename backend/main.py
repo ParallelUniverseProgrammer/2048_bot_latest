@@ -1046,7 +1046,7 @@ def wait_for_port_free(port, timeout=10):
     while time.time() - start < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
-                s.bind(('127.0.0.1', port))
+                s.bind(('0.0.0.0', port))
                 return True
             except OSError:
                 print(f"[main.py] Port {port} still in use, waiting...")
@@ -1077,9 +1077,12 @@ if __name__ == "__main__":
     kill_process_on_port(backend_port)
     wait_for_port_free(backend_port)
 
+    # Allow binding to all interfaces for network access
+    host = os.getenv("BACKEND_HOST", "0.0.0.0")
+    
     uvicorn.run(
         "main:app",
-        host="127.0.0.1",
+        host=host,
         port=backend_port,
         reload=not disable_reload,  # Disable reload if DISABLE_RELOAD=1
         log_level="info"
