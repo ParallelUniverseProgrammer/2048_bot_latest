@@ -2100,9 +2100,10 @@ class ProgressMapper:
         ("Checking dependencies", 0.08),    # 8% of total progress
         ("Setting up network", 0.04),       # 4% of total progress  
         ("Installing dependencies", 0.32),  # 32% of total progress
+        ("Starting tunnel", 0.08),          # 8% of total progress
         ("Building frontend assets", 0.16), # 16% of total progress
-        ("Starting backend", 0.24),         # 24% of total progress
-        ("Starting frontend", 0.16),        # 16% of total progress
+        ("Starting backend", 0.20),         # 20% of total progress
+        ("Starting frontend", 0.12),        # 12% of total progress
     ]
     
     def __init__(self):
@@ -3314,9 +3315,9 @@ export default defineConfig({{
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'favicon-16x16.png'],
       manifest: {{
-                    name: '2048 Bot Training',
-            short_name: '2048 AI',
-            description: 'Real-time visualization for 2048 bot training',
+        name: '2048 Bot Training',
+        short_name: '2048 AI',
+        description: 'Real-time visualization for 2048 bot training',
         theme_color: '#3b82f6',
         background_color: '#0f172a',
         display: 'standalone',
@@ -3337,6 +3338,34 @@ export default defineConfig({{
             purpose: 'any maskable'
           }}
         ]
+      }},
+      workbox: {{
+        globPatterns: ['**/*.{{js,css,html,ico,png,svg}}'],
+        cacheId: '2048-bot-tunnel-v1',
+        runtimeCaching: [
+          {{
+            urlPattern: /^https:\\/\\/fonts\\.googleapis\\.com\\/.*/i,
+            handler: 'CacheFirst',
+            options: {{
+              cacheName: '2048-bot-fonts-cache-v1',
+              expiration: {{
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365
+              }}
+            }}
+          }},
+          {{
+            urlPattern: /^https:\\/\\/.*\\.(trycloudflare\\.com|cfargotunnel\\.com)\\/.*$/i,
+            handler: 'NetworkFirst',
+            options: {{
+              cacheName: '2048-bot-api-cache-v1',
+              expiration: {{
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60
+              }}
+            }}
+          }}
+        ]
       }}
     }})
   ],
@@ -3344,14 +3373,11 @@ export default defineConfig({{
     host: '0.0.0.0',
     port: {self.frontend_port},
     strictPort: true,
-    // Mobile-friendly server settings
     hmr: {{
       port: {self.frontend_port + 1},
       host: '0.0.0.0'
     }},
-    // Longer timeout for mobile connections
     timeout: 30000,
-    // CORS settings for mobile
     cors: {{
       origin: ['http://{self.host_ip}:{self.frontend_port}', 'http://localhost:{self.frontend_port}', 'https://*.trycloudflare.com', 'https://*.cfargotunnel.com'],
       credentials: true
@@ -3361,11 +3387,21 @@ export default defineConfig({{
     global: 'globalThis',
     __BACKEND_URL__: JSON.stringify('{self.tunnel_url if self.tunnel_url else f"http://{self.host_ip}:{self.backend_port}"}')
   }},
-  // Build optimizations for mobile
   build: {{
     target: 'es2015',
     minify: false,
-    sourcemap: true
+    sourcemap: true,
+    outDir: 'dist',
+    assetsDir: 'assets',
+    rollupOptions: {{
+      output: {{
+        manualChunks: {{
+          vendor: ['react', 'react-dom'],
+          charts: ['chart.js', 'react-chartjs-2'],
+          ui: ['framer-motion', 'lucide-react'],
+        }}
+      }}
+    }}
   }}
 }})
 """
@@ -3557,19 +3593,15 @@ export default defineConfig({{
                     return False
                 if not self.skip_deps and not self.install_dependencies():
                     return False
-                
-                # Build frontend first to ensure static assets exist for backend
+                # Start tunnel if needed (before building frontend assets)
+                if not self.lan_only:
+                    self.tunnel_url = self._start_tunnel()
+                # Build frontend assets with tunnel URL available
                 if not self.dev_mode and not self.skip_build:
                     if not self._build_frontend_assets():
                         return False
-                
                 if not self.start_backend():
                     return False
-                
-                # Start tunnel if needed
-                if not self.lan_only:
-                    self.tunnel_url = self._start_tunnel()
-                
                 if not self.start_frontend():
                     return False
                 self.show_access_info()
@@ -3665,6 +3697,7 @@ export default defineConfig({{
             'Checking dependencies',
             'Setting up network', 
             'Installing dependencies',
+            'Starting tunnel',
             'Building frontend assets',
             'Starting backend',
             'Starting frontend'
@@ -3751,28 +3784,24 @@ export default defineConfig({{
             'Checking dependencies',
             'Setting up network', 
             'Installing dependencies',
+            'Starting tunnel',
             'Building frontend assets',
             'Starting backend',
             'Starting frontend'
         ]
-        
         try:
             # Reset progress mapper for new run
             if self.gui_mode:
                 self.progress_mapper.reset()
-            
             for idx, step in enumerate(steps):
                 self.background_operations['current_step'] = idx
                 self.background_operations['status'] = 'running'
                 self.background_operations['progress'] = 0.0
                 self.background_operations['error'] = None
-                
                 # Update GUI progress with unified mapping
                 if self.gui_mode:
                     self._update_gui_progress(step, 0.0, "Processing...")
-                
                 success = False
-                
                 if step == 'Checking dependencies':
                     if self.skip_deps:
                         success = True
@@ -3791,6 +3820,18 @@ export default defineConfig({{
                             self._update_gui_progress(step, 1.0, "Skipped")
                     else:
                         success = self._install_dependencies_async()
+                elif step == 'Starting tunnel':
+                    if self.lan_only:
+                        success = True
+                        self.background_operations['progress'] = 1.0
+                        if self.gui_mode:
+                            self._update_gui_progress(step, 1.0, "Skipped (LAN only)")
+                    else:
+                        self.tunnel_url = self._start_tunnel()
+                        success = self.tunnel_url is not None
+                        if self.gui_mode:
+                            tunnel_status = "Running" if success else "Failed"
+                            self._update_gui_status("Not started", "Not started", tunnel_status)
                 elif step == 'Building frontend assets':
                     if self.dev_mode or self.skip_build:
                         success = True
@@ -3802,26 +3843,15 @@ export default defineConfig({{
                 elif step == 'Starting backend':
                     success = self._start_backend_async()
                     if success and self.gui_mode:
-                        self._update_gui_status("Running", "Starting...", "Not started")
-                    # Start tunnel if needed
-                    if success and not self.lan_only:
-                        self.background_operations['progress'] = 0.5
-                        if self.gui_mode:
-                            self._update_gui_progress(step, 0.7, "Starting tunnel...")
-                        self.tunnel_url = self._start_tunnel()
-                        self.background_operations['progress'] = 1.0
-                        if self.gui_mode:
-                            tunnel_status = "Running" if self.tunnel_url else "Failed"
-                            self._update_gui_status("Running", "Starting...", tunnel_status)
+                        tunnel_status = "Running" if self.tunnel_url else "Not started"
+                        self._update_gui_status("Running", "Starting...", tunnel_status)
                 elif step == 'Starting frontend':
                     success = self._start_frontend_async()
                     if success and self.gui_mode:
                         tunnel_status = "Running" if self.tunnel_url else "Not started"
                         self._update_gui_status("Running", "Running", tunnel_status)
-                
                 if success:
                     self.background_operations['progress'] = 1.0
-                    
                     # Show access info in GUI when completed
                     if idx == len(steps) - 1:
                         self.background_operations['status'] = 'completed'
@@ -3843,10 +3873,8 @@ export default defineConfig({{
                     if self.gui_mode:
                         self.gui_window.show_error(f"{step} failed")
                     break
-                
                 # Small delay between steps to allow UI updates
                 time.sleep(0.1)
-                
         except Exception as e:
             self.background_operations['status'] = 'failed'
             self.background_operations['error'] = str(e)
@@ -4105,117 +4133,15 @@ export default defineConfig({{
         return False
     
     def _start_frontend_async(self) -> bool:
-        """Start frontend with progress updates"""
+        """Start frontend preview server with progress updates"""
         try:
             if self.gui_mode:
-                self._update_gui_progress("Starting frontend", 0.3, "Initializing frontend server...")
+                self._update_gui_progress("Starting frontend", 0.3, "Starting preview server...")
             self.background_operations['progress'] = 0.3
             
-            # Create temporary Vite config
-            vite_config = f"""
-import {{ defineConfig }} from 'vite'
-import react from '@vitejs/plugin-react'
-import {{ VitePWA }} from 'vite-plugin-pwa'
-
-export default defineConfig({{
-  plugins: [
-    react({{
-      refresh: false
-    }}),
-    VitePWA({{
-      registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'favicon-16x16.png'],
-      manifest: {{
-        name: '2048 Bot Training',
-        short_name: '2048 AI',
-        description: 'Real-time visualization for 2048 bot training',
-        theme_color: '#3b82f6',
-        background_color: '#0f172a',
-        display: 'standalone',
-        orientation: 'portrait',
-        scope: '/',
-        start_url: '/',
-        icons: [
-          {{
-            src: 'pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any maskable'
-          }},
-          {{
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any maskable'
-          }}
-        ]
-      }}
-    }})
-  ],
-  server: {{
-    host: '0.0.0.0',
-    port: {self.frontend_port},
-    strictPort: true,
-    hmr: {{
-      port: {self.frontend_port + 1},
-      host: '0.0.0.0'
-    }},
-    timeout: 30000,
-    cors: {{
-      origin: ['http://{self.host_ip}:{self.frontend_port}', 'http://localhost:{self.frontend_port}', 'https://*.trycloudflare.com', 'https://*.cfargotunnel.com'],
-      credentials: true
-    }}
-  }},
-  define: {{
-    global: 'globalThis',
-    __BACKEND_URL__: JSON.stringify('{self.tunnel_url if self.tunnel_url else f"http://{self.host_ip}:{self.backend_port}"}')
-  }},
-  build: {{
-    target: 'es2015',
-    minify: false,
-    sourcemap: true
-  }}
-}})
-"""
-            
-            config_path = "frontend/vite.config.temp.ts"
-            with open(config_path, "w") as f:
-                f.write(vite_config)
-            
-            self.background_operations['progress'] = 0.5
-            
-            # Build production bundle
-            build_process = subprocess.Popen([
-                "npm", "run", "build", "--", "--config", "vite.config.temp.ts"
-            ], cwd="frontend", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-            
-            # Monitor build progress
-            line_count = 0
-            while build_process.poll() is None:
-                if build_process.stdout is None:
-                    break
-                line = build_process.stdout.readline()
-                if not line:
-                    break
-                
-                line_count += 1
-                progress = min(0.8, 0.5 + (line_count / 50) * 0.3)
-                self.background_operations['progress'] = progress
-                
-                self.logger.debug(f"[Frontend Build] {line.strip()}")
-            
-            build_process.wait()
-            
-            if build_process.returncode != 0:
-                self.logger.error(f"Frontend build failed: {build_process.returncode}")
-                return False
-            
-            self.background_operations['progress'] = 0.9
-            
-            # Start frontend server
+            # Start frontend preview server (no rebuild needed)
             frontend_cmd = [
                 "npm", "run", "preview", "--", 
-                "--config", "vite.config.temp.ts",
                 "--host", "0.0.0.0",
                 "--port", str(self.frontend_port)
             ]
@@ -4246,6 +4172,8 @@ export default defineConfig({{
         except Exception as e:
             self.logger.error(f"Async frontend startup failed: {e}")
             return False
+            
+
     
     def _wait_for_frontend_async(self, host: str, port: int) -> bool:
         """Wait for frontend with progress updates"""
