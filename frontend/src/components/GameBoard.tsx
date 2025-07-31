@@ -389,71 +389,68 @@ const GameBoard: React.FC = () => {
         </div>
       </motion.div>
 
-      {/* Main Game Area */}
-      <div className="flex-1 flex flex-col space-y-2 min-h-0">
-        {/* Game Board */}
-        <motion.div
-          className={`card-glass p-4 rounded-2xl flex-shrink-0 relative ${
-            currentData?.done ? 'border border-red-500/30 bg-red-500/5' : ''
-          }`}
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-        >
-          {currentData?.done && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-xl z-10">
-              <div className="text-center">
-                <div className="text-lg font-bold text-red-400 mb-1">Game Over</div>
-                <div className="text-xs text-gray-400">Final Score: {currentData.score?.toLocaleString()}</div>
-              </div>
-            </div>
-          )}
-          <div className="grid grid-cols-4 gap-2 max-w-sm mx-auto">
-            {displayBoard.map((row, rowIndex) =>
-              row.map((value, colIndex) => (
-                <div
-                  key={`${rowIndex}-${colIndex}`}
-                  className={`game-tile aspect-square ${getTileColor(value)} ${getTextColor(value)} relative overflow-hidden`}
-                  style={showAttention ? {
-                    border: `2px solid rgba(34, 197, 94, ${getAttentionOpacity(rowIndex, colIndex)})`,
-                  } : {}}
-                >
-                  <span className="text-sm font-bold">
-                    {value > 0 ? value : ''}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </motion.div>
-
-        {/* Compact Next Action Bar */}
-        {actionProbabilities.length > 0 && (
-          <div className="flex items-center justify-between mt-1 px-3 py-2 bg-gray-800/80 rounded-xl max-w-xs mx-auto">
-            {/* Most likely action */}
-            {(() => {
-              const maxProb = Math.max(...actionProbabilities.map((a: any) => a.probability))
-              const mainAction = actionProbabilities.find((a: any) => a.probability === maxProb)
-              if (!mainAction) return null
-              const Icon = mainAction.icon
-              return (
-                <div className="flex items-center space-x-2">
-                  <Icon className={`w-5 h-5 ${mainAction.color}`} />
-                  <span className={`font-bold text-sm ${mainAction.color}`}>{(mainAction.probability * 100).toFixed(0)}%</span>
-                </div>
-              )
-            })()}
-            {/* Dots for other actions */}
-            <div className="flex items-center space-x-1 ml-2">
-              {actionProbabilities.map((action: any) => {
-                if (action.probability === Math.max(...actionProbabilities.map((a: any) => a.probability))) return null
-                return (
-                  <span key={action.name} className={`w-2 h-2 rounded-full ${action.color} opacity-70`} title={`${action.name}: ${(action.probability * 100).toFixed(1)}%`} />
-                )
-              })}
+      {/* Game Board */}
+      <motion.div
+        className={`card-glass p-4 rounded-2xl flex-shrink-0 relative ${
+          currentData?.done ? 'border border-red-500/30 bg-red-500/5' : ''
+        }`}
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+      >
+        {currentData?.done && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-xl z-10">
+            <div className="text-center">
+              <div className="text-lg font-bold text-red-400 mb-1">Game Over</div>
+              <div className="text-xs text-gray-400">Final Score: {currentData.score?.toLocaleString()}</div>
             </div>
           </div>
         )}
-      </div>
+        <div className="grid grid-cols-4 gap-2 max-w-sm mx-auto">
+          {displayBoard.map((row, rowIndex) =>
+            row.map((value, colIndex) => (
+              <div
+                key={`${rowIndex}-${colIndex}`}
+                className={`game-tile aspect-square ${getTileColor(value)} ${getTextColor(value)} relative overflow-hidden`}
+                style={showAttention ? {
+                  border: `2px solid rgba(34, 197, 94, ${getAttentionOpacity(rowIndex, colIndex)})`,
+                } : {}}
+              >
+                <span className="text-sm font-bold">
+                  {value > 0 ? value : ''}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </motion.div>
+
+      {/* Compact Next Action Bar */}
+      {actionProbabilities.length > 0 && (
+        <div className="flex items-center justify-between mt-1 px-3 py-2 bg-gray-800/80 rounded-xl max-w-xs mx-auto">
+          {/* Most likely action */}
+          {(() => {
+            const maxProb = Math.max(...actionProbabilities.map((a: any) => a.probability))
+            const mainAction = actionProbabilities.find((a: any) => a.probability === maxProb)
+            if (!mainAction) return null
+            const Icon = mainAction.icon
+            return (
+              <div className="flex items-center space-x-2">
+                <Icon className={`w-5 h-5 ${mainAction.color}`} />
+                <span className={`font-bold text-sm ${mainAction.color}`}>{(mainAction.probability * 100).toFixed(0)}%</span>
+              </div>
+            )
+          })()}
+          {/* Dots for other actions */}
+          <div className="flex items-center space-x-1 ml-2">
+            {actionProbabilities.map((action: any) => {
+              if (action.probability === Math.max(...actionProbabilities.map((a: any) => a.probability))) return null
+              return (
+                <span key={action.name} className={`w-2 h-2 rounded-full ${action.color} opacity-70`} title={`${action.name}: ${(action.probability * 100).toFixed(1)}%`} />
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Playback Controls - Always Visible */}
       <motion.div

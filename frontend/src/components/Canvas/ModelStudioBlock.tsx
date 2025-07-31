@@ -27,6 +27,8 @@ interface BlockProps {
   selected?: boolean
   onMove: (id: string, x: number, y: number) => void
   onSelect?: (id: string) => void
+  onDragStart?: () => void
+  onDragEnd?: () => void
 }
 
 const ModelStudioBlock: React.FC<BlockProps> = ({ 
@@ -36,7 +38,9 @@ const ModelStudioBlock: React.FC<BlockProps> = ({
   y, 
   selected = false, 
   onMove, 
-  onSelect 
+  onSelect,
+  onDragStart,
+  onDragEnd
 }) => {
   const color = colors[type] || '#6b7280'
   const label = labels[type] || type[0]
@@ -46,9 +50,22 @@ const ModelStudioBlock: React.FC<BlockProps> = ({
       x={x}
       y={y}
       draggable
+      onDragStart={(e) => {
+        e.evt.preventDefault()
+        // Don't change position on drag start - maintain current position
+        onDragStart?.()
+      }}
+      onDragMove={(e) => {
+        // Block follows touch exactly - no position resetting
+        e.evt.preventDefault()
+        // Don't call onMove here - only at the end
+      }}
       onDragEnd={(e) => {
+        e.evt.preventDefault()
+        // Only update position at the end of drag
         const { x: newX, y: newY } = e.target.position()
         onMove(id, newX, newY)
+        onDragEnd?.()
       }}
       onClick={() => onSelect?.(id)}
       onTap={() => onSelect?.(id)}

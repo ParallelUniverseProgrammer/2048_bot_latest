@@ -1,6 +1,7 @@
-import React from 'react'
+import React, { useState, useCallback } from 'react'
 import { useDrag } from 'react-dnd'
 import { motion } from 'framer-motion'
+import { useDesignStore } from '../../stores/designStore'
 
 export interface PaletteEntry {
   type: string
@@ -18,49 +19,132 @@ const paletteEntries: PaletteEntry[] = [
 ]
 
 const PaletteItem: React.FC<{ entry: PaletteEntry }> = ({ entry }) => {
+  const [dragError, setDragError] = useState<string | null>(null)
+  const [lastTap, setLastTap] = useState(0)
+  const { addComponent } = useDesignStore()
+  
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'BLOCK',
     item: { type: entry.type },
     collect: (monitor) => ({
       isDragging: monitor.isDragging()
-    })
-  }))
+    }),
+    end: (_item, monitor) => {
+      if (monitor.didDrop()) {
+        setDragError(null)
+      } else {
+        setDragError('Drop failed - try again')
+        // Clear error after 3 seconds
+        setTimeout(() => setDragError(null), 3000)
+      }
+    }
+  }), [entry.type])
+
+  // Handle double-tap to place block at center
+  const handleDoubleTap = useCallback(() => {
+    const now = Date.now()
+    const DOUBLE_TAP_DELAY = 300 // ms
+    
+    if (now - lastTap < DOUBLE_TAP_DELAY) {
+      // Double tap detected - place block at center
+      const newComponent = {
+        id: `${entry.type}_${Date.now()}`,
+        type: entry.type,
+        props: getDefaultProps(entry.type),
+        position: { x: 0, y: 0 } // Will be updated by canvas to center
+      }
+      
+      addComponent(newComponent)
+      setDragError(null)
+    }
+    
+    setLastTap(now)
+  }, [lastTap, entry.type, addComponent])
+
+  // Get default props for component type
+  const getDefaultProps = (type: string): Record<string, number | string | boolean> => {
+    switch (type) {
+      case 'TRANSFORMER_LAYER':
+        return { d_model: 128, n_heads: 4 }
+      case 'MOE_LAYER':
+        return { d_model: 128, n_experts: 4 }
+      case 'BOARD_INPUT':
+        return { d_model: 128 }
+      case 'ACTION_OUTPUT':
+        return { d_model: 128 }
+      case 'VALUE_HEAD':
+        return { d_model: 128 }
+      default:
+        return {}
+    }
+  }
 
   return (
     <motion.button
       ref={drag}
       aria-label={entry.type}
-      className={`card-glass flex items-center space-x-2 w-full px-3 py-2 rounded-xl mb-2 
-        ${entry.color} hover:bg-gray-700/50 transition-colors`}
+      className={`card-glass flex flex-col items-center justify-center space-y-1 px-3 py-2 rounded-lg 
+        ${entry.color} hover:bg-gray-700/50 transition-colors flex-shrink-0 relative cursor-grab active:cursor-grabbing`}
       style={{ 
-        minHeight: 44,
+        height: 60,
+        width: 80,
         opacity: isDragging ? 0.5 : 1
       }}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
+      onTouchStart={(e) => {
+        // Prevent horizontal scroll when starting drag
+        e.stopPropagation()
+      }}
+      onClick={handleDoubleTap}
     >
-      <span className="text-lg">{entry.icon}</span>
-      <span className="text-sm font-medium capitalize truncate">
+      <span className="text-xl">{entry.icon}</span>
+      <span className="text-xs font-medium capitalize text-center">
         {entry.label}
       </span>
+      {dragError && (
+        <div className="absolute -bottom-6 left-0 right-0 text-center">
+          <span className="text-xs text-red-400 bg-red-500/10 px-1 rounded">
+            {dragError}
+          </span>
+        </div>
+      )}
     </motion.button>
   )
 }
 
 const ModelStudioPalette: React.FC = () => {
-  return (
-    <motion.div
-      className="h-full card-glass p-4 rounded-2xl"
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-    >
-      <h3 className="text-sm font-semibold text-gray-300 mb-4">Block Palette</h3>
-      <div className="space-y-2">
-        {paletteEntries.map((entry) => (
-          <PaletteItem key={entry.type} entry={entry} />
-        ))}
+  const [paletteError] = useState<string | null>(null)
+
+  // Error boundary for palette
+  if (paletteError) {
+    return (
+      <div className="flex items-center justify-center text-red-400 p-2">
+        <p className="text-sm">{paletteError}</p>
       </div>
-    </motion.div>
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto overflow-y-hidden scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+      <motion.div
+        className="flex space-x-2 py-1"
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{ minWidth: 'max-content' }}
+      >
+        {paletteEntries.map((entry, index) => (
+          <motion.div
+            key={entry.type}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: index * 0.1 }}
+          >
+            <PaletteItem entry={entry} />
+          </motion.div>
+        ))}
+      </motion.div>
+    </div>
   )
 }
 

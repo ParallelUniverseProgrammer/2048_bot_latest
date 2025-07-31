@@ -89,6 +89,15 @@ body {
     @apply shadow-glass border-glass backdrop-blur-sm;
     background: rgba(30, 41, 59, 0.8);
   }
+  
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* Internet Explorer 10+ */
+    scrollbar-width: none;  /* Firefox */
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Safari and Chrome */
+  }
 }
 
 /* Animation utilities */
