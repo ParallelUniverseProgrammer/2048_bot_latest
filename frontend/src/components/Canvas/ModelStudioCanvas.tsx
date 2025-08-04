@@ -18,7 +18,6 @@ const InnerStage: React.FC<InnerStageProps> = ({ stageRef }) => {
     pos: { x: 0, y: 0 }
   })
   
-  const raf = useRef<number>()
   const containerRef = useRef<HTMLDivElement>(null)
   
   const {
@@ -74,22 +73,26 @@ const InnerStage: React.FC<InnerStageProps> = ({ stageRef }) => {
       
       if (newComponents.length > 0) {
         // Calculate center of current view in world coordinates
-        // In Konva: stage position is the offset of world origin from viewport top-left
-        // So to get the world coordinates at the center of the viewport:
-        // 1. Start at the world origin (0,0) 
-        // 2. Add the stage position (which moves the world origin)
-        // 3. Add half the viewport size (scaled to world coordinates)
-        const visibleCenterX = viewState.pos.x + (stageSize.w / 2) / viewState.scale
-        const visibleCenterY = viewState.pos.y + (stageSize.h / 2) / viewState.scale
+        // Since viewState.pos is (0,0), the world origin is at the viewport top-left
+        // The center of the viewport in world coordinates is:
+        const visibleCenterX = (stageSize.w / 2) / viewState.scale
+        const visibleCenterY = (stageSize.h / 2) / viewState.scale
         
         // Snap to grid
         const snappedX = snap(visibleCenterX)
         const snappedY = snap(visibleCenterY)
         
-        // Update all new components to center position
-        newComponents.forEach(comp => {
+        // Update all new components to center position with small offsets to prevent stacking
+        newComponents.forEach((comp, index) => {
+          // Add a small offset based on index to prevent components from stacking
+          const offsetX = index * GRID * 2 // 2 grid units apart
+          const offsetY = index * GRID * 2
+          
           updateComponent(comp.id, { 
-            position: { x: snappedX, y: snappedY } 
+            position: { 
+              x: snap(snappedX + offsetX), 
+              y: snap(snappedY + offsetY) 
+            } 
           })
         })
       }
@@ -105,46 +108,7 @@ const InnerStage: React.FC<InnerStageProps> = ({ stageRef }) => {
     setViewState(v => ({ ...v, scale: clamp(next, ZOOM_MIN, ZOOM_MAX) }))
   }, [viewState.scale, isDraggingBlock])
 
-  // Handle stage drag with throttling and bounds checking
-  const handleDragMove = useCallback((e: any) => {
-    if (isDraggingBlock) return // Don't move stage when dragging blocks
-    
-    cancelAnimationFrame(raf.current!)
-    raf.current = requestAnimationFrame(() => {
-      const newX = e.target.x()
-      const newY = e.target.y()
-      
-      // Constrain stage position to prevent scrolling outside grid bounds
-      const maxX = 0
-      const minX = -(stageSize.w * viewState.scale - stageSize.w)
-      const maxY = 0
-      const minY = -(stageSize.h * viewState.scale - stageSize.h)
-      
-      const constrainedX = Math.max(minX, Math.min(maxX, newX))
-      const constrainedY = Math.max(minY, Math.min(maxY, newY))
-      
-      setViewState(v => ({
-        ...v,
-        pos: { x: constrainedX, y: constrainedY }
-      }))
-    })
-  }, [isDraggingBlock, stageSize, viewState.scale])
 
-  // Handle stage drag start - prevent when dragging blocks
-  const handleDragStart = useCallback((e: any) => {
-    if (isDraggingBlock) {
-      e.evt.preventDefault()
-      return
-    }
-  }, [isDraggingBlock])
-
-  // Handle stage drag end
-  const handleDragEnd = useCallback((e: any) => {
-    if (isDraggingBlock) {
-      e.evt.preventDefault()
-      return
-    }
-  }, [isDraggingBlock])
 
   // Memoize grid lines to prevent re-rendering
   const gridLines = useMemo(() => {
@@ -205,17 +169,14 @@ const InnerStage: React.FC<InnerStageProps> = ({ stageRef }) => {
         width={stageSize.w}
         height={stageSize.h}
         ref={stageRef}
-        draggable={!isDraggingBlock} // Disable stage dragging when dragging blocks
+        draggable={false} // Disable stage dragging completely
         x={viewState.pos.x}
         y={viewState.pos.y}
         scaleX={viewState.scale}
         scaleY={viewState.scale}
         className="touch-none"
-        onDragMove={handleDragMove}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
         onWheel={handleWheel}
-        listening={!isDraggingBlock} // Disable all stage interactions when dragging blocks
+        listening={true} // Keep stage listening for wheel events
       >
         {/* Grid overlay */}
         <Layer listening={false}>

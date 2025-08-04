@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { useDrag } from 'react-dnd'
 import { motion } from 'framer-motion'
 import { useDesignStore } from '../../stores/designStore'
@@ -18,9 +18,47 @@ const paletteEntries: PaletteEntry[] = [
   { type: 'VALUE_HEAD', label: 'Value', icon: '💰', color: 'text-purple-400' }
 ]
 
+// Custom hook for double-tap detection
+const useDoubleTap = (callback: () => void, delay: number = 300) => {
+  const lastTapRef = useRef(0)
+  const timeoutRef = useRef<number | null>(null)
+
+  const handleTap = useCallback(() => {
+    const now = Date.now()
+    const timeSinceLastTap = now - lastTapRef.current
+
+    if (timeSinceLastTap < delay) {
+      // Double tap detected
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+      callback()
+      lastTapRef.current = 0 // Reset to prevent triple-tap
+    } else {
+      // First tap - set timeout for potential double tap
+      lastTapRef.current = now
+      timeoutRef.current = setTimeout(() => {
+        lastTapRef.current = 0 // Reset if no double tap
+        timeoutRef.current = null
+      }, delay)
+    }
+  }, [callback, delay])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [])
+
+  return handleTap
+}
+
 const PaletteItem: React.FC<{ entry: PaletteEntry }> = ({ entry }) => {
   const [dragError, setDragError] = useState<string | null>(null)
-  const [lastTap, setLastTap] = useState(0)
   const { addComponent } = useDesignStore()
   
   const [{ isDragging }, drag] = useDrag(() => ({
@@ -40,27 +78,6 @@ const PaletteItem: React.FC<{ entry: PaletteEntry }> = ({ entry }) => {
     }
   }), [entry.type])
 
-  // Handle double-tap to place block at center
-  const handleDoubleTap = useCallback(() => {
-    const now = Date.now()
-    const DOUBLE_TAP_DELAY = 300 // ms
-    
-    if (now - lastTap < DOUBLE_TAP_DELAY) {
-      // Double tap detected - place block at center
-      const newComponent = {
-        id: `${entry.type}_${Date.now()}`,
-        type: entry.type,
-        props: getDefaultProps(entry.type),
-        position: { x: 0, y: 0 } // Will be updated by canvas to center
-      }
-      
-      addComponent(newComponent)
-      setDragError(null)
-    }
-    
-    setLastTap(now)
-  }, [lastTap, entry.type, addComponent])
-
   // Get default props for component type
   const getDefaultProps = (type: string): Record<string, number | string | boolean> => {
     switch (type) {
@@ -79,6 +96,22 @@ const PaletteItem: React.FC<{ entry: PaletteEntry }> = ({ entry }) => {
     }
   }
 
+  // Handle double-tap to place block at center
+  const handleDoubleTapPlacement = useCallback(() => {
+    const newComponent = {
+      id: `${entry.type}_${Date.now()}`,
+      type: entry.type,
+      props: getDefaultProps(entry.type),
+      position: { x: 0, y: 0 } // Will be updated by canvas to center
+    }
+    
+    addComponent(newComponent)
+    setDragError(null)
+  }, [entry.type, addComponent])
+
+  // Use custom double-tap hook
+  const handleTap = useDoubleTap(handleDoubleTapPlacement, 300)
+
   return (
     <motion.button
       ref={drag}
@@ -96,7 +129,7 @@ const PaletteItem: React.FC<{ entry: PaletteEntry }> = ({ entry }) => {
         // Prevent horizontal scroll when starting drag
         e.stopPropagation()
       }}
-      onClick={handleDoubleTap}
+      onClick={handleTap}
     >
       <span className="text-xl">{entry.icon}</span>
       <span className="text-xs font-medium capitalize text-center">
