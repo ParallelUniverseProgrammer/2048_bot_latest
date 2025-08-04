@@ -1,6 +1,6 @@
 # 🎨 Model Studio Implementation Status
 
-## ✅ Completed Implementation (Week 0 - Foundation)
+## ✅ Completed Implementation (Week 0-1)
 
 ### Frontend Components
 - **✅ Design Store** (`frontend/src/stores/designStore.ts`)
@@ -48,7 +48,7 @@
   - CORS configuration for design endpoints
   - Proper error handling and validation
 
-## 🎯 Current Features
+## 🎯 Current Features (updated)
 
 ### Design Management
 - ✅ Create new designs with auto-generated IDs
@@ -79,21 +79,21 @@
 - ✅ Consistent styling with existing components
 - ✅ Block palette for component selection
 
-## 🚧 Next Steps (Week 1 - Touch Drag & Snap)
+## ✅ Completed (Week 1 - Touch Drag & Snap)
 
 ### Canvas Implementation
-- [ ] Install react-konva and react-dnd-touch-backend
-- [ ] Implement draggable block components
-- [ ] Add canvas panning and zooming
-- [ ] Implement snap-to-grid functionality
-- [ ] Add visual connection lines between components
+- [x] Install react-konva and react-dnd-touch-backend
+- [x] Implement draggable block components
+- [x] Add canvas panning and zooming
+- [x] Implement snap-to-grid functionality
+- [x] Add visual connection lines between components
 
-### Enhanced Block System
-- [ ] Create individual block components with proper styling
-- [ ] Implement drag-and-drop from palette to canvas
+### Enhanced Block System (partial)
+- [x] Create individual block components with proper styling
+- [x] Implement drag-and-drop from palette to canvas
 - [ ] Add block property editing interface
 - [ ] Implement block duplication and deletion
-- [ ] Add visual feedback for connections
+- [x] Add visual feedback for connections
 
 ### Persistence
 - [ ] Implement IndexedDB storage for designs
