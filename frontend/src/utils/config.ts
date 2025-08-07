@@ -2,8 +2,13 @@
  * Configuration utility for the 2048 Bot Training app
  */
 
-// Get backend URL from environment variable or default to localhost
+// Get backend URL from environment or defaults
 const getBackendUrl = (): string => {
+  const envBackendUrl = (import.meta as any).env?.VITE_BACKEND_URL as string | undefined
+  const envBackendPort = (import.meta as any).env?.VITE_BACKEND_PORT as string | undefined
+  if (envBackendUrl && typeof envBackendUrl === 'string' && envBackendUrl.startsWith('http')) {
+    return envBackendUrl
+  }
   // Check if we have a backend URL defined in the window object (injected by launcher)
   if (typeof window !== 'undefined' && (window as any).__BACKEND_URL__) {
     return (window as any).__BACKEND_URL__
@@ -18,7 +23,8 @@ const getBackendUrl = (): string => {
   
   // Fallback: use current hostname so production preview on LAN works
   const backendProtocol = protocol === 'https:' ? 'https:' : 'http:'
-  return `${backendProtocol}//${hostname}:8000`
+  const port = envBackendPort && /^\d+$/.test(envBackendPort) ? envBackendPort : '8000'
+  return `${backendProtocol}//${hostname}:${port}`
 }
 
 export const API_BASE_URL = getBackendUrl()

@@ -533,7 +533,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   }
 
   return (
-    <div className="h-full flex flex-col space-y-2 pb-6">
+    <div className="safe-area h-full flex flex-col gap-2 pb-6 px-4">
       {/* Error Display */}
       {error && (
         <motion.div
@@ -542,11 +542,11 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
           className="card-glass p-4 rounded-2xl border border-red-500/30 bg-red-500/5 flex-shrink-0"
         >
           <div className="flex items-center space-x-3">
-            <X className="w-5 h-5 text-red-400 flex-shrink-0" />
-            <span className="text-red-300 text-sm flex-1">{error}</span>
+            <X className="w-5 h-5 text-ui-state-danger flex-shrink-0" />
+            <span className="text-ui-state-danger text-sm flex-1">{error}</span>
             <button
               onClick={() => setError(null)}
-              className="text-red-400 hover:text-red-300 p-2 rounded-lg hover:bg-red-500/20 transition-colors"
+              className="text-ui-state-danger hover:text-white p-2 rounded-lg hover:bg-ui-state-danger/20 transition-colors"
               aria-label="Dismiss error"
             >
               <X className="w-4 h-4" />
@@ -564,20 +564,20 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         >
           <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-4'} gap-3`}>
             <div className="text-center">
-              <div className="text-lg font-bold text-blue-400">{stats.total_checkpoints}</div>
-              <div className="text-xs text-gray-400">Checkpoints</div>
+              <div className="text-lg font-bold text-ui-brand-primary numeric">{stats.total_checkpoints}</div>
+              <div className="text-xs text-ui-text-secondary">Checkpoints</div>
             </div>
             <div className="text-center">
-              <div className="text-lg font-bold text-green-400">{stats.best_score.toLocaleString()}</div>
-              <div className="text-xs text-gray-400">Best Score</div>
+              <div className="text-lg font-bold text-ui-state-success numeric">{stats.best_score.toLocaleString()}</div>
+              <div className="text-xs text-ui-text-secondary">Best Score</div>
             </div>
             <div className="text-center">
-              <div className="text-lg font-bold text-purple-400">{formatFileSize(stats.total_size)}</div>
-              <div className="text-xs text-gray-400">Total Size</div>
+              <div className="text-lg font-bold text-ui-state-info numeric">{formatFileSize(stats.total_size)}</div>
+              <div className="text-xs text-ui-text-secondary">Total Size</div>
             </div>
             <div className="text-center">
-              <div className="text-lg font-bold text-yellow-400">{formatDuration(stats.total_training_time)}</div>
-              <div className="text-xs text-gray-400">Training Time</div>
+              <div className="text-lg font-bold text-ui-state-warning numeric">{formatDuration(stats.total_training_time)}</div>
+              <div className="text-xs text-ui-text-secondary">Training Time</div>
             </div>
           </div>
         </motion.div>
@@ -591,13 +591,13 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       >
         {/* Search Bar */}
         <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-ui-text-secondary" />
           <input
             type="text"
             placeholder="Search checkpoints..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-gray-700 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="w-full pl-10 pr-4 py-2.5 bg-ui-surface-elevated text-ui-text-primary rounded-xl focus:outline-none focus:ring-2 focus:ring-ui-focus text-sm border border-ui-border-muted"
             inputMode="text"
             autoComplete="off"
             autoCorrect="off"
@@ -656,14 +656,14 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         <div className="flex items-center space-x-2">
           <button
             onClick={() => loadCheckpoints()}
-            className="flex items-center space-x-2 px-3 py-1.5 bg-gray-700 text-gray-400 rounded-lg hover:bg-gray-600 transition-colors text-sm"
+            className="flex items-center space-x-2 px-3 py-1.5 bg-ui-surface-elevated text-ui-text-secondary rounded-lg hover:bg-gray-700/50 transition-colors text-sm"
           >
             <RefreshCw className="w-4 h-4" />
             <span>Refresh</span>
           </button>
           <button
             onClick={() => setShowConfigPanel(!showConfigPanel)}
-            className="flex items-center space-x-2 px-3 py-1.5 bg-gray-700 text-gray-400 rounded-lg hover:bg-gray-600 transition-colors text-sm"
+            className="flex items-center space-x-2 px-3 py-1.5 bg-ui-surface-elevated text-ui-text-secondary rounded-lg hover:bg-gray-700/50 transition-colors text-sm"
           >
             <Settings className="w-4 h-4" />
             <span>Configuration</span>
@@ -676,16 +676,16 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="mt-4 pt-4 border-t border-gray-700"
+            className="mt-4 pt-4 border-t border-ui-border-muted"
           >
             <h3 className="text-sm font-semibold text-white mb-3 flex items-center">
-              <Settings className="w-4 h-4 mr-2 text-blue-400" />
+              <Settings className="w-4 h-4 mr-2 text-ui-brand-primary" />
               Checkpoint Configuration
             </h3>
             
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-gray-400 mb-1">
+                <label className="block text-xs text-ui-text-secondary mb-1">
                   Checkpoint Interval (episodes)
                 </label>
                 <input
@@ -700,8 +700,8 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                       e.currentTarget.blur()
                     }
                   }}
-                  className={`w-full px-3 py-2 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
-                    checkpointIntervalError ? 'ring-2 ring-red-500' : ''
+                  className={`w-full px-3 py-2 bg-ui-surface-elevated text-ui-text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-ui-focus text-sm border ${
+                    checkpointIntervalError ? 'ring-2 ring-ui-state-danger border-ui-state-danger' : 'border-ui-border-muted'
                   }`}
                   inputMode="numeric"
                   autoComplete="off"
@@ -711,9 +711,9 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                   style={{ fontSize: '16px' }}
                 />
                 {checkpointIntervalError ? (
-                  <p className="text-xs text-red-400 mt-1">{checkpointIntervalError}</p>
+                  <p className="text-xs text-ui-state-danger mt-1">{checkpointIntervalError}</p>
                 ) : (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-ui-text-secondary mt-1">
                     Save a checkpoint every {checkpointInterval} episodes
                   </p>
                 )}
@@ -721,19 +721,19 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
               
               <div className="flex items-center justify-between">
                 <div>
-                  <label className="text-xs text-gray-400 block">Long Run Mode</label>
-                  <p className="text-xs text-gray-500">
+                  <label className="text-xs text-ui-text-secondary block">Long Run Mode</label>
+                  <p className="text-xs text-ui-text-secondary">
                     Only keep the latest checkpoint from this training run
                   </p>
                 </div>
                 <button
                   onClick={() => setLongRunMode(!longRunMode)}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    longRunMode ? 'bg-blue-500' : 'bg-gray-600'
+                    longRunMode ? 'bg-ui-brand-primary' : 'bg-gray-600'
                   }`}
                 >
                   <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    className={`inline-block h-4 w-4 transform rounded-full bg-ui-text-primary transition-transform ${
                       longRunMode ? 'translate-x-6' : 'translate-x-1'
                     }`}
                   />
@@ -744,7 +744,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                 <button
                   onClick={saveCheckpointConfig}
                   disabled={configLoading}
-                  className="flex-1 flex items-center justify-center space-x-2 bg-blue-500 text-white rounded-xl py-2 text-sm font-medium disabled:opacity-50 hover:bg-blue-600 transition-colors"
+                  className="flex-1 flex items-center justify-center space-x-2 bg-ui-brand-primary text-white rounded-xl py-2 text-sm font-medium disabled:opacity-50 hover:brightness-110 transition-colors"
                 >
                   {configLoading ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />
@@ -755,7 +755,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                 </button>
                 <button
                   onClick={() => setShowConfigPanel(false)}
-                  className="flex items-center justify-center bg-gray-700 text-gray-400 rounded-xl py-2 px-3 text-sm font-medium hover:bg-gray-600 transition-colors"
+                  className="flex items-center justify-center bg-ui-surface-elevated text-ui-text-secondary rounded-xl py-2 px-3 text-sm font-medium hover:bg-gray-700/50 transition-colors"
                   aria-label="Close configuration"
                 >
                   <X className="w-4 h-4" />
@@ -817,13 +817,13 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                   </div>
                 ) : (
                   <div className="flex items-center space-x-2">
-                    <h3 className="font-semibold text-white text-sm truncate">{checkpoint.nickname}</h3>
+                    <h3 className="font-semibold text-ui-text-primary text-sm truncate">{checkpoint.nickname}</h3>
                     <button
                       onClick={() => {
                         setEditingNickname(checkpoint.id)
                         setNewNickname(checkpoint.nickname)
                       }}
-                      className="text-gray-400 hover:text-gray-300 p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
+                      className="text-ui-text-secondary hover:text-ui-text-primary p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
                       aria-label="Edit nickname"
                     >
                       <Edit className="w-3 h-3" />
@@ -834,14 +834,14 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                 {/* Quick Stats */}
                 <div className="flex items-center space-x-3 mt-2 text-xs">
                   <div className="flex items-center space-x-1">
-                    <Target className="w-3 h-3 text-green-400" />
-                    <span className="text-green-400 font-medium">
+                    <Target className="w-3 h-3 text-ui-state-success" />
+                    <span className="text-ui-state-success font-medium numeric">
                       {checkpoint.performance_metrics.best_score.toLocaleString()}
                     </span>
                   </div>
                   <div className="flex items-center space-x-1">
-                    <BarChart3 className="w-3 h-3 text-blue-400" />
-                    <span className="text-blue-400 font-medium">
+                    <BarChart3 className="w-3 h-3 text-ui-brand-primary" />
+                    <span className="text-ui-brand-primary font-medium numeric">
                       {checkpoint.episode.toLocaleString()}
                     </span>
                   </div>
@@ -866,7 +866,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                       expandedCheckpoint === checkpoint.id ? null : checkpoint.id
                     )
                   }}
-                  className="text-gray-400 hover:text-gray-300 p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
+                  className="text-ui-text-secondary hover:text-ui-text-primary p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
                   aria-label={expandedCheckpoint === checkpoint.id ? "Collapse details" : "Expand details"}
                 >
                   {expandedCheckpoint === checkpoint.id ? 
@@ -881,21 +881,21 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             <div className="flex space-x-2">
               <button
                 onClick={() => startPlayback(checkpoint.id)}
-                className="flex-1 flex items-center justify-center space-x-2 bg-green-500/20 text-green-400 rounded-xl py-2.5 text-sm font-medium hover:bg-green-500/30 transition-colors"
+                className="flex-1 flex items-center justify-center space-x-2 bg-ui-state-success/20 text-ui-state-success rounded-xl py-2.5 text-sm font-medium hover:bg-ui-state-success/30 transition-colors"
               >
                 <Play className="w-4 h-4" />
                 <span>Watch</span>
               </button>
               <button
                 onClick={() => loadCheckpointForTraining(checkpoint.id)}
-                className="flex-1 flex items-center justify-center space-x-2 bg-blue-500/20 text-blue-400 rounded-xl py-2.5 text-sm font-medium hover:bg-blue-500/30 transition-colors"
+                className="flex-1 flex items-center justify-center space-x-2 bg-ui-brand-primary/20 text-ui-brand-primary rounded-xl py-2.5 text-sm font-medium hover:bg-ui-brand-primary/30 transition-colors"
               >
                 <Zap className="w-4 h-4" />
                 <span>Resume</span>
               </button>
               <button
                 onClick={() => deleteCheckpoint(checkpoint.id)}
-                className="flex items-center justify-center bg-red-500/20 text-red-400 rounded-xl py-2.5 px-3 text-sm font-medium hover:bg-red-500/30 transition-colors"
+                className="flex items-center justify-center bg-ui-state-danger/20 text-ui-state-danger rounded-xl py-2.5 px-3 text-sm font-medium hover:bg-ui-state-danger/30 transition-colors"
                 aria-label="Delete checkpoint"
               >
                 <Trash2 className="w-4 h-4" />
@@ -908,67 +908,67 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
-                className="mt-3 pt-3 border-t border-gray-700"
+                className="mt-3 pt-3 border-t border-ui-border-muted"
               >
                 <div className="grid grid-cols-2 gap-4 text-xs">
                   <div>
-                    <div className="text-gray-400 mb-2 flex items-center">
+                    <div className="text-ui-text-secondary mb-2 flex items-center">
                       <Layers className="w-3 h-3 mr-1" />
                       Model Config
                     </div>
                     <div className="space-y-1.5">
                       <div className="flex justify-between">
                         <span>Experts:</span>
-                        <span className="text-white font-medium">{checkpoint.model_config.n_experts}</span>
+                        <span className="text-ui-text-primary font-medium numeric">{checkpoint.model_config.n_experts}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Layers:</span>
-                        <span className="text-white font-medium">{checkpoint.model_config.n_layers}</span>
+                        <span className="text-ui-text-primary font-medium numeric">{checkpoint.model_config.n_layers}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Dimensions:</span>
-                        <span className="text-white font-medium">{checkpoint.model_config.d_model}</span>
+                        <span className="text-ui-text-primary font-medium numeric">{checkpoint.model_config.d_model}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Heads:</span>
-                        <span className="text-white font-medium">{checkpoint.model_config.n_heads}</span>
+                        <span className="text-ui-text-primary font-medium numeric">{checkpoint.model_config.n_heads}</span>
                       </div>
                     </div>
                   </div>
                   <div>
-                    <div className="text-gray-400 mb-2 flex items-center">
+                    <div className="text-ui-text-secondary mb-2 flex items-center">
                       <Activity className="w-3 h-3 mr-1" />
                       Performance
                     </div>
                     <div className="space-y-1.5">
                       <div className="flex justify-between">
                         <span>Avg Score:</span>
-                        <span className="text-white font-medium">{checkpoint.performance_metrics.avg_score.toFixed(0)}</span>
+                        <span className="text-ui-text-primary font-medium numeric">{checkpoint.performance_metrics.avg_score.toFixed(0)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Final Loss:</span>
-                        <span className="text-white font-medium">{checkpoint.performance_metrics.final_loss.toFixed(3)}</span>
+                        <span className="text-ui-text-primary font-medium numeric">{checkpoint.performance_metrics.final_loss.toFixed(3)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Speed:</span>
-                        <span className="text-white font-medium">{checkpoint.performance_metrics.training_speed.toFixed(1)} ep/min</span>
+                        <span className="text-ui-text-primary font-medium numeric">{checkpoint.performance_metrics.training_speed.toFixed(1)} ep/min</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Duration:</span>
-                        <span className="text-white font-medium">{formatDuration(checkpoint.training_duration)}</span>
+                        <span className="text-ui-text-primary font-medium numeric">{formatDuration(checkpoint.training_duration)}</span>
                       </div>
                     </div>
                   </div>
                 </div>
                 
-                <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-700">
-                  <div className="flex items-center space-x-1 text-xs text-gray-400">
+                <div className="flex items-center justify-between mt-3 pt-2 border-t border-ui-border-muted">
+                  <div className="flex items-center space-x-1 text-xs text-ui-text-secondary">
                     <Calendar className="w-3 h-3" />
                     <span>{new Date(checkpoint.created_at).toLocaleDateString()}</span>
                   </div>
-                  <div className="flex items-center space-x-1 text-xs text-gray-400">
+                  <div className="flex items-center space-x-1 text-xs text-ui-text-secondary">
                     <Database className="w-3 h-3" />
-                    <span>{formatFileSize(checkpoint.file_size)}</span>
+                    <span className="numeric">{formatFileSize(checkpoint.file_size)}</span>
                   </div>
                 </div>
               </motion.div>
@@ -983,11 +983,11 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             animate={{ opacity: 1 }}
           >
             <Archive className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-400 mb-2">No checkpoints found</p>
+            <p className="text-ui-text-secondary mb-2">No checkpoints found</p>
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm('')}
-                className="text-blue-400 hover:text-blue-300 text-sm"
+                className="text-ui-brand-primary hover:brightness-110 text-sm"
               >
                 Clear search
               </button>

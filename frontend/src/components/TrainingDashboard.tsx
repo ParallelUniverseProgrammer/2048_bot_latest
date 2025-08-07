@@ -301,11 +301,18 @@ const TrainingDashboard: React.FC = () => {
         grid: {
           display: false,
         },
+        ticks: {
+          color: ui.textSecondary,
+          maxRotation: 0,
+        },
       },
       y: {
         display: false,
         grid: {
           display: false,
+        },
+        ticks: {
+          color: ui.textSecondary,
         },
       },
     },
@@ -772,7 +779,7 @@ const TrainingDashboard: React.FC = () => {
   }
 
   return (
-    <div className="h-full grid grid-rows-[auto_auto_1fr] gap-2 pb-4">
+    <div className="safe-area h-full grid grid-rows-[auto_auto_1fr] gap-2 pb-4 px-4">
       {/* Redesigned Training Controls */}
       <motion.div
         className="card-glass p-3 rounded-2xl"
@@ -789,15 +796,15 @@ const TrainingDashboard: React.FC = () => {
           
           {/* Status Indicator */}
           <div className="flex items-center space-x-2 text-xs">
-            <div className={`w-2 h-2 rounded-full ${isTraining ? 'bg-green-400' : 'bg-red-400'}`} />
-            <span className={`font-medium ${isTraining ? 'text-green-400' : 'text-red-400'}`}>
+            <div className={`w-2 h-2 rounded-full ${isTraining ? 'bg-ui-state-success' : 'bg-ui-state-danger'}`} />
+            <span className={`font-medium ${isTraining ? 'text-ui-state-success' : 'text-ui-state-danger'}`}>
               {isTraining ? 'Active' : 'Stopped'}
             </span>
             {isPaused && isTraining && (
-              <span className="text-yellow-400">(Paused)</span>
+              <span className="text-ui-state-warning">(Paused)</span>
             )}
             {!isConnected && (
-              <span className="text-red-400">(Disconnected)</span>
+              <span className="text-ui-state-danger">(Disconnected)</span>
             )}
           </div>
         </div>
@@ -805,15 +812,15 @@ const TrainingDashboard: React.FC = () => {
         {/* Model Size Selector - Only show when not training */}
         {!isTraining && (
           <div className="mb-2">
-            <label className="block text-xs text-gray-400 mb-1">Model Size</label>
+            <label className="block text-xs text-ui-text-secondary mb-1">Model Size</label>
             <select
               value={modelSize}
               onChange={(e) => setModelSize(e.target.value as 'tiny' | 'small' | 'medium' | 'large')}
               disabled={isTraining || loadingStates.isTrainingStarting}
               className={`
-                w-full bg-gray-700 text-white rounded-lg px-3 py-2 text-sm border border-gray-600
-                focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500
-                ${isTraining || loadingStates.isTrainingStarting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-600'}
+                w-full bg-ui-surface-elevated text-ui-text-primary rounded-lg px-3 py-2 text-sm border border-ui-border-muted
+                focus:outline-none focus:ring-1 focus:ring-ui-focus focus:border-ui-focus
+                ${isTraining || loadingStates.isTrainingStarting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-700/40'}
               `}
             >
               <option value="tiny">Tiny Model</option>
@@ -841,10 +848,10 @@ const TrainingDashboard: React.FC = () => {
             className={`
               flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-medium transition-all
               ${!isTraining 
-                ? 'bg-green-500 hover:bg-green-600 text-white' 
+                ? 'bg-ui-state-success/90 hover:bg-ui-state-success text-white' 
                 : isPaused 
-                  ? 'bg-green-500 hover:bg-green-600 text-white'
-                  : 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                  ? 'bg-ui-state-success/90 hover:bg-ui-state-success text-white'
+                  : 'bg-ui-state-warning/90 hover:bg-ui-state-warning text-black'
               }
               ${(loadingStates.isTrainingStarting || !isConnected) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}
             `}
@@ -881,8 +888,8 @@ const TrainingDashboard: React.FC = () => {
             className={`
               flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-medium transition-all
               ${isTraining 
-                ? 'bg-red-500 hover:bg-red-600 text-white' 
-                : 'bg-purple-500 hover:bg-purple-600 text-white'
+                ? 'bg-ui-state-danger/90 hover:bg-ui-state-danger text-white' 
+                : 'bg-ui-state-info/90 hover:bg-ui-state-info text-white'
               }
               ${(loadingStates.isTrainingStarting || !isConnected || isCreatingCheckpoint) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}
             `}
@@ -907,9 +914,9 @@ const TrainingDashboard: React.FC = () => {
             <button
               onClick={handleManualCheckpoint}
               disabled={loadingStates.isTrainingStarting || !isConnected || isCreatingCheckpoint}
-              className={`
+            className={`
                 w-full flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium transition-all
-                bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30
+                bg-ui-state-info/20 hover:bg-ui-state-info/30 text-ui-state-info border border-ui-state-info/30
                 ${(loadingStates.isTrainingStarting || !isConnected || isCreatingCheckpoint) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-102'}
               `}
             >
@@ -921,17 +928,17 @@ const TrainingDashboard: React.FC = () => {
 
         {/* Waiting for Data Indicator */}
         {showWaitingForFirstData && (
-          <div className="mt-2 p-2 rounded-lg border border-purple-500/30 bg-purple-500/10">
+          <div className="mt-2 p-2 rounded-lg border border-ui-state-info/30 bg-ui-state-info/10">
             <div className="flex items-center space-x-2">
-              <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
+              <Brain className="w-4 h-4 text-ui-state-info animate-pulse" />
               <div className="flex-1">
-                <div className="text-xs font-medium text-purple-300">Initializing Training</div>
-                <div className="text-xs text-purple-400/80">
+                <div className="text-xs font-medium text-ui-text-primary">Initializing Training</div>
+                <div className="text-xs text-ui-text-secondary">
                   Waiting for first episode data...
                 </div>
               </div>
               {loadingStates.estimatedTimeRemaining !== null && (
-                <div className="text-xs text-purple-400">
+                <div className="text-xs text-ui-text-secondary numeric">
                   ~{Math.ceil(loadingStates.estimatedTimeRemaining)}s
                 </div>
               )}
@@ -956,7 +963,7 @@ const TrainingDashboard: React.FC = () => {
         <div className="grid grid-cols-2 gap-2 mb-3">
           {/* Training Loss Chart - Compact */}
           <div className="flex flex-col items-center space-y-1">
-            <div className="text-xs text-gray-400 font-medium text-center">Training Loss</div>
+            <div className="text-xs text-ui-text-secondary font-medium text-center">Training Loss</div>
             <div 
               className="w-full h-14 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
               onDoubleClick={() => handleChartDoubleTap('loss', 'Training Loss')}
@@ -972,7 +979,7 @@ const TrainingDashboard: React.FC = () => {
               <Line data={lossChartData} options={enhancedChartOptions} />
               {isMobile && (
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="text-xs text-gray-300 bg-black/70 px-2 py-1 rounded-lg text-center">
+                  <div className="text-xs text-ui-text-primary" style={{ background: 'var(--ui-overlay)', padding: '4px 8px', borderRadius: 8 }}>
                     Double-tap to expand
                   </div>
                 </div>
@@ -982,7 +989,7 @@ const TrainingDashboard: React.FC = () => {
 
           {/* Game Score Chart - Compact */}
           <div className="flex flex-col items-center space-y-1">
-            <div className="text-xs text-gray-400 font-medium text-center">Game Score</div>
+            <div className="text-xs text-ui-text-secondary font-medium text-center">Game Score</div>
             <div 
               className="w-full h-14 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
               onDoubleClick={() => handleChartDoubleTap('score', 'Game Score')}
@@ -998,7 +1005,7 @@ const TrainingDashboard: React.FC = () => {
               <Line data={scoreChartData} options={enhancedChartOptions} />
               {isMobile && (
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="text-xs text-gray-300 bg-black/70 px-2 py-1 rounded-lg text-center">
+                  <div className="text-xs text-ui-text-primary" style={{ background: 'var(--ui-overlay)', padding: '4px 8px', borderRadius: 8 }}>
                     Double-tap to expand
                   </div>
                 </div>
@@ -1008,7 +1015,7 @@ const TrainingDashboard: React.FC = () => {
 
           {/* Action Distribution Chart - Compact */}
           <div className="flex flex-col items-center space-y-1">
-            <div className="text-xs text-gray-400 font-medium text-center">Action Distribution</div>
+            <div className="text-xs text-ui-text-secondary font-medium text-center">Action Distribution</div>
             <div 
               className="w-full h-14 bg-gray-800/50 rounded-xl p-2 flex items-center justify-center cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
               onDoubleClick={() => handleChartDoubleTap('actions', 'Action Distribution')}
@@ -1024,7 +1031,7 @@ const TrainingDashboard: React.FC = () => {
               <Doughnut data={actionDistributionData} options={enhancedDoughnutOptions} />
               {isMobile && (
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="text-xs text-gray-300 bg-black/70 px-2 py-1 rounded-lg text-center">
+                  <div className="text-xs text-ui-text-primary" style={{ background: 'var(--ui-overlay)', padding: '4px 8px', borderRadius: 8 }}>
                     Double-tap to expand
                   </div>
                 </div>
@@ -1034,7 +1041,7 @@ const TrainingDashboard: React.FC = () => {
 
           {/* Expert Usage Chart - Compact */}
           <div className="flex flex-col items-center space-y-1">
-            <div className="text-xs text-gray-400 font-medium text-center">Expert Usage</div>
+            <div className="text-xs text-ui-text-secondary font-medium text-center">Expert Usage</div>
             <div 
               className="w-full h-14 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
               onDoubleClick={() => handleChartDoubleTap('experts', 'Expert Usage')}
@@ -1050,7 +1057,7 @@ const TrainingDashboard: React.FC = () => {
               <Bar data={expertUsageData} options={enhancedBarOptions} />
               {isMobile && (
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="text-xs text-gray-300 bg-black/70 px-2 py-1 rounded-lg text-center">
+                  <div className="text-xs text-ui-text-primary" style={{ background: 'var(--ui-overlay)', padding: '4px 8px', borderRadius: 8 }}>
                     Double-tap to expand
                   </div>
                 </div>
@@ -1063,15 +1070,15 @@ const TrainingDashboard: React.FC = () => {
         <div className="flex space-x-2 mb-2">
           <button
             onClick={() => setActiveTab('core')}
-            className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'core' ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-400'}`}
+            className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'core' ? 'bg-ui-brand-primary text-white' : 'bg-ui-surface-elevated text-ui-text-secondary'}`}
           >Core</button>
           <button
             onClick={() => setActiveTab('trends')}
-            className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'trends' ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-400'}`}
+            className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'trends' ? 'bg-ui-brand-primary text-white' : 'bg-ui-surface-elevated text-ui-text-secondary'}`}
           >Trends</button>
           <button
             onClick={() => setActiveTab('stats')}
-            className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'stats' ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-400'}`}
+            className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'stats' ? 'bg-ui-brand-primary text-white' : 'bg-ui-surface-elevated text-ui-text-secondary'}`}
           >Stats</button>
         </div>
 
@@ -1092,8 +1099,8 @@ const TrainingDashboard: React.FC = () => {
                 }
               </div>
               <div className="min-w-0">
-                <div className="text-xs text-gray-400 font-medium truncate">{metric.title}</div>
-                <div className={`font-bold ${metric.color} text-sm truncate`}>{metric.value}</div>
+                <div className="text-xs text-ui-text-secondary font-medium truncate">{metric.title}</div>
+                <div className={`font-bold ${metric.color} text-sm truncate numeric`}>{metric.value}</div>
               </div>
             </motion.div>
           ))}

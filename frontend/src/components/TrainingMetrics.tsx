@@ -143,19 +143,19 @@ const TrainingMetrics: React.FC = () => {
   ]
 
   return (
-    <div className="space-y-4">
+    <div className="safe-area space-y-4 px-4">
       {/* Animated Training Progress Indicator */}
       {isTraining && currentTrainingData?.is_training_active && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="card-glass p-4 rounded-2xl border border-green-500/30 bg-green-500/10"
+          className="card-glass p-4 rounded-2xl border border-ui-state-success/30 bg-ui-state-success/10"
         >
           <div className="flex items-center space-x-3 mb-3">
-            <Activity className="w-5 h-5 text-green-400 animate-pulse" />
+            <Activity className="w-5 h-5 text-ui-state-success animate-pulse" />
             <div className="flex-1">
-              <div className="text-sm font-medium text-green-300">Training Active</div>
-              <div className="text-xs text-green-400/80">
+              <div className="text-sm font-medium text-ui-text-primary">Training Active</div>
+              <div className="text-xs text-ui-text-secondary">
                 Next episode in ~{getNextEpisodeEstimate()}
               </div>
             </div>
@@ -164,7 +164,7 @@ const TrainingMetrics: React.FC = () => {
           {/* Animated Progress Bar */}
           <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
             <motion.div
-              className="bg-gradient-to-r from-green-400 to-green-300 h-2 rounded-full"
+              className="bg-gradient-to-r from-ui-state-success to-green-300 h-2 rounded-full"
               animate={{ x: `${progressAnimation - 100}%` }}
               transition={{ duration: 0.5, ease: "linear" }}
               style={{ width: '100%' }}
@@ -188,9 +188,9 @@ const TrainingMetrics: React.FC = () => {
           >
             <div className="flex items-center space-x-2 mb-2">
               <metric.icon className={`w-4 h-4 ${metric.color}`} />
-              <span className="text-xs font-medium text-gray-300">{metric.label}</span>
+              <span className="text-xs font-medium text-ui-text-secondary">{metric.label}</span>
             </div>
-            <div className={`text-xl font-extrabold ${metric.color}`}>
+            <div className={`text-xl font-extrabold ${metric.color} numeric`}>
               {metric.value}
             </div>
           </motion.div>
