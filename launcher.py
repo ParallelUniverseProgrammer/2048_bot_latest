@@ -15,7 +15,6 @@ import json
 import platform
 import asyncio
 import signal
-import psutil
 import atexit
 import argparse
 import logging
@@ -27,18 +26,13 @@ from typing import List, Optional, Tuple, Dict, Any
 from urllib.parse import urlparse
 from datetime import datetime
 
-# Optional imports for enhanced features
-try:
-    import pystray
-    PYTRAY_AVAILABLE = True
-except ImportError:
-    PYTRAY_AVAILABLE = False
-
 # Third-party imports (will be installed if missing)
+PYTRAY_AVAILABLE = False
 try:
     import qrcode
     import qrcode.image.svg
     import netifaces
+    import psutil
     from qrcode import constants
     # GUI imports for QR-only mode
     import tkinter as tk
@@ -46,21 +40,37 @@ try:
     from PIL import Image, ImageTk
     # Modern GUI imports
     import customtkinter as ctk
+    import pystray
+    PYTRAY_AVAILABLE = True
 except ImportError as e:
     print(f"Missing required package: {e}")
     print("Installing required packages...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "qrcode[pil]", "netifaces", "pillow", "customtkinter"], check=True, shell=True)
-    # Re-import after installation
-    import qrcode
-    import qrcode.image.svg
-    import netifaces
-    from qrcode import constants
-    # GUI imports for QR-only mode
-    import tkinter as tk
-    from tkinter import ttk, messagebox
-    from PIL import Image, ImageTk
-    # Modern GUI imports
-    import customtkinter as ctk
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "qrcode[pil]", "netifaces", "pillow", "customtkinter", "psutil", "pystray"],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        # Re-import after installation
+        import qrcode
+        import qrcode.image.svg
+        import netifaces
+        import psutil
+        from qrcode import constants
+        import tkinter as tk
+        from tkinter import ttk, messagebox
+        from PIL import Image, ImageTk
+        import customtkinter as ctk
+        import pystray
+        PYTRAY_AVAILABLE = True
+    except (subprocess.CalledProcessError, ImportError) as install_error:
+        print(f"Failed to install and import required packages: {install_error}")
+        # Fallback for pystray if it fails
+        if 'pystray' in str(install_error):
+            PYTRAY_AVAILABLE = False
+        else:
+            sys.exit(1)
 
 class Colors:
     """Terminal color constants"""
@@ -106,10 +116,10 @@ class ConsoleUI:
         self.micro_step = ""
         
         # Animation frames
-        self.spinner_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-        self.pulse_frames = ['●', '○', '●', '○', '●', '○']
-        self.dots_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-        self.bar_frames = ['▰', '▱', '▰', '▱', '▰', '▱']
+        self.spinner_frames = ["|", "/", "-", "\\"]
+        self.pulse_frames = ["*", " ", "*", " ", "*", " "]
+        self.dots_frames = ["   ", ".  ", ".. ", "..."]
+        self.bar_frames = ['=', '-', '=', '-', '=', '-']
         
         self.frame_index = 0
         self.last_frame_time = time.perf_counter()  # Use perf_counter for precise timing
@@ -141,14 +151,25 @@ class ConsoleUI:
         return any(color_term in term for color_term in color_terms)
     
     def _check_unicode_support(self) -> bool:
-        """Check if terminal supports Unicode characters"""
-        try:
-            # Test Unicode output
-            sys.stdout.write('█')
-            sys.stdout.flush()
-            return True
-        except UnicodeEncodeError:
+        """More robustly check if the terminal supports Unicode characters."""
+        if self.no_color:
             return False
+        
+        if platform.system() == "Windows":
+            # On Windows, the console's encoding is the most reliable check.
+            # 'utf-8' (or cp 65001) indicates a modern terminal (like Windows Terminal).
+            encoding = sys.stdout.encoding or ""
+            return encoding.lower() in ('utf-8', 'utf8')
+        else:
+            # For other OSes, we can try a practical test.
+            try:
+                # Writing a box character is a safer test than complex emoji.
+                sys.stdout.write('■')
+                sys.stdout.write('\r \r') # Erase the character
+                sys.stdout.flush()
+                return True
+            except (UnicodeEncodeError, IOError):
+                return False
     
     def _setup_terminal(self):
         """Setup terminal for better display"""
@@ -262,7 +283,7 @@ class ConsoleUI:
                     self.move_cursor(1, 1)
                 
                 # Header with animated title
-                header = "🚀 2048 Bot Training Launcher"
+                header = "2048 Bot Training Launcher"
                 if not self.terminal_supports_unicode:
                     header = "2048 Bot Training Launcher"  # Fallback without emoji
                 title_animation = self._get_title_animation(header)
@@ -331,7 +352,7 @@ class ConsoleUI:
                 
                 # Error message with pulse effect
                 if self.error_message:
-                    error_display = self._get_pulse_effect(f"❌ {self.error_message}")
+                    error_display = f"ERROR: {self.error_message}"
                     if not self.terminal_supports_unicode:
                         error_display = f"ERROR: {self.error_message}"  # Fallback without emoji
                     print(f"\n{' ' * (center_x - len(error_display)//2)}{Colors.FAIL}{error_display}{Colors.ENDC}")
@@ -472,7 +493,7 @@ class ConsoleUI:
         center_x = self.terminal_width // 2
         
         # Animated header with celebration effect
-        header = "🎉 2048 Bot Training Ready!"
+        header = "2048 Bot Training Ready!"
         if not self.terminal_supports_unicode:
             header = "2048 Bot Training Ready!"  # Fallback without emoji
         print(f"\n{Colors.HEADER}{header:^{self.terminal_width}}{Colors.ENDC}")
@@ -490,7 +511,7 @@ class ConsoleUI:
         print(f"\n{Colors.HEADER}{separator:^{self.terminal_width}}{Colors.ENDC}")
         
         # QR Code with enhanced display
-        qr_title = "📱 QR Code for Mobile Access"
+        qr_title = "QR Code for Mobile Access"
         if not self.terminal_supports_unicode:
             qr_title = "QR Code for Mobile Access"  # Fallback without emoji
         print(f"\n{Colors.OKCYAN}{qr_title:^{self.terminal_width}}{Colors.ENDC}")
@@ -499,12 +520,12 @@ class ConsoleUI:
         QRCodeGenerator.generate_qr_code(frontend_url, "mobile_access_qr.png", center=True, term_width=self.terminal_width)
         
         # Enhanced instructions
-        instruction_title = "📱 Scan this QR code with your phone!"
+        instruction_title = "Scan this QR code with your phone!"
         if not self.terminal_supports_unicode:
             instruction_title = "Scan this QR code with your phone!"  # Fallback without emoji
         print(f"\n{Colors.OKCYAN}{instruction_title:^{self.terminal_width}}{Colors.ENDC}")
         
-        ios_msg = "💡 iOS: Tap share (📤) then 'Add to Home Screen'"
+        ios_msg = "iOS: Tap share then 'Add to Home Screen'"
         if not self.terminal_supports_unicode:
             ios_msg = "iOS: Tap share then 'Add to Home Screen'"  # Fallback without emoji
         print(f"{Colors.WARNING}{ios_msg:^{self.terminal_width}}{Colors.ENDC}")
@@ -575,7 +596,7 @@ class ConsoleUI:
 class Logger:
     """Enhanced logging with file output"""
     
-    def __init__(self, log_file: str = "launcher.log"):
+    def __init__(self, log_file: str = "launcher.log", level: str = "INFO"):
         self.log_file = log_file
         self.logger = logging.getLogger("Launcher")
         self.logger.setLevel(logging.DEBUG)
@@ -586,7 +607,14 @@ class Logger:
         
         # Console handler
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
+        # Map string level
+        level_map = {
+            "DEBUG": logging.DEBUG,
+            "INFO": logging.INFO,
+            "WARNING": logging.WARNING,
+            "ERROR": logging.ERROR,
+        }
+        console_handler.setLevel(level_map.get(level.upper(), logging.INFO))
         
         # Formatter
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -624,20 +652,19 @@ class GUIWindow:
         self.system_tray = None
         self.current_progress = 0.0
         self.target_progress = 0.0
-        
-        # Configure CustomTkinter for vibrant PC-forward appearance
-        ctk.set_appearance_mode("dark")  # Force dark theme for consistency
+        # Theme (PC context, minimal, dark)
+        ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
         
-        # Create compact main window
+        # Window
         self.window = ctk.CTk()
         self.window.title("2048 Bot Launcher")
-        self.window.geometry("450x420")  # Increased height to accommodate all content
-        self.window.resizable(False, False)  # Fixed size
-        self.window.minsize(450, 420)
-        self.window.maxsize(450, 420)
-        
-        # Set project icon
+        self.window.geometry("880x440")
+        self.window.resizable(False, False)
+        self.window.minsize(880, 440)
+        self.window.maxsize(880, 440)
+
+        # Icon
         try:
             icon_path = Path("project_icon.png")
             if icon_path.exists():
@@ -645,305 +672,107 @@ class GUIWindow:
                     ico_path = Path("project_icon.ico")
                     if not ico_path.exists():
                         from PIL import Image
-                        img = Image.open(icon_path)
-                        img.save(ico_path, format='ICO')
+                        Image.open(icon_path).save(ico_path, format='ICO')
                     self.window.iconbitmap(str(ico_path))
                 else:
                     self.window.iconphoto(True, tk.PhotoImage(file=str(icon_path)))
         except Exception as e:
             self.logger.warning(f"Could not set window icon: {e}")
         
-        # Center window on screen with CustomTkinter-specific fixes
+        # Center window
         self.window.update_idletasks()
-        x = (self.window.winfo_screenwidth() // 2) - (450 // 2)
-        y = (self.window.winfo_screenheight() // 2) - (420 // 2)
-        
-        # Force window constraints first to prevent square appearance
-        self.window.minsize(450, 480)  # Increased height to accommodate buttons
-        self.window.maxsize(450, 480)  # Increased height to accommodate buttons
-        self.window.resizable(False, False)
-        
-        # Set geometry with delayed approach for Windows compatibility
+        x = (self.window.winfo_screenwidth() // 2) - (880 // 2)
+        y = (self.window.winfo_screenheight() // 2) - (440 // 2)
         self.window.after(100, lambda: self._set_window_geometry(x, y))
         
-        # Create main container with consistent padding
+        # Root container (landscape layout)
         self.main_frame = ctk.CTkFrame(self.window, fg_color="transparent")
-        self.main_frame.pack(fill="both", expand=True, padx=12, pady=12)
-        
-        # Calculate available space for dynamic sizing
-        self.window.update_idletasks()
-        available_width = 450 - 24  # 426px
-        available_height = 480 - 24  # 456px - increased for buttons
-        
-        # Force window to render and get actual dimensions
-        self.window.update()
-        actual_width = self.window.winfo_width()
-        actual_height = self.window.winfo_height()
-        
-        # Use actual dimensions if available, otherwise fall back to calculated
-        if actual_width > 0 and actual_height > 0:
-            available_width = actual_width - 24
-            available_height = actual_height - 24
-            self.logger.info(f"Using actual window dimensions: {actual_width}x{actual_height}")
-        else:
-            self.logger.info(f"Using calculated dimensions: {available_width}x{available_height}")
-        
-        # Progress section (fixed height: ~60px)
-        self.progress_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.progress_frame.pack(fill="x", pady=(0, 8))
-        
-        # Step label (large, prominent, centered)
-        self.step_label = ctk.CTkLabel(
-            self.progress_frame,
-            text="Initializing...",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=("black", "white")
-        )
-        self.step_label.pack(pady=(0, 8))
-        
-        # Progress bar (thicker, vibrant colors)
-        self.progress_bar = ctk.CTkProgressBar(
-            self.progress_frame, 
-            height=20,
-            progress_color="#3b82f6",  # Vibrant blue from style guide
-            fg_color="#1e293b"  # Darker background
-        )
-        self.progress_bar.pack(fill="x", pady=(0, 8))
+        self.main_frame.pack(fill="both", expand=True, padx=16, pady=16)
+        self.main_frame.grid_columnconfigure(0, weight=1)
+        self.main_frame.grid_columnconfigure(1, weight=0)
+
+        # Left panel (status and controls)
+        left = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+
+        title = ctk.CTkLabel(left, text="2048 Bot Launcher", font=ctk.CTkFont(size=18, weight="bold"))
+        title.pack(anchor="w", pady=(0, 8))
+
+        # Stylish status chips with micro bars
+        chips = ctk.CTkFrame(left, fg_color="#111827", corner_radius=10)
+        chips.pack(fill="x", pady=(0, 10))
+
+        def make_chip(parent, label_text):
+            frame = ctk.CTkFrame(parent, fg_color="#0f172a", corner_radius=10)
+            frame.pack(fill="x", padx=8, pady=6)
+            # Larger indicator dot and bold, single-line label
+            dot = ctk.CTkLabel(frame, text="●", font=ctk.CTkFont(size=18, weight="bold"), text_color="#f59e0b")
+            dot.grid(row=0, column=0, padx=(12, 8), pady=10, sticky="w")
+            label = ctk.CTkLabel(frame, text=f"{label_text}: Starting...", font=ctk.CTkFont(size=13, weight="bold"), text_color="#f59e0b")
+            label.grid(row=0, column=1, padx=(0, 12), pady=10, sticky="w")
+            frame.grid_columnconfigure(1, weight=1)
+            return dot, label
+
+        self.backend_indicator, self.backend_status = make_chip(chips, "Backend")
+        self.frontend_indicator, self.frontend_status = make_chip(chips, "Frontend")
+        self.tunnel_indicator, self.tunnel_status = make_chip(chips, "Tunnel")
+
+        # Progress
+        self.step_label = ctk.CTkLabel(left, text="Initializing...", font=ctk.CTkFont(size=14, weight="bold"))
+        self.step_label.pack(pady=(6, 6), anchor="w")
+        self.progress_bar = ctk.CTkProgressBar(left, height=14, progress_color="#3b82f6", fg_color="#1f2937")
+        self.progress_bar.pack(fill="x")
         self.progress_bar.set(0)
-        
-        # Error display (integrated into progress area)
-        self.error_label = ctk.CTkLabel(
-            self.progress_frame,
-            text="",
-            font=ctk.CTkFont(size=10),
-            text_color="red",
-            wraplength=available_width - 24
-        )
-        
-        # Status and controls section (fixed height, no expansion)
-        self.status_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.status_frame.pack(fill="x")
-        
-        # Service status grid (fixed height: ~40px)
-        self.status_grid = ctk.CTkFrame(self.status_frame, fg_color="transparent")
-        self.status_grid.pack(fill="x", pady=(0, 8))
-        
-        # Configure grid columns
-        self.status_grid.grid_columnconfigure(0, weight=1)
-        self.status_grid.grid_columnconfigure(1, weight=1)
-        self.status_grid.grid_columnconfigure(2, weight=1)
-        
-        # Backend status widget (sophisticated indicator)
-        self.backend_status_frame = ctk.CTkFrame(
-            self.status_grid,
-            fg_color="#1e293b",  # Dark background
-            corner_radius=8,
-            height=40
-        )
-        self.backend_status_frame.grid(row=0, column=0, padx=4, pady=4, sticky="ew")
-        self.backend_status_frame.grid_propagate(False)  # Maintain fixed height
-        
-        # Backend status indicator (animated dot)
-        self.backend_indicator = ctk.CTkLabel(
-            self.backend_status_frame,
-            text="●",
-            font=ctk.CTkFont(size=12),
-            text_color="#f59e0b"  # Orange for starting
-        )
-        self.backend_indicator.pack(side="left", padx=(8, 4))
-        
-        # Backend status text
-        self.backend_status = ctk.CTkLabel(
-            self.backend_status_frame,
-            text="Backend\nStarting...",
-            font=ctk.CTkFont(size=9, weight="bold"),
-            text_color="#f59e0b"
-        )
-        self.backend_status.pack(side="left", padx=(0, 8), fill="both", expand=True)
-        
-        # Frontend status widget (sophisticated indicator)
-        self.frontend_status_frame = ctk.CTkFrame(
-            self.status_grid,
-            fg_color="#1e293b",  # Dark background
-            corner_radius=8,
-            height=40
-        )
-        self.frontend_status_frame.grid(row=0, column=1, padx=4, pady=4, sticky="ew")
-        self.frontend_status_frame.grid_propagate(False)  # Maintain fixed height
-        
-        # Frontend status indicator (animated dot)
-        self.frontend_indicator = ctk.CTkLabel(
-            self.frontend_status_frame,
-            text="●",
-            font=ctk.CTkFont(size=12),
-            text_color="#f59e0b"  # Orange for starting
-        )
-        self.frontend_indicator.pack(side="left", padx=(8, 4))
-        
-        # Frontend status text
-        self.frontend_status = ctk.CTkLabel(
-            self.frontend_status_frame,
-            text="Frontend\nStarting...",
-            font=ctk.CTkFont(size=9, weight="bold"),
-            text_color="#f59e0b"
-        )
-        self.frontend_status.pack(side="left", padx=(0, 8), fill="both", expand=True)
-        
-        # Tunnel status widget (sophisticated indicator)
-        self.tunnel_status_frame = ctk.CTkFrame(
-            self.status_grid,
-            fg_color="#1e293b",  # Dark background
-            corner_radius=8,
-            height=40
-        )
-        self.tunnel_status_frame.grid(row=0, column=2, padx=4, pady=4, sticky="ew")
-        self.tunnel_status_frame.grid_propagate(False)  # Maintain fixed height
-        
-        # Tunnel status indicator (animated dot)
-        self.tunnel_indicator = ctk.CTkLabel(
-            self.tunnel_status_frame,
-            text="●",
-            font=ctk.CTkFont(size=12),
-            text_color="#6b7280"  # Gray for not started
-        )
-        self.tunnel_indicator.pack(side="left", padx=(8, 4))
-        
-        # Tunnel status text
-        self.tunnel_status = ctk.CTkLabel(
-            self.tunnel_status_frame,
-            text="Tunnel\nNot started",
-            font=ctk.CTkFont(size=9, weight="bold"),
-            text_color="#6b7280"
-        )
-        self.tunnel_status.pack(side="left", padx=(0, 8), fill="both", expand=True)
-        
-        # URL and QR display (centered)
-        self.url_frame = ctk.CTkFrame(self.status_frame, fg_color="transparent")
-        self.url_frame.pack(fill="x", pady=(0, 8))
-        
-        # URL section (centered)
-        self.url_label = ctk.CTkLabel(
-            self.url_frame,
-            text="Access URL:",
-            font=ctk.CTkFont(size=10, weight="bold")
-        )
-        self.url_label.pack(pady=(0, 4))
-        
-        self.url_entry = ctk.CTkEntry(
-            self.url_frame,
-            font=ctk.CTkFont(size=9),
-            height=24,
-            placeholder_text="Generating..."
-        )
-        self.url_entry.pack(fill="x", pady=(0, 8))
-        
-        # QR code section (centered, fixed size)
-        self.qr_frame = ctk.CTkFrame(self.url_frame, fg_color="transparent")
-        self.qr_frame.pack(pady=(0, 4))
-        
-        self.qr_label = ctk.CTkLabel(
-            self.qr_frame,
-            text="QR Code:",
-            font=ctk.CTkFont(size=9, weight="bold")
-        )
-        self.qr_label.pack(pady=(0, 4))
-        
-        # QR code placeholder (180x180 - larger to fill extra space)
-        self.qr_placeholder_frame = ctk.CTkFrame(
-            self.qr_frame,
-            fg_color="#374151",  # Style guide background
-            corner_radius=8,
-            width=180,
-            height=180
-        )
-        self.qr_placeholder_frame.pack(pady=(0, 0))
-        self.qr_placeholder_frame.pack_propagate(False)  # Maintain size
-        
-        # QR image label (will show placeholder immediately)
-        self.qr_image_label = ctk.CTkLabel(self.qr_frame, text="")
-        
-        # Create and show placeholder QR code immediately
-        self._create_placeholder_qr()
-        
-        # Control buttons (ensure visibility with fixed positioning)
-        self.button_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.button_frame.pack(fill="x", side="bottom", pady=(4, 0))  # Reduced padding
-        
-        # Configure button grid
-        self.button_frame.grid_columnconfigure(0, weight=1)
-        self.button_frame.grid_columnconfigure(1, weight=1)
-        self.button_frame.grid_columnconfigure(2, weight=1)
-        self.button_frame.grid_columnconfigure(3, weight=1)
-        
-        # Calculate optimal button height - now with more space
-        # Fixed elements: Progress(70) + Status(52) + URL(64) + QR(178) + Spacing(48) = 412px
-        # Available: 456px, Remaining: 44px for buttons + padding
-        optimal_button_height = 32  # Back to comfortable size
-        
-        # Stop button (vibrant red, optimal size)
-        self.stop_button = ctk.CTkButton(
-            self.button_frame,
-            text="Stop",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            height=optimal_button_height,
-            fg_color="#ef4444",  # Vibrant red from style guide
-            hover_color="#dc2626",  # Darker red
-            command=self._stop_services
-        )
-        self.stop_button.grid(row=0, column=0, padx=2, pady=4, sticky="ew")
-        
-        # Restart button (vibrant blue, optimal size)
-        self.restart_button = ctk.CTkButton(
-            self.button_frame,
-            text="Restart",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            height=optimal_button_height,
-            fg_color="#3b82f6",  # Vibrant blue from style guide
-            hover_color="#2563eb",  # Darker blue
-            command=self._restart_services
-        )
-        self.restart_button.grid(row=0, column=1, padx=2, pady=4, sticky="ew")
-        
-        # Logs button (vibrant gray, optimal size)
-        self.logs_button = ctk.CTkButton(
-            self.button_frame,
-            text="Logs",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            height=optimal_button_height,
-            fg_color="#6b7280",  # Vibrant gray from style guide
-            hover_color="#4b5563",  # Darker gray
-            command=self._view_logs
-        )
-        self.logs_button.grid(row=0, column=2, padx=2, pady=4, sticky="ew")
-        
-        # Copy URL button (vibrant green, optimal size)
-        self.copy_button = ctk.CTkButton(
-            self.button_frame,
-            text="Copy URL",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            height=optimal_button_height,
-            fg_color="#22c55e",  # Vibrant green from style guide
-            hover_color="#16a34a",  # Darker green
-            command=self._copy_url
-        )
-        self.copy_button.grid(row=0, column=3, padx=2, pady=4, sticky="ew")
-        
-        # Initialize system tray
+        self.error_label = ctk.CTkLabel(left, text="", font=ctk.CTkFont(size=11), text_color="#f87171")
+
+        # URL + Copy
+        url_row = ctk.CTkFrame(left, fg_color="transparent")
+        url_row.pack(fill="x", pady=(12, 6))
+        url_label = ctk.CTkLabel(url_row, text="Access URL", font=ctk.CTkFont(size=12, weight="bold"))
+        url_label.pack(anchor="w", pady=(0, 6))
+        url_inner = ctk.CTkFrame(url_row, fg_color="#111827", corner_radius=8)
+        url_inner.pack(fill="x")
+        url_inner.grid_columnconfigure(0, weight=1)
+        self.url_entry = ctk.CTkEntry(url_inner, placeholder_text="Generating...", height=28)
+        self.url_entry.grid(row=0, column=0, padx=8, pady=8, sticky="ew")
+        self.copy_button = ctk.CTkButton(url_inner, text="Copy", width=72, command=self._copy_url)
+        self.copy_button.grid(row=0, column=1, padx=8, pady=8)
+
+        # Buttons
+        btn_row = ctk.CTkFrame(left, fg_color="transparent")
+        btn_row.pack(fill="x", pady=(6, 0))
+        btn_row.grid_columnconfigure(0, weight=1)
+        btn_row.grid_columnconfigure(1, weight=1)
+        self.stop_button = ctk.CTkButton(btn_row, text="Stop", fg_color="#ef4444", hover_color="#dc2626", height=34, command=self._stop_services)
+        self.stop_button.grid(row=0, column=0, padx=4, pady=4, sticky="ew")
+        self.logs_button = ctk.CTkButton(btn_row, text="Logs", fg_color="#374151", hover_color="#4b5563", height=34, command=self._view_logs)
+        self.logs_button.grid(row=0, column=1, padx=4, pady=4, sticky="ew")
+
+        # Right panel (QR)
+        right = ctk.CTkFrame(self.main_frame, fg_color="#111827", corner_radius=12)
+        right.grid(row=0, column=1, sticky="nsew")
+        right.grid_rowconfigure(1, weight=1)
+        qr_header = ctk.CTkLabel(right, text="Scan to open", font=ctk.CTkFont(size=13, weight="bold"))
+        qr_header.grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
+        container = ctk.CTkFrame(right, fg_color="#0f172a", corner_radius=12)
+        container.grid(row=1, column=0, padx=12, pady=6, sticky="nsew")
+        container.grid_columnconfigure(0, weight=1)
+        target_size = 380
+        self.qr_placeholder_frame = ctk.CTkFrame(container, fg_color="#0b0f14", corner_radius=12, width=target_size, height=target_size)
+        self.qr_placeholder_frame.grid(row=0, column=0)
+        self.qr_placeholder_frame.grid_propagate(False)
+        self.qr_image_label = ctk.CTkLabel(container, text="")
+        self._create_placeholder_qr(size=target_size)
+        qr_hint = ctk.CTkLabel(right, text="Scan with your camera to open", font=ctk.CTkFont(size=11, weight="bold"), text_color="#9ca3af")
+        qr_hint.grid(row=2, column=0, padx=12, pady=(0, 10), sticky="w")
+
+        # Tray + events
         self._init_system_tray()
-        
-        # Bind window close event
         self.window.protocol("WM_DELETE_WINDOW", self._on_closing)
-        
-        # Bind keyboard shortcuts
         self.window.bind("<Control-s>", lambda e: self._stop_services())
-        self.window.bind("<Control-r>", lambda e: self._restart_services())
         self.window.bind("<Control-l>", lambda e: self._view_logs())
         self.window.bind("<Control-c>", lambda e: self._copy_url())
-        
-        # Focus on window
         self.window.focus_force()
-        
-        # Start progress animation
         self._start_progress_animation()
     
     def _set_window_geometry(self, x: int, y: int):
@@ -952,15 +781,15 @@ class GUIWindow:
             # Force window update before setting geometry
             self.window.update_idletasks()
             
-            # Set the geometry
-            self.window.geometry(f"450x480+{x}+{y}")
+            # Landscape geometry; slightly taller to avoid clipping bottom content
+            self.window.geometry(f"900x480+{x}+{y}")
             
             # Force another update to ensure geometry is applied
             self.window.update()
             
             # Double-check constraints are still enforced
-            self.window.minsize(450, 480)
-            self.window.maxsize(450, 480)
+            self.window.minsize(900, 480)
+            self.window.maxsize(900, 480)
             
             self.logger.info("Window geometry set successfully")
         except Exception as e:
@@ -971,47 +800,62 @@ class GUIWindow:
             except Exception as e2:
                 self.logger.error(f"Fallback geometry setting also failed: {e2}")
     
-    def _create_placeholder_qr(self):
-        """Create a blurred placeholder QR code"""
+    def _create_placeholder_qr(self, size: int = 180):
+        """Create a more realistic, heavily blurred placeholder QR code."""
         self.logger.info("Creating placeholder QR code...")
         try:
             from PIL import Image, ImageDraw, ImageFilter
             
-            # Create a simple QR-like pattern (larger size)
-            size = 180
+            # Create base image and draw context
             img = Image.new('RGB', (size, size), color='white')
             draw = ImageDraw.Draw(img)
-            
-            # Draw a simple grid pattern that looks like a QR code
-            for i in range(0, size, 18):
-                for j in range(0, size, 18):
-                    if (i + j) % 36 == 0:  # Create a pattern
-                        draw.rectangle([i, j, i+17, j+17], fill='black')
-            
-            # Add corner squares (like real QR codes)
-            draw.rectangle([0, 0, 44, 44], fill='black')
-            draw.rectangle([5, 5, 39, 39], fill='white')
-            draw.rectangle([10, 10, 34, 34], fill='black')
-            
-            draw.rectangle([size-45, 0, size-1, 44], fill='black')
-            draw.rectangle([size-40, 5, size-6, 39], fill='white')
-            draw.rectangle([size-35, 10, size-11, 34], fill='black')
-            
-            draw.rectangle([0, size-45, 44, size-1], fill='black')
-            draw.rectangle([5, size-40, 39, size-6], fill='white')
-            draw.rectangle([10, size-35, 34, size-11], fill='black')
-            
-            # Blur the image to make it look like a placeholder
-            img = img.filter(ImageFilter.GaussianBlur(radius=2))
+
+            # Parameters for a more QR-like grid
+            module = max(6, size // 42)        # approximate module size
+            gap = 1                             # small gap between modules
+            grid = (size // module)
+
+            # Procedural pattern for modules to mimic QR density
+            for y in range(0, grid):
+                for x in range(0, grid):
+                    # Skip finder areas; fill rest with a pseudo-random but deterministic pattern
+                    in_tl = (x < 7 and y < 7)
+                    in_tr = (x > grid - 8 and y < 7)
+                    in_bl = (x < 7 and y > grid - 8)
+                    if in_tl or in_tr or in_bl:
+                        continue
+                    # Pattern based on hash-like function
+                    v = (x * 37 + y * 91 + (x ^ y) * 17) % 9
+                    if v in (0, 3, 5):
+                        x0 = x * module
+                        y0 = y * module
+                        draw.rectangle([x0, y0, x0 + module - gap, y0 + module - gap], fill='black')
+
+            # Draw finder patterns with rings
+            def finder(cx: int, cy: int):
+                s3 = module * 7
+                s2 = module * 5
+                s1 = module * 3
+                draw.rectangle([cx, cy, cx + s3, cy + s3], fill='black')
+                draw.rectangle([cx + module, cy + module, cx + s2, cy + s2], fill='white')
+                draw.rectangle([cx + 2 * module, cy + 2 * module, cx + s1, cy + s1], fill='black')
+
+            finder(0, 0)
+            finder(size - module * 7, 0)
+            finder(0, size - module * 7)
+
+            # Heavy blur to make it obviously a preview
+            img = img.filter(ImageFilter.GaussianBlur(radius=max(4, size // 80)))
+            img = img.filter(ImageFilter.UnsharpMask(radius=2, percent=80, threshold=3))
             
             # Convert to CTkImage (larger size)
-            qr_photo = ctk.CTkImage(light_image=img, dark_image=img, size=(180, 180))
+            qr_photo = ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
             
             # Show the placeholder immediately
             self.qr_placeholder_frame.pack_forget()
             self.qr_image_label.configure(image=qr_photo, text="")
             self.qr_image_label.image = qr_photo  # Keep reference
-            self.qr_image_label.pack(pady=(0, 4))
+            self.qr_image_label.pack(pady=(0, 6))
             
             # Force update to ensure it's visible
             self.window.update()
@@ -1046,6 +890,24 @@ class GUIWindow:
                 if abs(self.current_progress - self.target_progress) > 0.01:
                     self.current_progress += (self.target_progress - self.current_progress) * 0.1
                     self.progress_bar.set(self.current_progress)
+                # Subtle pulsing of indicator colors while starting; bolder
+                pulse = 0.6 + 0.4 * math.sin(time.time() * 2.5)
+                def tone(hex_color: str) -> str:
+                    try:
+                        c = hex_color.lstrip('#')
+                        r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+                        r = int(r * (0.8 + 0.2 * pulse))
+                        g = int(g * (0.8 + 0.2 * pulse))
+                        b = int(b * (0.8 + 0.2 * pulse))
+                        return f"#{r:02x}{g:02x}{b:02x}"
+                    except Exception:
+                        return hex_color
+                # Pulse only for non-green states and emphasize selected hues
+                for indicator in [self.backend_indicator, self.frontend_indicator, self.tunnel_indicator]:
+                    col = indicator.cget("text_color")
+                    base = "#f59e0b" if col in ("#f59e0b", "orange") else ("#6b7280" if col in ("#6b7280", "gray", "grey") else col)
+                    if isinstance(col, str) and col not in ("#00ff00", "green"):
+                        indicator.configure(text_color=tone(base if isinstance(base, str) and base.startswith('#') else "#f59e0b"))
             self.window.after(50, animate_progress)  # 20 FPS
         
         animate_progress()
@@ -1172,11 +1034,18 @@ class GUIWindow:
             
             if error:
                 self.error_label.configure(text=f"Error: {error}")
-                self.error_label.pack(pady=(4, 0))
+                self.error_label.pack(pady=(6, 0))
                 # Change progress bar color to indicate error
                 self.progress_bar.configure(progress_color="red")
             else:
-                self.error_label.pack_forget()
+                try:
+                    self.error_label.pack_forget()
+                except Exception:
+                    pass
+                try:
+                    self.error_label.pack_forget()
+                except Exception:
+                    pass
                 # Restore normal progress bar color
                 self.progress_bar.configure(progress_color="#3b82f6")  # Vibrant blue
                 
@@ -1191,14 +1060,14 @@ class GUIWindow:
             self.url_entry.delete(0, "end")
             self.url_entry.insert(0, frontend_url)
             
-            # Generate QR code
+            # Generate QR code (fill wide, crisp)
             try:
                 import qrcode
                 qr = qrcode.QRCode(
-                    version=1,
-                    error_correction=qrcode.constants.ERROR_CORRECT_L,
-                    box_size=5,  # Larger boxes for 180x180 size
-                    border=4,
+                    version=None,  # let library choose fit
+                    error_correction=qrcode.constants.ERROR_CORRECT_M,
+                    box_size=10,
+                    border=2,
                 )
                 qr.add_data(frontend_url)
                 qr.make(fit=True)
@@ -1213,14 +1082,24 @@ class GUIWindow:
                 else:
                     pil_image = qr_image.convert('RGB')
                 
-                # Convert to CTkImage for 180x180 size
-                qr_photo = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(180, 180))
+                # Scale to target size for the UI
+                target = 400
+                try:
+                    from PIL import Image
+                    pil_image = pil_image.resize((target, target), Image.NEAREST)
+                except Exception:
+                    pass
+                qr_photo = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(target, target))
                 
                 # Hide placeholder and show QR code
                 self.qr_placeholder_frame.pack_forget()
                 self.qr_image_label.configure(image=qr_photo, text="")
                 self.qr_image_label.image = qr_photo  # Keep reference
-                self.qr_image_label.pack(anchor="w", pady=(0, 4))
+                try:
+                    # When using grid container, place it over placeholder frame
+                    self.qr_image_label.grid(row=0, column=0)
+                except Exception:
+                    self.qr_image_label.pack(anchor="center", pady=(0, 4))
                 
             except ImportError:
                 self.logger.warning("qrcode library not available, skipping QR generation")
@@ -1457,11 +1336,12 @@ class GUIWindow:
                 self.window.destroy()
             except:
                 pass
-            
+            # Ensure window is torn down
             if self.window:
-                self.window.destroy()
-        except Exception as e:
-            self.logger.error(f"Error destroying window: {e}")
+                try:
+                    self.window.destroy()
+                except Exception:
+                    pass
     
     def _stop_status_animations(self):
         """Stop all status indicator animations"""
@@ -1506,69 +1386,21 @@ class PortManager:
     
     @staticmethod
     def kill_process_on_port(port: int) -> bool:
-        """Kill any process using the specified port with platform-specific improvements"""
+        """Kill any process using the specified port using psutil (cross-platform)."""
         try:
-            if platform.system() == "Windows":
-                return PortManager._kill_process_on_port_windows(port)
-            else:
-                return PortManager._kill_process_on_port_unix(port)
-        except Exception as e:
-            print(f"{Colors.WARNING}Error killing process on port {port}: {e}{Colors.ENDC}")
-            return False
-    
-    @staticmethod
-    def _kill_process_on_port_windows(port: int) -> bool:
-        """Windows-specific port killing using netstat and taskkill"""
-        try:
-            # Use netstat to find process using the port
-            result = subprocess.run(
-                ['netstat', '-ano'], 
-                capture_output=True, 
-                text=True, 
-                shell=True
-            )
-            
-            if result.returncode != 0:
-                return False
-                
-            # Parse netstat output to find PID using the port
-            lines = result.stdout.split('\n')
-            for line in lines:
-                if f':{port} ' in line and 'LISTENING' in line:
-                    parts = line.split()
-                    if len(parts) >= 5:
-                        pid = parts[-1]
-                        if pid.isdigit() and pid != '0':  # Skip System Idle Process
-                            # Kill the process
-                            kill_result = subprocess.run(
-                                ['taskkill', '/PID', pid, '/F'],
-                                capture_output=True,
-                                text=True,
-                                shell=True
-                            )
-                            if kill_result.returncode == 0:
-                                print(f"{Colors.WARNING}Killed process {pid} on port {port}{Colors.ENDC}")
-                                return True
-            return False
-        except Exception:
-            return False
-    
-    @staticmethod
-    def _kill_process_on_port_unix(port: int) -> bool:
-        """Unix-specific port killing using psutil"""
-        try:
-            # Find processes using the port
             for proc in psutil.process_iter(['pid', 'name']):
                 try:
-                    # Get connections for this process
-                    connections = proc.net_connections()
-                    for conn in connections:
-                        if hasattr(conn, 'laddr') and hasattr(conn.laddr, 'port') and conn.laddr.port == port:
+                    for conn in proc.connections(kind='inet'):
+                        if conn.laddr.port == port and conn.status == psutil.CONN_LISTEN:
                             print(f"{Colors.WARNING}Killing process {proc.info['name']} (PID: {proc.info['pid']}) on port {port}{Colors.ENDC}")
                             proc.terminate()
-                            proc.wait(timeout=5)
+                            try:
+                                proc.wait(timeout=5)
+                            except psutil.TimeoutExpired:
+                                print(f"{Colors.WARNING}Process {proc.info['pid']} did not terminate, killing.")
+                                proc.kill()
                             return True
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired, psutil.ZombieProcess):
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     continue
         except Exception as e:
             print(f"{Colors.WARNING}Error killing process on port {port}: {e}{Colors.ENDC}")
@@ -1587,132 +1419,72 @@ class PortManager:
         return False
 
 class NetworkDiscovery:
-    """Handles network discovery and IP address detection"""
-    
-    @staticmethod
-    def get_local_ip_addresses() -> List[str]:
-        """Get all possible local IP addresses"""
-        ip_addresses = []
-        
-        # Method 1: Using netifaces to get all network interfaces
-        try:
-            for interface in netifaces.interfaces():
-                try:
-                    addresses = netifaces.ifaddresses(interface)
-                    if netifaces.AF_INET in addresses:
-                        for addr_info in addresses[netifaces.AF_INET]:
-                            ip = addr_info.get('addr')
-                            if ip and not ip.startswith('127.') and not ip.startswith('169.254.'):
-                                ip_addresses.append(ip)
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        
-        # Method 2: Socket-based discovery
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.connect(("8.8.8.8", 80))
-                ip = s.getsockname()[0]
-                if ip not in ip_addresses:
-                    ip_addresses.append(ip)
-        except Exception:
-            pass
-        
-        # Method 3: Get hostname IP
-        try:
-            hostname = socket.gethostname()
-            ip = socket.gethostbyname(hostname)
-            if ip and not ip.startswith('127.') and ip not in ip_addresses:
-                ip_addresses.append(ip)
-        except Exception:
-            pass
-        
-        return ip_addresses
-    
+    """Handles network discovery and IP address detection using psutil for cross-platform compatibility."""
+
     @staticmethod
     def find_best_ip() -> Optional[str]:
-        """Find the best IP address for LAN access"""
-        ip_addresses = NetworkDiscovery.get_local_ip_addresses()
-        
-        if not ip_addresses:
-            return None
-        
-        # Get network adapter info to avoid virtual adapters (Windows)
-        if platform.system() == "Windows":
+        """Find the best IP address for LAN access using a robust, cross-platform method."""
+        candidate_ips = []
+        try:
+            if_addrs = psutil.net_if_addrs()
+            if_stats = psutil.net_if_stats()
+
+            for iface, addrs in if_addrs.items():
+                # Check if interface is up, not a loopback
+                if iface in if_stats and if_stats[iface].isup and 'loopback' not in iface.lower():
+                    # Filter out common virtual network interface names
+                    if not any(keyword in iface.lower() for keyword in ['wsl', 'hyper-v', 'virtual', 'tap', 'vpn', 'vethernet']):
+                        for addr in addrs:
+                            # Check for IPv4 addresses, not link-local
+                            if addr.family == socket.AF_INET and addr.address and not addr.address.startswith('169.254.'):
+                                candidate_ips.append(addr.address)
+        except Exception:
+            # psutil might not be available or fail, proceed to fallback.
+            pass
+
+        # Fallback method if psutil fails or yields no results
+        if not candidate_ips:
             try:
-                result = subprocess.run([
-                    'powershell', '-Command', 
-                    'Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | Get-NetIPAddress | Where-Object {$_.AddressFamily -eq "IPv4"} | Select-Object IPAddress,InterfaceAlias | ConvertTo-Json'
-                ], capture_output=True, text=True, shell=True)
-                
-                if result.returncode == 0 and result.stdout.strip():
-                    adapters = json.loads(result.stdout)
-                    if not isinstance(adapters, list):
-                        adapters = [adapters]
-                    
-                    # Prioritize real network adapters over virtual ones
-                    real_adapters = []
-                    virtual_adapters = []
-                    
-                    for adapter in adapters:
-                        ip = adapter['IPAddress']
-                        interface = adapter['InterfaceAlias'].lower()
-                        
-                        # Skip loopback and other non-LAN addresses
-                        if ip.startswith('127.') or ip.startswith('169.254.'):
-                            continue
-                        
-                        # Identify virtual adapters
-                        if any(keyword in interface for keyword in ['wsl', 'hyper-v', 'virtual', 'tap', 'vpn', 'vethernet']):
-                            virtual_adapters.append(ip)
-                        else:
-                            real_adapters.append(ip)
-                    
-                    # Prefer real adapters
-                    preferred_ips = real_adapters if real_adapters else virtual_adapters
-                    
-                    if preferred_ips:
-                        # From real adapters, prefer 192.168.x.x for home networks
-                        for ip in preferred_ips:
-                            if ip.startswith('192.168.'):
-                                return ip
-                        
-                        # Then prefer 10.x.x.x
-                        for ip in preferred_ips:
-                            if ip.startswith('10.'):
-                                return ip
-                        
-                        # Finally accept 172.x.x.x
-                        for ip in preferred_ips:
-                            if ip.startswith('172.'):
-                                return ip
-                        
-                        # Return first available
-                        return preferred_ips[0]
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.settimeout(1)
+                    s.connect(("8.8.8.8", 80))
+                    ip = s.getsockname()[0]
+                    if ip and ip not in candidate_ips:
+                        candidate_ips.append(ip)
             except Exception:
-                pass
-        
-        # Fallback to original method
-        private_ranges = [
-            ('192.168.', 1),  # Most common home networks
-            ('10.', 2),       # Corporate networks  
-            ('172.', 3),      # Less common private range
-        ]
-        
-        # Score and sort IP addresses
-        scored_ips = []
-        for ip in ip_addresses:
-            score = 10  # Default score
-            for prefix, bonus in private_ranges:
-                if ip.startswith(prefix):
-                    score -= bonus
-                    break
-            scored_ips.append((score, ip))
-        
-        # Return the best IP (lowest score)
-        scored_ips.sort()
-        return scored_ips[0][1] if scored_ips else None
+                pass  # Can fail if no network connection
+
+        if not candidate_ips:
+            try:
+                hostname = socket.gethostname()
+                ip = socket.gethostbyname(hostname)
+                if ip and not ip.startswith('127.') and ip not in candidate_ips:
+                    candidate_ips.append(ip)
+            except Exception:
+                pass # Can fail
+
+        if not candidate_ips:
+            return None
+
+        def get_ip_score(ip: str) -> int:
+            """Scores an IP address based on its likelihood of being the correct LAN IP."""
+            if ip.startswith('192.168.'):
+                return 1
+            if ip.startswith('10.'):
+                return 2
+            if ip.startswith('172.'):
+                try:
+                    second_octet = int(ip.split('.')[1])
+                    if 16 <= second_octet <= 31:
+                        return 3
+                except (ValueError, IndexError):
+                    pass # Not a valid IP
+            return 10 # Default score for other IPs
+
+        # Sort IPs based on score (lower is better), then by the IP itself for stability
+        sorted_ips = sorted(list(set(candidate_ips)), key=lambda ip: (get_ip_score(ip), ip))
+
+        return sorted_ips[0] if sorted_ips else None
 
 class ProcessMonitor:
     """Monitors and reports on process output and health"""
@@ -1749,7 +1521,7 @@ class ProcessMonitor:
             self.logger.error(f"Error monitoring {self.name} stdout: {e}")
     
     def _monitor_stderr(self):
-        """Monitor stderr for errors and info messages"""
+        """Monitor stderr for errors and info messages, with improved parsing."""
         try:
             if self.process.stderr:
                 for line in iter(self.process.stderr.readline, ''):
@@ -1757,29 +1529,32 @@ class ProcessMonitor:
                         break
                     line = line.strip()
                     if line:
-                        # Check if this is a DEBUG message from the backend
-                        if '[DEBUG]' in line:
-                            # Treat DEBUG messages as debug level (not errors)
-                            self.logger.debug(f"[{self.name}] {line}")
-                            # Don't print debug messages to console to reduce noise
-                        elif line.startswith('INFO:'):
-                            # Remove the INFO: prefix and treat as info message
-                            info_message = line[5:].strip()
-                            self.logger.info(f"[{self.name}] {info_message}")
-                            print(f"{Colors.OKBLUE}[{self.name}] {info_message}{Colors.ENDC}")
-                        elif line.startswith('WARNING:'):
-                            # Remove the WARNING: prefix and treat as warning message
-                            warning_message = line[8:].strip()
-                            self.logger.warning(f"[{self.name}] {warning_message}")
-                            print(f"{Colors.WARNING}[{self.name}] {warning_message}{Colors.ENDC}")
-                        elif line.startswith('ERROR:'):
-                            # Remove the ERROR: prefix and treat as error message
-                            error_message = line[6:].strip()
-                            self.error_queue.put(error_message)
-                            self.logger.error(f"[{self.name}] {error_message}")
-                            print(f"{Colors.FAIL}[{self.name}] {error_message}{Colors.ENDC}")
-                        else:
-                            # Default to treating as error if no log level prefix
+                        # Improved log parsing to handle different formats
+                        log_level_found = False
+                        log_levels = {
+                            '[DEBUG]': self.logger.debug,
+                            'INFO:': self.logger.info,
+                            'WARNING:': self.logger.warning,
+                            'ERROR:': self.logger.error,
+                        }
+
+                        for prefix, log_func in log_levels.items():
+                            if line.startswith(prefix):
+                                message = line[len(prefix):].strip()
+                                if prefix == 'ERROR:':
+                                    self.error_queue.put(message)
+                                    print(f"{Colors.FAIL}[{self.name}] {message}{Colors.ENDC}")
+                                elif prefix == 'WARNING:':
+                                    print(f"{Colors.WARNING}[{self.name}] {message}{Colors.ENDC}")
+                                elif prefix == 'INFO:':
+                                    print(f"{Colors.OKBLUE}[{self.name}] {message}{Colors.ENDC}")
+                                # Always log to file regardless of level
+                                log_func(f"[{self.name}] {message}")
+                                log_level_found = True
+                                break
+                        
+                        if not log_level_found:
+                            # Default to treating as an error if no known prefix is found
                             self.error_queue.put(line)
                             self.logger.error(f"[{self.name}] {line}")
                             print(f"{Colors.FAIL}[{self.name}] {line}{Colors.ENDC}")
@@ -1845,7 +1620,11 @@ class ProcessManager:
         """Handle termination signals"""
         print(f"\n{Colors.WARNING}Received signal {signum}, shutting down...{Colors.ENDC}")
         self.cleanup()
-        sys.exit(0)
+        # Avoid exiting from signal handler inside libraries that expect control
+        try:
+            sys.exit(0)
+        except SystemExit:
+            pass
     
     def add_process(self, name: str, process: subprocess.Popen):
         """Add a process to be managed with monitoring"""
@@ -1904,58 +1683,66 @@ class ProcessManager:
         return status
     
     def cleanup(self):
-        """Enhanced cleanup with better process termination and duplicate prevention"""
-        # Prevent double cleanup
-        if hasattr(self, '_cleanup_called'):
+        """Enhanced cleanup with better process termination and duplicate prevention."""
+        if hasattr(self, '_cleanup_called') and self._cleanup_called:
             return
         self._cleanup_called = True
-        
+
         self.running = False
-        
+
         if not self.quiet:
             print(f"{Colors.OKCYAN}Terminating processes...{Colors.ENDC}")
-        
-        # Stop all monitors
+
         for monitor in self.monitors.values():
             monitor.stop()
-        
-        # Terminate processes gracefully
+
+        # Use psutil to get all child processes of the current process
+        try:
+            parent = psutil.Process(os.getpid())
+            children = parent.children(recursive=True)
+        except psutil.NoSuchProcess:
+            children = [] # No child processes to kill
+
+        for child in children:
+            try:
+                if child.is_running():
+                    self.logger.info(f"Terminating child process {child.name()} (PID: {child.pid})")
+                    child.terminate()
+            except psutil.NoSuchProcess:
+                continue # Process already terminated
+
+        # Wait for processes to terminate
+        if children:
+            gone, alive = psutil.wait_procs(children, timeout=10)
+            for proc in alive:
+                self.logger.warning(f"Process {proc.name()} did not terminate gracefully, killing...")
+                try:
+                    proc.kill()
+                except psutil.NoSuchProcess:
+                    continue # Already gone
+
+        # Original process dictionary cleanup (as a fallback)
         for name, process in self.processes.items():
             try:
-                if process.poll() is None:  # Process is still running
-                    self.logger.info(f"Terminating {name} (PID: {process.pid})")
-                    process.terminate()
-                    
-                    # Wait for graceful termination
-                    try:
-                        process.wait(timeout=10)
-                        self.logger.info(f"{name} terminated gracefully")
-                    except subprocess.TimeoutExpired:
-                        self.logger.warning(f"{name} didn't terminate gracefully, killing...")
-                        process.kill()
-                        process.wait()
-                        self.logger.info(f"{name} killed")
-                else:
-                    self.logger.info(f"{name} already terminated (return code: {process.returncode})")
-            except Exception as e:
-                self.logger.error(f"Error terminating {name}: {e}")
-                if not self.quiet:
-                    print(f"{Colors.WARNING}Error terminating {name}: {e}{Colors.ENDC}")
-        
-        # Wait for threads
+                if psutil.pid_exists(process.pid):
+                    proc = psutil.Process(process.pid)
+                    if proc.is_running():
+                        self.logger.warning(f"Fallback: Killing lingering process {name} (PID: {proc.pid})")
+                        proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
         if not self.quiet:
             print(f"{Colors.OKCYAN}Waiting for threads...{Colors.ENDC}")
         for thread in self.threads:
             if thread.is_alive():
                 thread.join(timeout=5)
-        
-        # Force cleanup of any remaining processes
+
         self._force_cleanup_ports()
-        
-        # Clear debounce state
+
         if hasattr(self, '_status_debounce'):
             self._status_debounce.clear()
-        
+
         self.logger.info("Process cleanup completed")
     
     def _force_cleanup_ports(self):
@@ -1974,32 +1761,38 @@ class ServerHealth:
     
     @staticmethod
     def wait_for_backend(host: str, port: int, logger: Logger, timeout: int = 30, quiet: bool = False) -> bool:
-        """Wait for backend to be ready with detailed error reporting"""
+        """Wait for backend to be ready with detailed error reporting and specific exceptions."""
         url = f"http://{host}:{port}"
         start_time = time.time()
-        
+
         if not quiet:
             print(f"{Colors.OKCYAN}Waiting for backend at {url}...{Colors.ENDC}")
         logger.info(f"Waiting for backend at {url}")
-        
+
         while time.time() - start_time < timeout:
             try:
+                # Use a shorter timeout for individual requests
                 response = requests.get(f"{url}/docs", timeout=2)
                 if response.status_code == 200:
                     if not quiet:
-                        print(f"{Colors.OKGREEN}✓ Backend is ready!{Colors.ENDC}")
+                        print(f"\n{Colors.OKGREEN}✓ Backend is ready!{Colors.ENDC}")
                     logger.info("Backend is ready")
                     return True
-            except requests.ConnectionError:
+            except (requests.ConnectionError, requests.Timeout):
+                # These are expected errors while waiting for the server to start.
                 pass
-            except requests.Timeout:
-                pass
-            except Exception as e:
+            except requests.RequestException as e:
+                # Log other request-related errors but continue trying
                 logger.debug(f"Backend health check error: {e}")
             
-            time.sleep(1)
             if not quiet:
                 print(".", end="", flush=True)
+            time.sleep(1)
+        
+        if not quiet:
+            print(f"\n{Colors.FAIL}✗ Backend did not become ready in time.{Colors.ENDC}")
+        logger.error("Backend health check timed out.")
+        return False
         
         if not quiet:
             print(f"\n{Colors.FAIL}✗ Backend failed to start within {timeout} seconds{Colors.ENDC}")
@@ -2091,6 +1884,65 @@ class QRCodeGenerator:
             print(f"QR Code for: {url}")
             print("(Install 'qrcode' and 'pillow' packages for visual QR code)")
 
+
+class LauncherConfig:
+    """Loads and saves first-run friendly JSON configuration for the launcher."""
+
+    DEFAULT_PATH = Path("launcher.config.json")
+
+    @staticmethod
+    def default() -> Dict[str, Any]:
+        return {
+            "gui": False,
+            "dev_mode": False,
+            "lan_only": True,
+            "tunnel_only": False,
+            "tunnel_type": "quick",
+            "tunnel_name": "2048-bot",
+            "tunnel_domain": None,
+            "no_tunnel_fallback": False,
+            "backend_port": 8000,
+            "frontend_port": 5173,
+            "host": "0.0.0.0",
+            "force_ports": False,
+            "no_qr": False,
+            "no_color": False,
+            "quiet": False,
+            "skip_build": False,
+            "skip_deps": False,
+            "cloudflared_path": None,
+            "timeout": 30,
+            "log_level": "INFO",
+        }
+
+    @classmethod
+    def load_or_create(cls, path: Optional[Path] = None) -> Dict[str, Any]:
+        path = path or cls.DEFAULT_PATH
+        config: Dict[str, Any]
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            except Exception:
+                # On error, fall back to defaults but do not overwrite the file
+                config = cls.default()
+        else:
+            config = cls.default()
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(config, f, indent=2)
+            except Exception:
+                pass
+        # Ensure any new keys are merged in
+        merged = cls.default()
+        merged.update({k: v for k, v in config.items() if v is not None})
+        # If file was missing keys, try to write back the enriched file
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(merged, f, indent=2)
+        except Exception:
+            pass
+        return merged
 
 class ProgressMapper:
     """Maps double progress bar system to unified progress for GUI"""
@@ -2193,8 +2045,9 @@ class Launcher:
                  frontend_port: int = 5173, host: str = "0.0.0.0", no_qr: bool = False,
                  no_color: bool = False, quiet: bool = False, skip_build: bool = False,
                  skip_deps: bool = False, cloudflared_path: Optional[str] = None,
-                 timeout: int = 30, gui: bool = False):
-        self.logger = Logger()
+                 timeout: int = 30, gui: bool = False, log_level: str = "INFO"):
+        self.log_level = log_level
+        self.logger = Logger(level=log_level)
         self.process_manager = ProcessManager(self.logger, quiet=quiet)
         self.backend_port = backend_port
         self.frontend_port = frontend_port
@@ -2252,6 +2105,24 @@ class Launcher:
         
         # Progress mapper for unified GUI progress
         self.progress_mapper = ProgressMapper()
+
+    @staticmethod
+    def _which_any(commands: list[str]) -> Optional[str]:
+        """Return the first absolute path found for any command variant."""
+        for cmd in commands:
+            path = shutil.which(cmd)
+            if path:
+                return path
+        return None
+
+    @staticmethod
+    def _compose_cmd(preferred: Optional[str], module_fallback: Optional[list[str]] = None) -> Optional[list[str]]:
+        """Return an executable command list if available, None otherwise."""
+        if preferred:
+            return [preferred]
+        if module_fallback:
+            return module_fallback
+        return None
     
     def _find_cloudflared(self) -> Optional[str]:
         """Find cloudflared binary in current directory or PATH"""
@@ -2272,7 +2143,7 @@ class Launcher:
             return None
         
         if not self.quiet:
-            print(f"{Colors.OKCYAN}🌐 Starting Cloudflare Tunnel...{Colors.ENDC}")
+            print(f"{Colors.OKCYAN}Starting Cloudflare Tunnel...{Colors.ENDC}")
         self.logger.info("Starting Cloudflare Tunnel")
         
         try:
@@ -2565,34 +2436,53 @@ class Launcher:
         if not self.gui_mode:
             self.console_ui.update_micro_progress("Project structure verified", 0.3)
         
-        # Check Poetry
+        # Resolve Poetry
+        poetry_cmd_path = self._which_any(["poetry.exe", "poetry"]) if platform.system() == "Windows" else self._which_any(["poetry"])
+        poetry_cmd = self._compose_cmd(poetry_cmd_path, [sys.executable, "-m", "poetry"])  # module fallback
         try:
-            subprocess.run(["poetry", "--version"], check=True, capture_output=True, shell=True)
+            if poetry_cmd is None:
+                raise FileNotFoundError("Poetry not found in PATH and no module fallback")
+            subprocess.run([*poetry_cmd, "--version"], check=True, capture_output=True, shell=False)
             if not self.gui_mode:
                 self.console_ui.update_micro_progress("Poetry found", 0.5)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            error_msg = "Poetry not found. Please install Poetry first."
-            self.logger.error(error_msg)
+            self.logger.info(f"Poetry detected: {poetry_cmd[0]}")
+        except Exception as e:
+            self.logger.error(f"Poetry check failed: {e}")
             return False
         
-        # Check Node.js
+        # Resolve Node
+        node_cmd_path = self._which_any(["node.exe", "node"]) if platform.system() == "Windows" else self._which_any(["node"])
         try:
-            subprocess.run(["node", "--version"], check=True, capture_output=True, shell=True)
+            if not node_cmd_path:
+                raise FileNotFoundError("node not found in PATH")
+            subprocess.run([node_cmd_path, "--version"], check=True, capture_output=True, shell=False)
             if not self.gui_mode:
                 self.console_ui.update_micro_progress("Node.js found", 0.7)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            error_msg = "Node.js not found. Please install Node.js first."
-            self.logger.error(error_msg)
+            self.logger.info(f"Node detected: {node_cmd_path}")
+        except Exception as e:
+            self.logger.error(f"Node.js check failed: {e}")
             return False
         
-        # Check npm
+        # Resolve npm
+        npm_cmd_path = self._which_any(["npm.cmd", "npm.exe", "npm"]) if platform.system() == "Windows" else self._which_any(["npm"])
+        # Fallback: try npm by joining Node directory (Windows installations ship npm alongside node)
+        if not npm_cmd_path and node_cmd_path and platform.system() == "Windows":
+            try:
+                node_dir = Path(node_cmd_path).parent
+                candidate = node_dir / "npm.cmd"
+                if candidate.exists():
+                    npm_cmd_path = str(candidate)
+            except Exception:
+                pass
         try:
-            subprocess.run(["npm", "--version"], check=True, capture_output=True, shell=True)
+            if not npm_cmd_path:
+                raise FileNotFoundError("npm not found in PATH")
+            subprocess.run([npm_cmd_path, "--version"], check=True, capture_output=True, shell=False)
             if not self.gui_mode:
                 self.console_ui.update_micro_progress("npm found", 0.9)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            error_msg = "npm not found. Please install npm first."
-            self.logger.error(error_msg)
+            self.logger.info(f"npm detected: {npm_cmd_path}")
+        except Exception as e:
+            self.logger.error(f"npm check failed: {e}")
             return False
         
         if not self.gui_mode:
@@ -2703,7 +2593,7 @@ class Launcher:
                 backend_process = subprocess.Popen(
                     ["poetry", "install"], 
                     cwd="backend", 
-                    shell=True,
+                    shell=False,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -2764,7 +2654,7 @@ class Launcher:
                 frontend_process = subprocess.Popen(
                     ["npm", "install"], 
                     cwd="frontend", 
-                    shell=True,
+                    shell=False,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -2836,7 +2726,7 @@ class Launcher:
             result = subprocess.run(
                 ["poetry", "run", "python", "-c", "import fastapi, uvicorn, torch"],
                 cwd="backend",
-                shell=True,
+                shell=False,
                 capture_output=True,
                 text=True
             )
@@ -2857,17 +2747,8 @@ class Launcher:
             lock_file = Path("frontend/package-lock.json")
             if not lock_file.exists():
                 return False
-            
-            # Quick check if key packages are available
-            result = subprocess.run(
-                ["npm", "list", "react", "vite"],
-                cwd="frontend",
-                shell=True,
-                capture_output=True,
-                text=True
-            )
-            
-            return result.returncode == 0
+            # Avoid brittle npm list checks; presence of lock + node_modules is sufficient
+            return True
         except Exception:
             return False
     
@@ -2915,7 +2796,7 @@ class Launcher:
                 stderr=subprocess.PIPE,
                 text=True,
                 env=backend_env,
-                shell=True
+                shell=False
             )
             
             self.process_manager.add_process("Backend", backend_process)
@@ -2992,8 +2873,9 @@ class Launcher:
         self.logger.info("Starting frontend server")
         
         # Update progress
-        self.console_ui.update_progress("Starting frontend", 0.8, "Configuring Vite development server...")
-        self.console_ui.update_micro_progress("Creating Vite configuration", 0.0)
+        if not self.gui_mode:
+            self.console_ui.update_progress("Starting frontend", 0.8, "Configuring Vite preview server...")
+            self.console_ui.update_micro_progress("Preparing environment", 0.0)
 
         # Create a temporary Vite config that injects the correct backend URL
         vite_config = f"""
@@ -3067,85 +2949,22 @@ export default defineConfig({{
 }})
 """
         
-        # Write temporary config
-        config_path = "frontend/vite.config.temp.ts"
-        try:
-            with open(config_path, "w") as f:
-                f.write(vite_config)
-            self.logger.info("Created temporary Vite config")
-            self.console_ui.update_micro_progress("Vite config created", 0.2)
-        except Exception as e:
-            error_msg = f"Failed to create Vite config: {e}"
-            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
-            self.logger.error(error_msg)
-            return False
+        # ENV-based configuration (no temp vite config or HTML mutation)
+        frontend_env = os.environ.copy()
+        frontend_env["VITE_BACKEND_URL"] = self.tunnel_url if self.tunnel_url else f"http://{self.host_ip}:{self.backend_port}"
+        frontend_env["VITE_BACKEND_PORT"] = str(self.backend_port)
         
-        # Create a script to inject the backend URL
-        backend_url_script = f"""
-// Backend URL configuration
-window.__BACKEND_URL__ = '{self.tunnel_url if self.tunnel_url else f"http://{self.host_ip}:{self.backend_port}"}';
-console.log('Backend URL set to:', window.__BACKEND_URL__);
-"""
+        # No script injection needed; frontend will read VITE_BACKEND_URL
         
-        script_path = "frontend/public/backend-config.js"
-        try:
-            with open(script_path, "w") as f:
-                f.write(backend_url_script)
-            self.logger.info("Created backend config script")
-            self.console_ui.update_micro_progress("Backend config created", 0.4)
-        except Exception as e:
-            error_msg = f"Failed to create backend config script: {e}"
-            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
-            self.logger.error(error_msg)
-            return False
-        
-        # After the build is complete, inject the backend URL into the built HTML
-        dist_html_path = "frontend/dist/index.html"
-        
-        # Read the built HTML file
-        try:
-            with open(dist_html_path, "r") as f:
-                html_content = f.read()
-            self.console_ui.update_micro_progress("HTML template loaded", 0.6)
-        except FileNotFoundError:
-            error_msg = "Built HTML file not found. Make sure the frontend build completed successfully."
-            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
-            self.logger.error(error_msg)
-            return False
-        
-        # Inject the backend configuration script before the closing head tag
-        backend_config_script = f"""
-    <!-- Backend configuration script -->
-    <script>
-      // Backend URL configuration
-      window.__BACKEND_URL__ = '{self.tunnel_url if self.tunnel_url else f"http://{self.host_ip}:{self.backend_port}"}';
-      console.log('Backend URL set to:', window.__BACKEND_URL__);
-    </script>
-  </head>"""
-        
-        # Replace the closing head tag with our script + closing head tag
-        html_content = html_content.replace("</head>", backend_config_script)
-        
-        # Write the modified HTML back to the dist folder
-        try:
-            with open(dist_html_path, "w") as f:
-                f.write(html_content)
-            self.logger.info("Updated built HTML with backend config script")
-            self.console_ui.update_micro_progress("HTML updated with backend config", 0.8)
-        except Exception as e:
-            error_msg = f"Failed to update built HTML: {e}"
-            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
-            self.logger.error(error_msg)
-            return False
+        # No HTML mutation needed; rely on env and the frontend config resolver
         
         if self.dev_mode:
             self.console_ui.update_micro_progress("Starting development server", 0.9)
+            npm_executable = self._which_any(["npm.cmd", "npm.exe", "npm"]) if platform.system() == "Windows" else "npm"
             frontend_cmd = [
-                "npm", "run", "dev", "--", 
-                "--config", "vite.config.temp.ts",
+                npm_executable, "run", "dev", "--", 
                 "--host", "0.0.0.0",
-                "--port", str(self.frontend_port),
-                "--force"
+                "--port", str(self.frontend_port)
             ]
         else:
             # Build production bundle first
@@ -3156,8 +2975,8 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
             try:
                 # Enhanced build process with progress monitoring
                 build_process = subprocess.Popen([
-                    "npm", "run", "build", "--", "--config", "vite.config.temp.ts"
-                ], cwd="frontend", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                    "npm", "run", "build"
+                ], cwd="frontend", shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=frontend_env)
                 
                 # Monitor build progress
                 line_count = 0
@@ -3204,9 +3023,9 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
                 self.logger.error(error_msg)
                 return False
 
+            npm_executable = self._which_any(["npm.cmd", "npm.exe", "npm"]) if platform.system() == "Windows" else "npm"
             frontend_cmd = [
-                "npm", "run", "preview", "--", 
-                "--config", "vite.config.temp.ts",
+                npm_executable, "run", "preview", "--", 
                 "--host", "0.0.0.0",
                 "--port", str(self.frontend_port)
             ]
@@ -3219,7 +3038,8 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                shell=True
+                shell=False,
+                env=frontend_env if not self.dev_mode else None
             )
             
             self.process_manager.add_process("Frontend", frontend_process)
@@ -3295,140 +3115,31 @@ console.log('Backend URL set to:', window.__BACKEND_URL__);
         """Build frontend assets to ensure they exist for backend startup"""
         self.logger.info("Building frontend assets for backend")
         
-        # Update progress
-        self.console_ui.update_progress("Building frontend assets", 0.75, "Creating production build...")
-        self.console_ui.update_micro_progress("Creating Vite configuration", 0.0)
+        # Update progress (less verbose in GUI mode)
+        if not self.gui_mode:
+            self.console_ui.update_progress("Building frontend assets", 0.75, "Creating production build...")
+            self.console_ui.update_micro_progress("Preparing environment", 0.0)
 
-        # Create a temporary Vite config that injects the correct backend URL
-        vite_config = f"""
-import {{ defineConfig }} from 'vite'
-import react from '@vitejs/plugin-react'
-import {{ VitePWA }} from 'vite-plugin-pwa'
-
-export default defineConfig({{
-  plugins: [
-    react({{
-      // Disable fast refresh for mobile compatibility
-      refresh: false
-    }}),
-    VitePWA({{
-      registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'favicon-16x16.png'],
-      manifest: {{
-        name: '2048 Bot Training',
-        short_name: '2048 AI',
-        description: 'Real-time visualization for 2048 bot training',
-        theme_color: '#3b82f6',
-        background_color: '#0f172a',
-        display: 'standalone',
-        orientation: 'portrait',
-        scope: '/',
-        start_url: '/',
-        icons: [
-          {{
-            src: 'pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any maskable'
-          }},
-          {{
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any maskable'
-          }}
-        ]
-      }},
-      workbox: {{
-        globPatterns: ['**/*.{{js,css,html,ico,png,svg}}'],
-        cacheId: '2048-bot-tunnel-v1',
-        runtimeCaching: [
-          {{
-            urlPattern: /^https:\\/\\/fonts\\.googleapis\\.com\\/.*/i,
-            handler: 'CacheFirst',
-            options: {{
-              cacheName: '2048-bot-fonts-cache-v1',
-              expiration: {{
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365
-              }}
-            }}
-          }},
-          {{
-            urlPattern: /^https:\\/\\/.*\\.(trycloudflare\\.com|cfargotunnel\\.com)\\/.*$/i,
-            handler: 'NetworkFirst',
-            options: {{
-              cacheName: '2048-bot-api-cache-v1',
-              expiration: {{
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60
-              }}
-            }}
-          }}
-        ]
-      }}
-    }})
-  ],
-  server: {{
-    host: '0.0.0.0',
-    port: {self.frontend_port},
-    strictPort: true,
-    hmr: {{
-      port: {self.frontend_port + 1},
-      host: '0.0.0.0'
-    }},
-    timeout: 30000,
-    cors: {{
-      origin: ['http://{self.host_ip}:{self.frontend_port}', 'http://localhost:{self.frontend_port}', 'https://*.trycloudflare.com', 'https://*.cfargotunnel.com'],
-      credentials: true
-    }}
-  }},
-  define: {{
-    global: 'globalThis',
-    __BACKEND_URL__: JSON.stringify('{self.tunnel_url if self.tunnel_url else f"http://{self.host_ip}:{self.backend_port}"}')
-  }},
-  build: {{
-    target: 'es2015',
-    minify: false,
-    sourcemap: true,
-    outDir: 'dist',
-    assetsDir: 'assets',
-    rollupOptions: {{
-      output: {{
-        manualChunks: {{
-          vendor: ['react', 'react-dom'],
-          charts: ['chart.js', 'react-chartjs-2'],
-          ui: ['framer-motion', 'lucide-react'],
-        }}
-      }}
-    }}
-  }}
-}})
-"""
+        # No temporary Vite config; use env-driven config only
         
-        # Write temporary config
-        config_path = "frontend/vite.config.temp.ts"
-        try:
-            with open(config_path, "w") as f:
-                f.write(vite_config)
-            self.logger.info("Created temporary Vite config for asset build")
-            self.console_ui.update_micro_progress("Vite config created", 0.2)
-        except Exception as e:
-            error_msg = f"Failed to create Vite config: {e}"
-            print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
-            self.logger.error(error_msg)
-            return False
+        # ENV-based configuration (no temp vite config needed)
+        frontend_env = os.environ.copy()
+        frontend_env["VITE_BACKEND_URL"] = self.tunnel_url if self.tunnel_url else f"http://{self.host_ip}:{self.backend_port}"
+        frontend_env["VITE_BACKEND_PORT"] = str(self.backend_port)
         
         # Build production bundle
-        self.console_ui.update_micro_progress("Building production bundle", 0.4)
-        if not self.quiet:
-            print(f"{Colors.OKCYAN}Building frontend assets...{Colors.ENDC}")
+        if not self.gui_mode:
+            self.console_ui.update_micro_progress("Building production bundle", 0.4)
+            if not self.quiet:
+                print(f"{Colors.OKCYAN}Building frontend assets...{Colors.ENDC}")
         
         try:
             # Enhanced build process with progress monitoring
+            # Use the resolved npm path if available for Windows reliability
+            npm_executable = self._which_any(["npm.cmd", "npm.exe", "npm"]) if platform.system() == "Windows" else "npm"
             build_process = subprocess.Popen([
-                "npm", "run", "build", "--", "--config", "vite.config.temp.ts"
-            ], cwd="frontend", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                npm_executable, "run", "build"
+            ], cwd="frontend", shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=frontend_env)
             
             # Monitor build progress
             line_count = 0
@@ -3458,12 +3169,12 @@ export default defineConfig({{
             
             if build_process.returncode != 0:
                 error_msg = f"Frontend asset build failed (exit code: {build_process.returncode})"
-                if not self.quiet:
+                if not self.quiet and not self.gui_mode:
                     print(f"{Colors.FAIL}✗ {error_msg}{Colors.ENDC}")
                 self.logger.error(error_msg)
                 return False
             
-            if not self.quiet:
+            if not self.quiet and not self.gui_mode:
                 print(f"{Colors.OKGREEN}✓ Frontend assets built successfully{Colors.ENDC}")
             self.logger.info("Frontend assets built successfully")
             self.console_ui.update_micro_progress("Assets ready", 0.9)
@@ -4086,7 +3797,7 @@ export default defineConfig({{
                 stderr=subprocess.PIPE,
                 text=True,
                 env=backend_env,
-                shell=True
+                shell=False
             )
             
             self.process_manager.add_process("Backend", backend_process)
@@ -4140,8 +3851,9 @@ export default defineConfig({{
             self.background_operations['progress'] = 0.3
             
             # Start frontend preview server (no rebuild needed)
+            npm_executable = self._which_any(["npm.cmd", "npm.exe", "npm"]) if platform.system() == "Windows" else "npm"
             frontend_cmd = [
-                "npm", "run", "preview", "--", 
+                npm_executable, "run", "preview", "--", 
                 "--host", "0.0.0.0",
                 "--port", str(self.frontend_port)
             ]
@@ -4152,7 +3864,8 @@ export default defineConfig({{
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                shell=True
+                shell=False,
+                env=os.environ.copy() | {"VITE_BACKEND_URL": self.tunnel_url if self.tunnel_url else f"http://{self.host_ip}:{self.backend_port}", "VITE_BACKEND_PORT": str(self.backend_port)} if self.gui_mode else None
             )
             
             self.process_manager.add_process("Frontend", frontend_process)
@@ -4213,13 +3926,13 @@ Examples:
     
     # Core operation modes
     mode_group = parser.add_argument_group('Operation Modes')
-    mode_group.add_argument("--lan-only", action="store_true", 
+    mode_group.add_argument("--lan-only", action="store_true", default=None,
                            help="LAN access only - no tunnel created (faster startup)")
-    mode_group.add_argument("--tunnel-only", action="store_true", 
+    mode_group.add_argument("--tunnel-only", action="store_true", default=None,
                            help="Tunnel access only - no LAN serving (cloud-first)")
-    mode_group.add_argument("--dev", action="store_true", 
+    mode_group.add_argument("--dev", action="store_true", default=None,
                            help="Development mode - hot reload, detailed logs, LAN only")
-    mode_group.add_argument("--production", action="store_true", 
+    mode_group.add_argument("--production", action="store_true", default=None,
                            help="Production mode - optimized build, tunnel preferred")
     
     # Tunnel configuration
@@ -4235,76 +3948,87 @@ Examples:
     
     # Network configuration
     network_group = parser.add_argument_group('Network Configuration')
-    network_group.add_argument("--port", type=int, default=8000,
+    network_group.add_argument("--port", type=int, default=None,
                               help="Backend server port (default: 8000)")
-    network_group.add_argument("--frontend-port", type=int, default=5173,
+    network_group.add_argument("--frontend-port", type=int, default=None,
                               help="Frontend dev server port (default: 5173)")
-    network_group.add_argument("--host", default="0.0.0.0",
+    network_group.add_argument("--host", default=None,
                               help="Backend server host (default: 0.0.0.0)")
-    network_group.add_argument("--force-ports", action="store_true", 
+    network_group.add_argument("--force-ports", action="store_true", default=None,
                               help="Force kill processes using required ports")
     
     # Output and UI configuration
     ui_group = parser.add_argument_group('UI and Output')
-    ui_group.add_argument("--gui", action="store_true", 
+    ui_group.add_argument("--gui", action="store_true", default=None,
                          help="Launch with desktop GUI window (disables console output)")
-    ui_group.add_argument("--no-qr", action="store_true", 
+    ui_group.add_argument("--no-qr", action="store_true", default=None,
                          help="Skip QR code generation (default: enabled)")
-    ui_group.add_argument("--no-color", action="store_true", 
+    ui_group.add_argument("--no-color", action="store_true", default=None,
                          help="Disable colored output")
-    ui_group.add_argument("--quiet", action="store_true", 
+    ui_group.add_argument("--quiet", action="store_true", default=None,
                          help="Suppress non-essential output")
     ui_group.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], 
-                         default="INFO", help="Set logging level")
+                         default=None, help="Set logging level")
+    ui_group.add_argument("--config", help="Path to launcher JSON config (defaults to launcher.config.json)")
     
     # Advanced options
     advanced_group = parser.add_argument_group('Advanced Options')
-    advanced_group.add_argument("--skip-build", action="store_true",
+    advanced_group.add_argument("--skip-build", action="store_true", default=None,
                                help="Skip frontend build step (use existing dist/)")
-    advanced_group.add_argument("--skip-deps", action="store_true",
+    advanced_group.add_argument("--skip-deps", action="store_true", default=None,
                                help="Skip dependency checks")
     advanced_group.add_argument("--cloudflared-path", 
                                help="Custom path to cloudflared binary")
-    advanced_group.add_argument("--timeout", type=int, default=30,
+    advanced_group.add_argument("--timeout", type=int, default=None,
                                help="Startup timeout in seconds")
     
     args = parser.parse_args()
     
     # Validate argument combinations
-    if args.lan_only and args.tunnel_only:
+    if (args.lan_only is True) and (args.tunnel_only is True):
         parser.error("Cannot specify both --lan-only and --tunnel-only")
     
-    if args.dev and args.production:
+    if (args.dev is True) and (args.production is True):
         parser.error("Cannot specify both --dev and --production")
     
+    # Load JSON config (first-run friendly)
+    config_path = Path(args.config) if args.config else LauncherConfig.DEFAULT_PATH
+    cfg = LauncherConfig.load_or_create(config_path)
+    
     # Auto-configure based on mode
-    if args.dev:
+    if args.dev is True:
         args.lan_only = True  # Dev mode implies LAN only
         args.log_level = "DEBUG"
     
-    if args.production:
+    if args.production is True:
         args.tunnel_type = "named"  # Production prefers named tunnels
     
+    # Merge precedence: CLI > JSON config > defaults
+    def pick(key, cli_value, cfg_key=None):
+        cfg_key = cfg_key or key
+        return cli_value if cli_value is not None else cfg.get(cfg_key)
+    
     launcher = Launcher(
-        dev_mode=args.dev,
-        force_ports=args.force_ports,
-        lan_only=args.lan_only,
-        tunnel_only=args.tunnel_only,
-        tunnel_type=args.tunnel_type,
-        tunnel_name=args.tunnel_name,
-        tunnel_domain=args.tunnel_domain,
-        no_tunnel_fallback=args.no_tunnel_fallback,
-        backend_port=args.port,
-        frontend_port=args.frontend_port,
-        host=args.host,
-        no_qr=args.no_qr,
-        no_color=args.no_color,
-        quiet=args.quiet,
-        skip_build=args.skip_build,
-        skip_deps=args.skip_deps,
-        cloudflared_path=args.cloudflared_path,
-        timeout=args.timeout,
-        gui=args.gui
+        dev_mode=pick("dev_mode", args.dev),
+        force_ports=pick("force_ports", args.force_ports),
+        lan_only=pick("lan_only", args.lan_only),
+        tunnel_only=pick("tunnel_only", args.tunnel_only),
+        tunnel_type=pick("tunnel_type", args.tunnel_type),
+        tunnel_name=pick("tunnel_name", args.tunnel_name),
+        tunnel_domain=pick("tunnel_domain", args.tunnel_domain),
+        no_tunnel_fallback=pick("no_tunnel_fallback", args.no_tunnel_fallback),
+        backend_port=pick("backend_port", args.port, cfg_key="backend_port"),
+        frontend_port=pick("frontend_port", args.frontend_port),
+        host=pick("host", args.host),
+        no_qr=pick("no_qr", args.no_qr),
+        no_color=pick("no_color", args.no_color),
+        quiet=pick("quiet", args.quiet),
+        skip_build=pick("skip_build", args.skip_build),
+        skip_deps=pick("skip_deps", args.skip_deps),
+        cloudflared_path=pick("cloudflared_path", args.cloudflared_path),
+        timeout=pick("timeout", args.timeout),
+        gui=pick("gui", args.gui),
+        log_level=pick("log_level", args.log_level)
     )
     success = launcher.run()
     sys.exit(0 if success else 1)

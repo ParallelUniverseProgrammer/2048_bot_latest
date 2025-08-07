@@ -1,6 +1,6 @@
 # 2048 Bot Training Launcher
 
-A modern, feature-rich launcher for the 2048 Bot Training system with **ultra-smooth animations**, **desktop GUI support**, and professional terminal UI.
+Modern, cross‑platform launcher for the 2048 Bot Training stack. Provides a smooth console UI, a landscape desktop GUI, optional Cloudflare Tunnel, and a first‑run JSON config for user‑friendly defaults.
 
 ## Overview
 
@@ -15,12 +15,12 @@ The launcher provides a **smooth, professional experience** for starting the 204
 
 ## Features
 
-### 🖥️ **Desktop GUI Mode**
-- **Modern desktop window** with CustomTkinter for native appearance
-- **Service management controls** - Stop, restart, and view logs directly from GUI
+### 🖥️ **Desktop GUI Mode (landscape)**
+- **Landscape layout** with left status/controls and right QR panel
+- **Service indicators**: Backend / Frontend / Tunnel with bold labels and animated status dots
+- **Single master progress bar** for clean, smooth progress perception
 - **One-click URL copying** with visual feedback and clipboard integration
-- **Real-time status indicators** with animated status lights
-- **Progress tracking** with smooth progress bars and step indicators
+- **Large QR** with readable caption, centered in an elevated surface
 - **Cross-platform compatibility** - Works on Windows, macOS, and Linux
 
 **Note**: System tray integration is implemented but may have compatibility issues on some platforms. The desktop window provides full functionality for service management and monitoring.
@@ -29,7 +29,7 @@ The launcher provides a **smooth, professional experience** for starting the 204
 - **60fps animation loop** with precise `time.perf_counter()` timing
 - **Double-buffered rendering** - No screen flickering or visual artifacts
 - **Smooth progress interpolation** with natural easing (0.12 factor)
-- **Micro-progress system** for detailed operation feedback
+- **Unified progress** (single master bar), staged text updates; per-service indicators animate
 - **Content change detection** - Only re-renders when necessary
 
 ### 🚀 **Non-Blocking Architecture**
@@ -52,8 +52,13 @@ The launcher provides a **smooth, professional experience** for starting the 204
 - **Automatic port management** with conflict resolution
 - **Network discovery** for optimal IP address selection
 - **Cloudflare Tunnel integration** for public access
-- **QR code generation** for mobile access
+- **QR code generation** for mobile access (large, crisp in GUI)
 - **Multiple access methods** (LAN, tunnel, localhost)
+
+### 🧩 **Config (first‑run JSON)**
+- On first run, creates `launcher.config.json` with friendly defaults
+- Edit to set defaults for GUI/dev, ports, LAN/tunnel, log level, etc.
+- CLI flags override JSON config at runtime
 
 ### 🔧 **Dependency Management**
 - **Poetry integration** for Python dependencies
@@ -69,8 +74,8 @@ Launch with `python launcher.py --gui` for a modern desktop experience:
 - **Professional Window Interface** - Clean, modern window with project branding
 - **Service Management** - One-click stop/restart services and view logs
 - **URL Management** - Copy access URLs with one click and visual feedback
-- **Status Monitoring** - Real-time status indicators for backend, frontend, and tunnel
-- **Progress Tracking** - Smooth progress bars with step-by-step feedback
+- **Status Monitoring** - Bold, animated indicators for backend, frontend, and tunnel
+- **Progress Tracking** - Single, smooth master progress bar with step context
 - **Error Handling** - Clear error display with actionable information
 
 **Note**: System tray integration is implemented but may have compatibility issues on some platforms. The desktop window provides full functionality for service management and monitoring.
@@ -116,14 +121,14 @@ python launcher.py --gui
 # LAN-only mode (no tunnel)
 python launcher.py --lan-only
 
-# Development mode with verbose output
-python launcher.py --dev-mode
+# Development mode (implies LAN only, sets DEBUG logging)
+python launcher.py --dev
 ```
 
 ### Advanced Options
 ```bash
 # Custom ports
-python launcher.py --backend-port 8001 --frontend-port 3000
+python launcher.py --port 8001 --frontend-port 5175
 
 # Named tunnel
 python launcher.py --tunnel-type named --tunnel-name my-2048-bot
@@ -136,6 +141,9 @@ python launcher.py --skip-build
 
 # Force kill processes using required ports
 python launcher.py --force-ports
+
+# Use a specific config file
+python launcher.py --config path/to/custom.config.json
 ```
 
 ### GUI Mode Features
@@ -153,20 +161,19 @@ When using `--gui` mode, you get access to:
 
 ### **GUI Architecture**
 ```python
-# Modern CustomTkinter-based GUI
+# Modern CustomTkinter-based GUI (landscape)
 class GUIWindow:
     def __init__(self, logger: Logger):
-        # Configure for vibrant PC-forward appearance
+        # Configure appearance
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
         
-        # Create compact main window
+        # Landscape window
         self.window = ctk.CTk()
         self.window.title("2048 Bot Launcher")
-        self.window.geometry("450x420")
-        
-        # Service management and status monitoring
-        self._setup_service_controls()
+        self.window.geometry("900x480")
+        # Left: title, bold indicators, master progress, URL/Copy, controls
+        # Right: elevated card with large QR and caption
 ```
 
 ### **Animation System**
@@ -231,7 +238,7 @@ else:
 
 - Python 3.8+
 - Poetry (for backend dependencies)
-- Node.js 16+ and npm (for frontend dependencies)
+- Node.js 16+ and npm (for frontend dependencies); launcher passes `VITE_BACKEND_URL`/`VITE_BACKEND_PORT` to avoid temp Vite config injection
 - Cloudflared (optional, for tunnel access)
 - CustomTkinter (for GUI mode) - automatically installed if missing
 
@@ -257,4 +264,10 @@ pip install customtkinter pillow
 
 ---
 
-**The launcher now provides a truly professional, ultra-smooth experience that rivals modern desktop applications with both console and GUI modes!** 🚀 
+## Current Limitations (tracked)
+- Restart button in GUI shows an error (restart pipeline not yet implemented)
+- System tray may have platform-dependent issues; window controls are the primary path
+
+---
+
+The launcher provides a professional, smooth experience in both console and GUI modes, with safe defaults and a JSON config for non‑dev users. 🚀
