@@ -4,6 +4,25 @@
 
 /* Custom CSS variables */
 :root {
+  /* Design tokens (authoritative) */
+  /* Surfaces */
+  --ui-surface-base: #0b0f14;
+  --ui-surface-elevated: #111827;
+  /* Text */
+  --ui-text-primary: #f3f4f6;
+  --ui-text-secondary: #9ca3af;
+  /* Lines */
+  --ui-border-muted: #1f2937;
+  /* Brand & states */
+  --ui-brand-primary: #60a5fa;
+  --ui-success: #34d399;
+  --ui-warning: #fbbf24;
+  --ui-danger: #f87171;
+  --ui-info: #a78bfa;
+  /* Overlays & focus */
+  --ui-overlay: rgba(0, 0, 0, 0.55);
+  --ui-focus: #93c5fd;
+
   --primary-gradient: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
   --dark-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   --success-gradient: linear-gradient(135deg, #10b981 0%, #059669 100%);
@@ -43,6 +62,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--ui-surface-base);
   background: var(--dark-gradient);
   color: #f1f5f9;
   overflow: hidden; /* Lock all scrolling */
@@ -405,7 +425,7 @@ body {
 
 /* Focus styles for accessibility */
 *:focus {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
 
@@ -413,6 +433,6 @@ button:focus,
 input:focus,
 select:focus,
 textarea:focus {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 } 

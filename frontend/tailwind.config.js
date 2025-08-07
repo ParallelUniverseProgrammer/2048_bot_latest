@@ -7,6 +7,29 @@ export default {
   theme: {
     extend: {
       colors: {
+        ui: {
+          surface: {
+            base: 'var(--ui-surface-base)',
+            elevated: 'var(--ui-surface-elevated)',
+          },
+          text: {
+            primary: 'var(--ui-text-primary)',
+            secondary: 'var(--ui-text-secondary)',
+          },
+          border: {
+            muted: 'var(--ui-border-muted)',
+          },
+          brand: {
+            primary: 'var(--ui-brand-primary)',
+          },
+          state: {
+            success: 'var(--ui-success)',
+            warning: 'var(--ui-warning)',
+            danger: 'var(--ui-danger)',
+            info: 'var(--ui-info)',
+          },
+          focus: 'var(--ui-focus)'
+        },
         primary: {
           50: '#eff6ff',
           100: '#dbeafe',

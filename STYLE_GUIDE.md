@@ -1,549 +1,236 @@
-# 🎨 2048 Bot Style Guide
+## 2048 Bot Design System (Authoritative)
 
-> Design principles, coding standards, and development guidelines for the 2048 Bot project.
+This guide is the single source of truth for UI/UX decisions. When existing code differs from this guide, this guide wins. It defines a mobile‑first, native app‑like experience that is consistent across Training, Game, Checkpoints, and Model Studio.
 
----
+### Scope
+- **Platform**: PWA (mobile‑first), responsive up to desktop
+- **Audience**: Designers, frontend engineers, and contributors
+- **Tenets**: Performance at 60fps, touch‑first interactions, consistent patterns, accessibility, and clarity
 
-## 📋 Table of Contents
-1. [Design Principles](#design-principles)
-2. [UI/UX Guidelines](#uiux-guidelines)
-3. [Component Patterns](#component-patterns)
-4. [Frontend Development](#frontend-development)
-5. [Backend Development](#backend-development)
-6. [Mobile-First Approach](#mobile-first-approach)
-7. [Performance Guidelines](#performance-guidelines)
-8. [Testing Standards](#testing-standards)
-9. [Documentation](#documentation)
+## Core principles
+- **Mobile‑first by default**: Design for small screens first. Add enhancements as screens grow.
+- **Native feel**: Instant feedback, fluid motion, no unexpected scroll, large touch targets, predictable gestures.
+- **Consistency over novelty**: Reuse patterns. One way to do a thing.
+- **Performance is a feature**: Prefer inexpensive layouts, avoid layout thrash, and cap animation costs.
+- **Accessible from the start**: Color contrast, focus order, semantics, and keyboard support on desktop.
 
----
+## Design tokens (do not hardcode values)
+All styles must consume tokens. Implement via CSS variables or Tailwind theme mappings. Example variables are provided; adjust implementation details as needed.
 
-## Design Principles
+### Color roles (dark theme first)
+- **surface/base**: app background
+- **surface/elevated**: cards, sheets
+- **text/primary**: main text
+- **text/secondary**: secondary text, labels
+- **border/muted**: hairlines, dividers
+- **brand/primary**: interactive accents, links
+- **state/success**: positive actions, good status
+- **state/warning**: caution, paused
+- **state/danger**: destructive, errors
+- **state/info**: neutral technical highlights
+- **overlay**: scrim for modals/menus
+- **focus**: keyboard focus ring
 
-### 🎯 Core Values
-- **Mobile-First**: Design for mobile devices first, then enhance for larger screens
-- **Performance**: Optimize for speed and responsiveness across all devices
-- **Accessibility**: Ensure the interface is usable by everyone
-- **Simplicity**: Reduce cognitive load while maintaining functionality
-- **Consistency**: Maintain visual and behavioral consistency throughout
-
-### 🎨 Visual Identity
-- **Dark Theme**: Primary dark background with glass-morphism effects
-- **Color Palette**: 
-  - Primary: Blue (#3b82f6) - `text-blue-400`
-  - Success: Green (#22c55e) - `text-green-400`
-  - Warning: Yellow (#f59e0b) - `text-yellow-400`
-  - Error: Red (#ef4444) - `text-red-400`
-  - Purple: (#a855f7) - `text-purple-400` for special features
-  - Orange: (#f97316) - `text-orange-400` for time/metrics
-  - Cyan: (#06b6d4) - `text-cyan-400` for technical data
-- **Typography**: Clean, readable fonts with proper hierarchy
-- **Spacing**: Consistent 4px grid system (0.25rem increments)
-
----
-
-## UI/UX Guidelines
-
-### 📱 Mobile Optimization
-- **Touch Targets**: Minimum 44px (2.75rem) for interactive elements
-- **Spacing**: Use compact spacing on mobile, expand for larger screens
-- **Charts**: Optimize for small screens with expandable full-view options
-- **Navigation**: Clear, accessible navigation with visual feedback
-
-### 🎛️ Component Design
-- **Cards**: Use `card-glass` class for consistent glass-morphism styling
-- **Buttons**: Context-aware styling with hover states and loading indicators
-- **Forms**: Clear labels, validation feedback, and mobile-friendly inputs
-- **Charts**: Responsive design with touch interaction support
-
-### 📊 Data Visualization
-- **Charts**: Use Chart.js with mobile-optimized configurations
-- **Colors**: Consistent color coding for different data types
-- **Interactions**: Double-tap to expand, hover for details
-- **Loading States**: Smooth transitions and progress indicators
-
----
-
-## Component Patterns
-
-### 🏗️ Layout Structure
-All main components should follow this consistent layout pattern:
-
-```tsx
-// Standard component layout
-<div className="h-full flex flex-col space-y-2 pb-6">
-  {/* Error Display */}
-  {error && (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="card-glass p-4 rounded-2xl border border-red-500/30 bg-red-500/5 flex-shrink-0"
-    >
-      {/* Error content */}
-    </motion.div>
-  )}
-
-  {/* Stats/Overview Section */}
-  <motion.div
-    className="card-glass p-4 rounded-2xl flex-shrink-0"
-    initial={{ opacity: 0, y: -10 }}
-    animate={{ opacity: 1, y: 0 }}
-  >
-    {/* Stats content */}
-  </motion.div>
-
-  {/* Main Content Section */}
-  <motion.div
-    className="card-glass p-4 rounded-2xl flex-shrink-0"
-    initial={{ opacity: 0, y: -10 }}
-    animate={{ opacity: 1, y: 0 }}
-  >
-    {/* Main content */}
-  </motion.div>
-
-  {/* Scrollable List/Content */}
-  <div className="flex-1 overflow-y-auto space-y-2">
-    {/* List items */}
-  </div>
-</div>
-```
-
-### 🎨 Animation System
-Use simple, consistent animations across all components:
-
-```tsx
-// Standard animation patterns
-const standardAnimations = {
-  // Card entrance
-  card: {
-    initial: { opacity: 0, y: -10 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.3 }
-  },
-  
-  // Error display
-  error: {
-    initial: { opacity: 0, scale: 0.95 },
-    animate: { opacity: 1, scale: 1 },
-    transition: { duration: 0.2 }
-  },
-  
-  // List items
-  item: {
-    initial: { opacity: 0, scale: 0.95 },
-    animate: { opacity: 1, scale: 1 },
-    transition: { delay: index * 0.05 },
-    whileHover: { scale: 1.02 },
-    whileTap: { scale: 0.98 }
-  },
-  
-  // Expand/collapse
-  expand: {
-    initial: { opacity: 0, height: 0 },
-    animate: { opacity: 1, height: 'auto' },
-    exit: { opacity: 0, height: 0 },
-    transition: { duration: 0.3, ease: "easeInOut" }
-  }
-}
-```
-
-### 🎯 Button Patterns
-Consistent button styling across components:
-
-```tsx
-// Primary action buttons
-<button className="flex-1 flex items-center justify-center space-x-2 bg-green-500/20 text-green-400 rounded-xl py-2.5 text-sm font-medium hover:bg-green-500/30 transition-colors">
-  <Icon className="w-4 h-4" />
-  <span>Action</span>
-</button>
-
-// Secondary action buttons
-<button className="flex items-center justify-center bg-gray-700 text-gray-400 rounded-lg px-3 py-1.5 hover:bg-gray-600 transition-colors text-sm">
-  <Icon className="w-4 h-4" />
-  <span>Action</span>
-</button>
-
-// Danger action buttons
-<button className="flex items-center justify-center bg-red-500/20 text-red-400 rounded-xl py-2.5 px-3 text-sm font-medium hover:bg-red-500/30 transition-colors">
-  <Icon className="w-4 h-4" />
-</button>
-```
-
-### 📊 Stats Display Pattern
-Consistent stats/metrics display:
-
-```tsx
-// Stats grid pattern
-<div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-4'} gap-3`}>
-  <div className="text-center">
-    <div className="text-lg font-bold text-blue-400">{value}</div>
-    <div className="text-xs text-gray-400">{label}</div>
-  </div>
-</div>
-
-// Compact metrics pattern
-<div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-4 gap-2'}`}>
-  {metrics.map((metric, index) => (
-    <motion.div
-      key={metric.title}
-      className="flex items-center space-x-2 p-2 bg-gray-800/30 rounded-xl"
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.5, delay: 0.2 + index * 0.03 }}
-    >
-      <div className={`p-1 rounded ${metric.bgColor}`}>
-        <metric.icon className={`w-3 h-3 ${metric.color}`} />
-      </div>
-      <div className="min-w-0">
-        <div className="text-xs text-gray-400 font-medium truncate">{metric.title}</div>
-        <div className={`font-bold ${metric.color} text-sm truncate`}>{metric.value}</div>
-      </div>
-    </motion.div>
-  ))}
-</div>
-```
-
-### 🔍 Search and Filter Pattern
-Consistent search and filter interface:
-
-```tsx
-// Search bar pattern
-<div className="relative mb-4">
-  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-  <input
-    type="text"
-    placeholder="Search..."
-    className="w-full pl-10 pr-4 py-2.5 bg-gray-700 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-    inputMode="text"
-    autoComplete="off"
-    autoCorrect="off"
-    autoCapitalize="off"
-    spellCheck="false"
-    style={{ fontSize: '16px' }}
-  />
-</div>
-
-// Filter buttons pattern
-<div className="flex space-x-1">
-  {filters.map(({ key, label }) => (
-    <button
-      key={key}
-      onClick={() => setFilterBy(key)}
-      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-        filterBy === key 
-          ? 'bg-blue-500 text-white' 
-          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-      }`}
-    >
-      {label}
-    </button>
-  ))}
-</div>
-```
-
----
-
-## Frontend Development
-
-### 🏗️ Architecture
-- **Framework**: React 18+ with TypeScript
-- **State Management**: Zustand for global state
-- **Styling**: Tailwind CSS with custom utilities
-- **Animations**: Framer Motion for smooth transitions
-- **Build Tool**: Vite for fast development and optimized builds
-
-### 📝 Code Standards
-```typescript
-// Component Structure
-interface ComponentProps {
-  // Props interface
-}
-
-const Component: React.FC<ComponentProps> = ({ prop1, prop2 }) => {
-  // Hooks first
-  const [state, setState] = useState()
-  
-  // Effects
-  useEffect(() => {
-    // Effect logic
-  }, [])
-  
-  // Event handlers
-  const handleEvent = useCallback(() => {
-    // Handler logic
-  }, [])
-  
-  // Render
-  return (
-    <div className="component-class">
-      {/* JSX */}
-    </div>
-  )
-}
-```
-
-### 🎨 Styling Guidelines
+Suggested defaults (may be tuned during visual QA):
 ```css
-/* Use Tailwind classes with custom utilities */
-.card-glass {
-  @apply bg-gray-800/50 backdrop-blur-sm border border-gray-700/50;
-}
-
-/* Mobile-first responsive design */
-.responsive-grid {
-  @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3;
-}
-
-/* Consistent spacing */
-.standard-padding {
-  @apply p-3 md:p-4;
-}
-```
-
-### 📱 Mobile Considerations
-- **Viewport**: Always include proper viewport meta tag
-- **Touch Events**: Use `onTouchEnd` for mobile interactions
-- **Keyboard**: Ensure proper focus management
-- **Performance**: Optimize bundle size and loading times
-
----
-
-## Backend Development
-
-### 🐍 Python Standards
-```python
-# Use type hints and docstrings
-from typing import Optional, List, Dict
-from fastapi import FastAPI, HTTPException
-
-def process_training_data(
-    data: Dict[str, any],
-    model_size: str = "medium"
-) -> Dict[str, float]:
-    """
-    Process training data and return metrics.
-    
-    Args:
-        data: Training data dictionary
-        model_size: Size of the model to use
-        
-    Returns:
-        Dictionary containing processed metrics
-    """
-    # Implementation
-    pass
-```
-
-### 🚀 FastAPI Guidelines
-- **Endpoints**: Use descriptive route names
-- **Validation**: Use Pydantic models for request/response validation
-- **Error Handling**: Consistent error responses with proper HTTP codes
-- **Documentation**: Auto-generated API docs with examples
-
-### 🧪 Testing
-```python
-# Use pytest with async support
-import pytest
-from httpx import AsyncClient
-
-@pytest.mark.asyncio
-async def test_training_endpoint():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        response = await ac.post("/training/start")
-        assert response.status_code == 200
-```
-
----
-
-## Mobile-First Approach
-
-### 📱 Design Strategy
-1. **Start with Mobile**: Design for the smallest screen first
-2. **Progressive Enhancement**: Add features for larger screens
-3. **Touch Optimization**: Ensure all interactions work with touch
-4. **Performance**: Optimize for slower mobile connections
-
-### 🎯 Implementation
-```typescript
-// Use device detection for conditional rendering
-const { displayMode } = useDeviceDetection()
-const isMobile = displayMode === 'mobile'
-
-// Conditional styling
-const chartHeight = isMobile ? 'h-14' : 'h-16'
-const gridCols = isMobile ? 'grid-cols-2' : 'grid-cols-4'
-```
-
-### 📊 Chart Optimization
-```typescript
-// Mobile-optimized chart options
-const mobileChartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { display: false }, // Hide legend on mobile
-  },
-  scales: {
-    x: { display: false }, // Hide axes on mobile
-    y: { display: false },
-  },
+:root {
+  /* Surfaces */
+  --ui-surface-base: #0b0f14;
+  --ui-surface-elevated: #111827;
+  /* Text */
+  --ui-text-primary: #f3f4f6;
+  --ui-text-secondary: #9ca3af;
+  /* Lines */
+  --ui-border-muted: #1f2937;
+  /* Brand & states */
+  --ui-brand-primary: #60a5fa;
+  --ui-success: #34d399;
+  --ui-warning: #fbbf24;
+  --ui-danger: #f87171;
+  --ui-info: #a78bfa;
+  /* Overlays & focus */
+  --ui-overlay: rgba(0,0,0,0.55);
+  --ui-focus: #93c5fd;
 }
 ```
 
----
+### Spacing scale (4px base)
+- `0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64`
+- Default vertical rhythm between stacked blocks: **8–12px on mobile**, **12–16px on desktop**.
 
-## Performance Guidelines
+### Radii
+- `xs: 8px`, `sm: 12px`, `md: 16px`, `lg: 20px`
+- Cards use `sm` by default; modals use `md`.
 
-### ⚡ Frontend Performance
-- **Bundle Size**: Keep main bundle under 500KB
-- **Code Splitting**: Use dynamic imports for large components
-- **Image Optimization**: Use WebP format with fallbacks
-- **Caching**: Implement proper cache headers and service workers
+### Elevation
+- `e0` none
+- `e1` subtle (cards)
+- `e2` raised (menus, popovers)
+- `e3` modal surfaces
+- Avoid harsh shadows; prefer low‑alpha large‑blur shadows.
 
-### 🚀 Backend Performance
-- **Database**: Use connection pooling and query optimization
-- **Caching**: Implement Redis for frequently accessed data
-- **Async Operations**: Use background tasks for heavy operations
-- **Monitoring**: Track response times and error rates
+### Typography
+- **Family**: Inter (UI), system fallbacks; JetBrains Mono (numeric & code) optional.
+- **Sizes**: `12, 14, 16, 18, 20, 24` (base 14 on mobile, 16 on desktop).
+- **Weights**: 400, 500, 600. Use 500 for action labels, 600 for headings.
+- **Numeric**: Use `font-variant-numeric: tabular-nums` for metrics and tiles.
 
-### 📱 Mobile Performance
-- **Network**: Optimize for slow connections
-- **Battery**: Minimize CPU usage and background processes
-- **Memory**: Efficient memory management for large datasets
-- **Offline**: Implement offline-first architecture where possible
+### Motion tokens
+- **Durations**: `fast 120ms`, `base 200ms`, `slow 300ms`
+- **Easing**: `standard: cubic-bezier(0.2, 0, 0, 1)`, `enter: (0, 0, 0.2, 1)`, `exit: (0.4, 0, 1, 1)`
+- **Stagger**: 20–40ms between list items
+- Never block interactions with long animations.
 
----
+## Layout system
 
-## Testing Standards
+### Safe‑area & viewport
+- Always include `viewport-fit=cover` and respect `env(safe-area-inset-*)` paddings.
+- Core screens must fit height on mobile without scrolling; content inside cards may scroll.
 
-### 🧪 Frontend Testing
-```typescript
-// Use Jest and React Testing Library
-import { render, screen, fireEvent } from '@testing-library/react'
-import { TrainingDashboard } from './TrainingDashboard'
-
-test('renders training controls', () => {
-  render(<TrainingDashboard />)
-  expect(screen.getByText('Start Training')).toBeInTheDocument()
-})
-
-test('handles mobile interactions', () => {
-  render(<TrainingDashboard />)
-  const chart = screen.getByTestId('loss-chart')
-  fireEvent.touchEnd(chart)
-  // Test double-tap behavior
-})
+### Page structure (canonical)
+```tsx
+<div className="h-full flex flex-col gap-2 pb-6 px-4">
+  {/* 1) Error/status banner (collapsible) */}
+  {/* 2) Overview stats row/cards */}
+  {/* 3) Primary content card (fills available space) */}
+  {/* 4) Secondary list or controls footer */}
+  {/* Tab switch preserves internal scroll positions */}
+  {/* Mobile: avoid vertical overflow of the whole page */}
+  {/* Desktop: increase container padding to px-6/8/10 */}
+  {/* Use css vars/tokens for colors and radii */}
+</div>
 ```
 
-### 🐍 Backend Testing
-```python
-# Comprehensive API testing
-class TestTrainingAPI:
-    def test_start_training(self, client):
-        response = client.post("/training/start")
-        assert response.status_code == 200
-        
-    def test_invalid_model_size(self, client):
-        response = client.post("/training/start", json={"model_size": "invalid"})
-        assert response.status_code == 422
-```
+### Breakpoints (mobile first)
+- `xs` ≤ 360
+- `sm` 361–479
+- `md` 480–767
+- `lg` 768–1023
+- `xl` ≥ 1024
 
-### 📱 Mobile Testing
-- **Device Testing**: Test on actual mobile devices
-- **Network Simulation**: Test with slow network conditions
-- **Touch Testing**: Verify all touch interactions work correctly
-- **Accessibility**: Test with screen readers and assistive technologies
+### Density
+- Mobile hit targets ≥ 40px height; compact icon buttons ≥ 36px.
+- List rows 44–52px. Input fields ≥ 44px height.
 
----
+## Components
 
-## Documentation
+### App chrome
+- **Tabs**: Four tabs (Training, Game, Checkpoints, Model Studio). Label + icon. Keep labels short.
+- **Bars**: Avoid persistent bottom bars on mobile unless essential. Prefer in‑content controls.
 
-### 📚 Code Documentation
-- **Comments**: Explain complex logic, not obvious code
-- **Docstrings**: Use Google-style docstrings for functions
-- **README**: Keep main README updated with latest features
-- **API Docs**: Auto-generate from code comments
+### Cards
+- Use elevated surface with subtle border; padding `16–20px`.
+- Title row with optional action buttons on the right.
+- Never nest more than two card levels.
 
-### 🎨 Design Documentation
-- **Component Library**: Document reusable components
-- **Design Tokens**: Maintain consistent design system
-- **User Flows**: Document key user journeys
-- **Accessibility**: Document accessibility considerations
+### Buttons
+- Sizes: `sm (36h)`, `md (40h)`, `lg (44h)`.
+- Variants: `primary`, `secondary`, `ghost`, `danger`.
+- Content: icon‑leading 16px, label medium weight.
+- States: hover (desktop), pressed, focused, disabled. Maintain contrast in all states.
 
-### 📖 User Documentation
-- **Installation**: Clear setup instructions
-- **Usage**: Step-by-step usage guides
-- **Troubleshooting**: Common issues and solutions
-- **FAQ**: Frequently asked questions
+### Inputs
+- Single‑line text, select, segmented controls.
+- Include clear affordances, placeholder as hint (not label).
+- Validation states: success/warning/danger; inline message under field.
 
----
+### Lists
+- Row: leading icon/thumbnail, primary text, secondary text, trailing meta/action.
+- Dividers use muted borders; prefer grouped sections with sticky headers when long.
 
-## 🎯 Quick Reference
+### Modals & sheets
+- Mobile: full‑width bottom sheets for transient tasks; modals for confirmation.
+- Desktop: centered modal with `md` radius; lock background scroll with overlay.
 
-### Color Classes
-```css
-.text-primary    /* Blue */
-.text-success    /* Green */
-.text-warning    /* Yellow */
-.text-error      /* Red */
-.text-purple     /* Purple */
-.text-orange     /* Orange */
-.text-cyan       /* Cyan */
-```
+### Toasts & banners
+- Use to confirm background actions or surface non‑blocking errors.
+- Auto‑dismiss after 3–5s with manual close.
 
-### Spacing Scale
-```css
-.p-1  /* 0.25rem - 4px */
-.p-2  /* 0.5rem  - 8px */
-.p-3  /* 0.75rem - 12px */
-.p-4  /* 1rem    - 16px */
-.p-6  /* 1.5rem  - 24px */
-```
+### Progress & status
+- Inline progress bars for long operations; never rely only on spinners.
+- Use determinate progress when possible; otherwise show staged text updates.
 
-### Breakpoints
-```css
-sm: 640px   /* Small devices */
-md: 768px   /* Medium devices */
-lg: 1024px  /* Large devices */
-xl: 1280px  /* Extra large devices */
-```
+### Charts (metrics)
+- Compact spark/mini charts on mobile (56–72px height).
+- Double‑tap to expand into an overlay with legends and tooltips.
+- Limit datasets for performance; prefer last N points.
 
-### Common Patterns
-```typescript
-// Loading states
-const [isLoading, setIsLoading] = useState(false)
+### Game board
+- Square tiles with consistent scale. Numbers use tabular numerals.
+- Color steps map to difficulty; ensure 4.5:1 contrast minimum against tile surface.
+- Animate merges with scale+fade `200ms`, easing `standard`.
 
-// Error handling
-const [error, setError] = useState<string | null>(null)
+### Model Studio (canvas)
+- Blocks snap to grid (8px). Hit targets ≥ 40px for ports.
+- Connections use smooth curves; highlight on hover/selection.
+- Zoom 0.5–2.0 with pinch; pan with two‑finger drag; avoid single‑finger conflict with scroll.
 
-// Responsive design
-const isMobile = displayMode === 'mobile'
+## Motion & interaction
+- Page/card enter: fade+translate‑y small, `200ms`.
+- List appearance: stagger 20–40ms per item.
+- Button press: scale 0.98 with shadow reduction.
+- Reduce motion: respect `prefers-reduced-motion`; fall back to opacity only.
 
-// Touch interactions
-const handleTouchEnd = (e: React.TouchEvent) => {
-  // Touch logic
-}
+## Accessibility
+- Contrast: text 4.5:1, icons 3:1 minimum.
+- Focus: visible ring using `--ui-focus`; never remove outlines without replacement.
+- Semantics: proper roles for buttons, lists, tabs, and dialogs.
+- Keyboard: all interactive elements reachable in a logical order.
 
-// Animation patterns
-<motion.div
-  initial={{ opacity: 0, y: -10 }}
-  animate={{ opacity: 1, y: 0 }}
-  className="card-glass p-4 rounded-2xl flex-shrink-0"
->
-  {/* Content */}
-</motion.div>
-```
+## Content guidelines
+- Labels are concise and action‑oriented.
+- Avoid jargon in user‑facing text; technical details live in secondary text.
+- Numbers: use short format (e.g., 12.3k) and consistent precision.
 
----
+## Responsive behavior
+- Column rules: metrics 2 cols on mobile, 4 on desktop.
+- Tables/lists collapse secondary columns on mobile; expose details in row sheet.
+- Images/charts scale to container, never overflow viewport width.
 
-## 🚀 Contributing
+## Error, empty, loading states
+- **Loading**: skeletons that match final layout; avoid blank screens.
+- **Empty**: friendly illustration/icon, one‑line description, primary action.
+- **Error**: inline banner describing the issue and next step; destructive actions gated by confirmation.
 
-When contributing to the project:
+## Performance budget
+- Aim for < 100ms interaction latency on mid‑range mobile.
+- Avoid heavy box‑shadows and large blurs on scrolling lists.
+- Virtualize large lists; throttle resize/scroll handlers.
+- Batch updates; memoize expensive renders.
 
-1. **Follow the Style Guide**: Adhere to all guidelines in this document
-2. **Use Component Patterns**: Follow established patterns for consistency
-3. **Test Thoroughly**: Ensure all changes work on mobile and desktop
-4. **Document Changes**: Update documentation for any new features
-5. **Performance**: Consider the impact on bundle size and performance
-6. **Accessibility**: Ensure changes maintain accessibility standards
+## PWA & platform specifics
+- iOS: prevent rubber‑band scrolling where harmful; manage 100vh with safe‑areas.
+- Offline: cache shell + core assets; degrade charts gracefully.
+- Install: provide clear “Add to Home Screen” affordance; ensure icon and name are crisp.
 
-Remember: **Mobile-first, performance-focused, and user-centered design** should guide all decisions! 🎯 
+## Frontend conventions (engineering)
+- Components are presentational; state and side‑effects live in dedicated hooks/stores.
+- Order: hooks → derived values → handlers → JSX.
+- Avoid ad‑hoc WebSocket instances; use a centralized connection and events.
+- Prefer composition over deep prop drilling; keep components small and focused.
+- Use TypeScript with strict props and meaningful names.
+
+## Theming & implementation notes
+- Map tokens to Tailwind theme and/or CSS variables. Do not inline hex values in components.
+- Create utility classes for repeated patterns (e.g., `card`, `btn-primary`, `btn-secondary`).
+- Do not introduce new hues without updating the token set.
+
+## Do & don’t
+- Do reuse existing patterns; don’t invent one‑offs for a single screen.
+- Do prioritize mobile; don’t optimize desktop at the expense of touch.
+- Do keep animations short; don’t block interactions with motion.
+- Do write accessible markup; don’t rely solely on color for meaning.
+
+## Review checklist (every PR)
+- Uses page structure and spacing rhythm defined above
+- Touch targets ≥ 40px; no page‑level vertical overflow on mobile
+- Tokens used for color, spacing, radii; no hardcoded values
+- Buttons, cards, and lists match variants and states
+- Charts support compact + expanded modes
+- Focus styles visible and accessible
+- No ad‑hoc sockets; state flows through stores/hooks
+
+## References
+- Canonical examples: `Training`, `Game`, `Checkpoints`, `Model Studio` screens
+- When code and guide conflict, this guide is authoritative
+
