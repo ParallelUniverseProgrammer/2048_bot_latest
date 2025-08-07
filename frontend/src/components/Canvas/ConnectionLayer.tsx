@@ -40,7 +40,7 @@ const ConnectionLayer: React.FC<ConnectionLayerProps> = ({ edges, components }) 
               toCenter.x,
               toCenter.y
             ]}
-            stroke="#06b6d4"
+            stroke={"var(--ui-info)"}
             strokeWidth={1.5}
             pointerLength={4}
             pointerWidth={4}

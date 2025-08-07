@@ -33,7 +33,7 @@ const NetworkVisualizer: React.FC = () => {
       const contribution = usage * efficiency
       
       const specializations = [
-        { name: 'Early', icon: '🚀', color: 'text-blue-400' },
+        { name: 'Early', icon: '🚀', color: 'text-ui-brand-primary' },
         { name: 'Mid', icon: '⚡', color: 'text-yellow-400' },
         { name: 'Late', icon: '🎯', color: 'text-green-400' },
         { name: 'Recovery', icon: '🛡️', color: 'text-red-400' },
@@ -289,12 +289,12 @@ const NetworkVisualizer: React.FC = () => {
                               style={{ backgroundColor: expert.color }}
                             />
                             <span className="text-xs w-10 flex-shrink-0">{expert.name}</span>
-                            <div className="flex-1 h-2 bg-gray-700 rounded overflow-hidden relative">
+                             <div className="flex-1 h-2 bg-ui-surface-elevated rounded overflow-hidden relative">
                               <motion.div
                                 className="h-full rounded"
                                 style={{
                                   width: `${(expert.usage * 100).toFixed(1)}%`,
-                                  backgroundColor: expert.usage < STARVATION_THRESHOLD ? '#f87171' : '#4ade80',
+                                   backgroundColor: expert.usage < STARVATION_THRESHOLD ? 'var(--ui-danger)' : 'var(--ui-success)',
                                 }}
                                 initial={{ width: 0 }}
                                 animate={{ width: `${(expert.usage * 100).toFixed(1)}%` }}

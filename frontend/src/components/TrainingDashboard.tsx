@@ -12,6 +12,36 @@ import { useDeviceDetection } from '../utils/deviceDetection'
 import config from '../utils/config'
 
 const TrainingDashboard: React.FC = () => {
+  const readCssVar = (name: string, fallback: string) => {
+    if (typeof window === 'undefined') return fallback
+    const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+    return val || fallback
+  }
+
+  const hexToRgba = (hex: string, alpha: number) => {
+    const normalized = hex.replace('#', '')
+    const bigint = parseInt(normalized.length === 3
+      ? normalized.split('').map((c) => c + c).join('')
+      : normalized, 16)
+    const r = (bigint >> 16) & 255
+    const g = (bigint >> 8) & 255
+    const b = bigint & 255
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+
+  const ui = useMemo(() => ({
+    textPrimary: readCssVar('--ui-text-primary', '#ffffff'),
+    textSecondary: readCssVar('--ui-text-secondary', '#9ca3af'),
+    brand: readCssVar('--ui-brand-primary', '#60a5fa'),
+    success: readCssVar('--ui-success', '#22c55e'),
+    warning: readCssVar('--ui-warning', '#f59e0b'),
+    danger: readCssVar('--ui-danger', '#ef4444'),
+    info: readCssVar('--ui-info', '#a855f7'),
+    borderMuted: readCssVar('--ui-border-muted', '#374151'),
+    overlay: readCssVar('--ui-overlay', 'rgba(0,0,0,0.8)'),
+    white: '#ffffff'
+  }), [])
+
   const { 
     lossHistory, 
     scoreHistory, 
@@ -152,16 +182,16 @@ const TrainingDashboard: React.FC = () => {
         {
           label: 'Training Loss',
           data: values,
-          borderColor: '#ef4444',
-          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          borderColor: ui.danger,
+          backgroundColor: hexToRgba(ui.danger, 0.1),
           borderWidth: isMobile ? 2 : 3,
           fill: true,
           tension: 0.4,
           pointRadius: 0,
           pointHoverRadius: isMobile ? 4 : 6,
           pointHoverBorderWidth: 2,
-          pointHoverBorderColor: '#ffffff',
-          pointHoverBackgroundColor: '#ef4444',
+          pointHoverBorderColor: ui.white,
+          pointHoverBackgroundColor: ui.danger,
         },
       ],
     }
@@ -186,16 +216,16 @@ const TrainingDashboard: React.FC = () => {
         {
           label: 'Game Score',
           data: values,
-          borderColor: '#22c55e',
-          backgroundColor: 'rgba(34, 197, 94, 0.1)',
+          borderColor: ui.success,
+          backgroundColor: hexToRgba(ui.success, 0.1),
           borderWidth: isMobile ? 2 : 3,
           fill: true,
           tension: 0.4,
           pointRadius: 0,
           pointHoverRadius: isMobile ? 4 : 6,
           pointHoverBorderWidth: 2,
-          pointHoverBorderColor: '#ffffff',
-          pointHoverBackgroundColor: '#22c55e',
+          pointHoverBorderColor: ui.white,
+          pointHoverBackgroundColor: ui.success,
         },
       ],
     }
@@ -209,16 +239,11 @@ const TrainingDashboard: React.FC = () => {
       datasets: [
         {
           data: actions.map(action => action * 100),
-          backgroundColor: [
-            '#3b82f6',
-            '#06b6d4',
-            '#8b5cf6',
-            '#f59e0b',
-          ],
-          borderColor: '#ffffff',
+          backgroundColor: [ui.brand, ui.info, ui.success, ui.warning],
+          borderColor: ui.white,
           borderWidth: 2,
           hoverBorderWidth: 3,
-          hoverBorderColor: '#ffffff',
+          hoverBorderColor: ui.white,
         },
       ],
     }
@@ -233,11 +258,11 @@ const TrainingDashboard: React.FC = () => {
         {
           label: 'Expert Usage %',
           data: expertUsage.map(usage => usage * 100),
-          backgroundColor: '#a855f7',
-          borderColor: '#ffffff',
+          backgroundColor: ui.info,
+          borderColor: ui.white,
           borderWidth: 2,
           borderRadius: 4,
-          hoverBackgroundColor: '#9333ea',
+          hoverBackgroundColor: ui.info,
           hoverBorderWidth: 3,
         },
       ],
@@ -258,10 +283,10 @@ const TrainingDashboard: React.FC = () => {
       },
       tooltip: {
         enabled: true,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: '#374151',
+        backgroundColor: ui.overlay,
+        titleColor: ui.textPrimary,
+        bodyColor: ui.textPrimary,
+        borderColor: ui.borderMuted,
         borderWidth: 1,
         cornerRadius: 8,
         displayColors: false,
@@ -310,17 +335,17 @@ const TrainingDashboard: React.FC = () => {
         display: true,
         position: 'top' as const,
         labels: {
-          color: '#ffffff',
+           color: ui.textPrimary,
           font: { size: 14 },
           padding: 20,
         },
       },
       tooltip: {
         enabled: true,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: '#374151',
+        backgroundColor: ui.overlay,
+        titleColor: ui.textPrimary,
+        bodyColor: ui.textPrimary,
+        borderColor: ui.borderMuted,
         borderWidth: 1,
         cornerRadius: 12,
         displayColors: true,
@@ -337,7 +362,7 @@ const TrainingDashboard: React.FC = () => {
           color: 'rgba(255, 255, 255, 0.1)',
         },
         ticks: {
-          color: '#9ca3af',
+           color: ui.textSecondary,
           font: { size: 12 },
         },
       },
@@ -348,7 +373,7 @@ const TrainingDashboard: React.FC = () => {
           color: 'rgba(255, 255, 255, 0.1)',
         },
         ticks: {
-          color: '#9ca3af',
+           color: ui.textSecondary,
           font: { size: 12 },
         },
       },
@@ -375,10 +400,10 @@ const TrainingDashboard: React.FC = () => {
       },
       tooltip: {
         enabled: true,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: '#374151',
+        backgroundColor: ui.overlay,
+        titleColor: ui.textPrimary,
+        bodyColor: ui.textPrimary,
+        borderColor: ui.borderMuted,
         borderWidth: 1,
         cornerRadius: 8,
         displayColors: false,
@@ -411,10 +436,10 @@ const TrainingDashboard: React.FC = () => {
       },
       tooltip: {
         enabled: true,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: '#374151',
+        backgroundColor: ui.overlay,
+        titleColor: ui.textPrimary,
+        bodyColor: ui.textPrimary,
+        borderColor: ui.borderMuted,
         borderWidth: 1,
         cornerRadius: 12,
         displayColors: true,

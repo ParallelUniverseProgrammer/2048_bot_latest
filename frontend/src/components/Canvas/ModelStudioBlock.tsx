@@ -4,11 +4,11 @@ import { BLOCK_SIZE } from '../../utils/geometry'
 
 const radius = 8
 const colors: Record<string, string> = {
-  BOARD_INPUT: '#f97316',      // Orange
-  TRANSFORMER_LAYER: '#3b82f6', // Blue
-  MOE_LAYER: '#22c55e',        // Green
-  ACTION_OUTPUT: '#ef4444',    // Red
-  VALUE_HEAD: '#a855f7'        // Purple
+  BOARD_INPUT: 'var(--ui-warning)',      // Orange
+  TRANSFORMER_LAYER: 'var(--ui-brand-primary)', // Blue
+  MOE_LAYER: 'var(--ui-success)',        // Green
+  ACTION_OUTPUT: 'var(--ui-danger)',    // Red
+  VALUE_HEAD: 'var(--ui-info)'        // Purple
 }
 
 const labels: Record<string, string> = {
@@ -42,7 +42,7 @@ const ModelStudioBlock: React.FC<BlockProps> = ({
   onDragStart,
   onDragEnd
 }) => {
-  const color = colors[type] || '#6b7280'
+  const color = colors[type] || 'var(--ui-text-secondary)'
   const label = labels[type] || type[0]
 
   return (
