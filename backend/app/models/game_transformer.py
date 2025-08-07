@@ -151,6 +151,9 @@ class MoELayer(nn.Module):
         # Stored per-forward values (visualisation + loss)
         self.current_expert_usage = None
         self.lb_loss: Optional[torch.Tensor] = None
+        # Store router importance and entropy from last forward for monitoring
+        self.last_importance: Optional[torch.Tensor] = None
+        self.last_entropy: Optional[torch.Tensor] = None
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch_size, seq_len, d_model = x.size()
@@ -166,6 +169,24 @@ class MoELayer(nn.Module):
         # Select top-k experts
         top_k_probs, top_k_indices = torch.topk(router_probs, self.top_k, dim=-1)
         top_k_probs = top_k_probs / top_k_probs.sum(dim=-1, keepdim=True)
+
+        # Track routing concentration statistics for sparsity monitoring (best-effort)
+        try:
+            max_prob = router_probs.max(dim=-1).values
+            self.avg_top1_prob = max_prob.mean().detach()
+            if self.n_experts >= 2:
+                top2_vals, _ = torch.topk(router_probs, k=min(2, self.n_experts), dim=-1)
+                if top2_vals.size(-1) >= 2:
+                    self.avg_top2_prob = top2_vals[..., 1].mean().detach()
+                else:
+                    self.avg_top2_prob = torch.tensor(0.0, device=router_probs.device)
+            else:
+                self.avg_top2_prob = torch.tensor(0.0, device=router_probs.device)
+            self.avg_concentration = (self.avg_top1_prob - self.avg_top2_prob).detach()
+        except Exception:
+            self.avg_top1_prob = None
+            self.avg_top2_prob = None
+            self.avg_concentration = None
 
         # Compute capacity (number of tokens each expert can receive)
         tokens_total = x_flat.size(0)
@@ -205,8 +226,11 @@ class MoELayer(nn.Module):
         # ---- ENHANCED: Load-balancing auxiliary loss for all model sizes ----
         # Use more sophisticated loss function for better expert utilization
         
-        # 1. Switch-style importance loss (original)
+        # 1. Switch-style importance loss (original) and monitoring signals
         importance = router_probs.mean(dim=0)  # (n_experts,)
+        # Store importance and entropy for external monitoring
+        self.last_importance = importance.detach()
+        self.last_entropy = (-importance * torch.log(importance + 1e-8)).sum().detach()
         switch_loss = (importance * importance).sum() * self.n_experts
         
         # 2. ENHANCED: Entropy-based diversity loss
@@ -340,6 +364,9 @@ class GameTransformer(nn.Module):
         self.expert_usage = None
         # Store auxiliary load-balancing loss from last forward pass
         self.latest_lb_loss: Optional[torch.Tensor] = None
+        # Store router signals from last MoE layer
+        self.router_importance: Optional[torch.Tensor] = None
+        self.router_entropy: Optional[torch.Tensor] = None
     
     def _init_weights(self, module):
         """Initialize model weights"""
@@ -414,6 +441,14 @@ class GameTransformer(nn.Module):
             last_moe = self.layers[-1].moe.current_expert_usage
             if last_moe is not None:
                 self.expert_usage = last_moe
+
+        # Store router importance/entropy from last layer
+        if self.layers:
+            last_moe_layer = self.layers[-1].moe
+            if getattr(last_moe_layer, 'last_importance', None) is not None:
+                self.router_importance = last_moe_layer.last_importance
+            if getattr(last_moe_layer, 'last_entropy', None) is not None:
+                self.router_entropy = last_moe_layer.last_entropy
         
         # Global average pooling for final representation
         pooled = x.mean(dim=1)  # (batch_size, d_model)
@@ -431,6 +466,14 @@ class GameTransformer(nn.Module):
     def get_expert_usage(self) -> Optional[torch.Tensor]:
         """Get expert usage for visualization"""
         return self.expert_usage
+
+    def get_router_importance(self) -> Optional[torch.Tensor]:
+        """Get per-expert importance distribution from router."""
+        return self.router_importance
+
+    def get_router_entropy(self) -> Optional[torch.Tensor]:
+        """Get router entropy (scalar) from last forward."""
+        return self.router_entropy
     
     def count_parameters(self) -> int:
         """Count total trainable parameters"""

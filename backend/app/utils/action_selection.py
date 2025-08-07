@@ -20,7 +20,13 @@ def select_action_with_fallback(
     env_game,
     device: torch.device,
     sample_action: bool = True,
-    max_attempts: int = 4
+    max_attempts: int = 4,
+    *,
+    temperature: float = 1.0,
+    epsilon: float = 0.05,
+    min_explore_prob: float = 0.01,
+    dirichlet_alpha: float = 0.0,
+    dirichlet_weight: float = 0.0,
 ) -> Tuple[int, float, Optional[torch.Tensor]]:
     """
     Select action with fallback mechanism for invalid moves.
@@ -100,9 +106,39 @@ def select_action_with_fallback(
                 action_mask = torch.full((4,), -float('inf'), device=device)
                 action_mask[legal_actions] = 0.0
                 masked_logits = policy_logits[0] + action_mask
-                
-                # Get action probabilities
+
+                # Temperature scaling
+                if temperature <= 0:
+                    temperature = 1.0
+                masked_logits = masked_logits / float(temperature)
+
+                # Get base action probabilities
                 action_probs = F.softmax(masked_logits, dim=-1)
+
+                # Optional Dirichlet noise for robust exploration (legal actions only)
+                if dirichlet_alpha > 0.0 and dirichlet_weight > 0.0:
+                    noise = torch.zeros_like(action_probs)
+                    if len(legal_actions) > 0:
+                        alpha_vec = torch.full((len(legal_actions),), dirichlet_alpha, device=device)
+                        dir_noise = torch.distributions.Dirichlet(alpha_vec).sample()
+                        for i, a in enumerate(legal_actions):
+                            noise[a] = dir_noise[i]
+                        action_probs = (1 - dirichlet_weight) * action_probs + dirichlet_weight * noise
+                        action_probs = action_probs / action_probs.sum()
+
+                # Epsilon-greedy mixing with uniform over legal actions
+                if epsilon > 0.0 and len(legal_actions) > 0:
+                    uniform = torch.zeros_like(action_probs)
+                    uniform[legal_actions] = 1.0 / float(len(legal_actions))
+                    action_probs = (1 - epsilon) * action_probs + epsilon * uniform
+                    action_probs = action_probs / action_probs.sum()
+
+                # Ensure a minimum exploration floor on legal actions
+                if min_explore_prob > 0.0 and len(legal_actions) > 0:
+                    floor = torch.zeros_like(action_probs)
+                    floor[legal_actions] = min_explore_prob
+                    action_probs = torch.maximum(action_probs, floor)
+                    action_probs = action_probs / action_probs.sum()
                 
                 # Validate probabilities
                 if torch.isnan(action_probs).any() or torch.isinf(action_probs).any():

@@ -380,10 +380,9 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
    */
   const getModelSizeColor = (size: string) => {
     switch (size.toLowerCase()) {
-      case 'tiny': return 'text-blue-400'
-      case 'small': return 'text-green-400'
-      case 'medium': return 'text-yellow-400'
-      case 'large': return 'text-purple-400'
+      case 'lightning': return 'text-blue-400'
+      case 'base': return 'text-green-400'
+      case 'expert': return 'text-purple-400'
       default: return 'text-gray-400'
     }
   }

@@ -226,19 +226,12 @@ class TrainingManager:
         
         from app.models.model_config import DynamicModelConfig
         
-        # Get the model size from config
-        model_size = config_dict.get('model_size', 'medium')
-        
-        # Map model size to VRAM target for configuration selection
-        vram_targets = {
-            'tiny': 1.0,  # Very low VRAM target for tiny model
-            'small': 2.0,
-            'medium': 4.0,
-            'large': 6.0
-        }
-        
-        target_vram = vram_targets.get(model_size, 4.0)
-        self.current_config = DynamicModelConfig.select_config(target_vram=target_vram)
+        # Get the model profile from config
+        model_size = config_dict.get('model_size', 'base')  # lightning | base | expert
+
+        # Optionally allow forcing by VRAM, else select by profile
+        target_vram = config_dict.get('target_vram', None)
+        self.current_config = DynamicModelConfig.select_config(target_vram=target_vram, target_profile=model_size)
         
         # Reinitialize trainer with new config
         self.timing_logger.start_operation("trainer_reinit", "config")
@@ -254,9 +247,9 @@ class TrainingManager:
         
         self.timing_logger.end_operation("trainer_reinit", "config")
         
-        self.timing_logger.end_operation("update_config", "config", f"model_size={model_size}, params={self.current_config.estimated_params:.1f}M")
-        
-        print(f"Updated training config: {model_size} model with {self.current_config.estimated_params:.1f}M parameters")
+        self.timing_logger.end_operation("update_config", "config", f"model_profile={model_size}, params={self.current_config.estimated_params:.1f}M (active ~{self.current_config.estimated_active_params:.1f}M)")
+
+        print(f"Updated training config: {model_size} profile with {self.current_config.estimated_params:.1f}M params, ~{self.current_config.estimated_active_params:.1f}M active")
 
     def load_checkpoint_trainer(self, config, checkpoint_path: str):
         """Load a checkpoint and create trainer with the correct configuration"""
@@ -491,29 +484,40 @@ class TrainingManager:
                     if len(self._episode_start_times) > 20:
                         self._episode_start_times = self._episode_start_times[-20:]
                     
-                    # Train one episode **per environment** using PPO in parallel threads.
+                    # Train one episode per environment concurrently with robust safety
                     if self.current_episode < 5:  # Debug logging for first few iterations
-                        print(f"Training {len(self.envs)} environments sequentially...")
-                    
-                    self.timing_logger.start_operation("sequential_training", "training", f"n_envs={len(self.envs)}")
-                    
-                    # TEMPORARY: Use sequential training to isolate threading issues
-                    episode_results = []
+                        print(f"Training {len(self.envs)} environments concurrently...")
+
+                    self.timing_logger.start_operation("concurrent_training", "training", f"n_envs={len(self.envs)}")
+
+                    # Create tasks for each environment
+                    tasks = []
                     for i, env in enumerate(self.envs):
-                        try:
-                            # CRITICAL FIX: Call async train_episode method
-                            result = await self.env_trainers[i].train_episode(env)
-                            episode_results.append(result)
-                            
-                            # CRITICAL FIX: Yield control to event loop after each environment
-                            # This prevents blocking WebSocket operations during training
-                            await asyncio.sleep(0.001)  # Minimal yield to allow WebSocket processing
-                            
-                        except Exception as e:
-                            print(f"Environment {i} training failed: {e}")
-                            import traceback
-                            traceback.print_exc()
-                            # Add a default result to prevent crashes
+                        async def run_env(idx: int, environment: Gym2048Env):
+                            try:
+                                return await self.env_trainers[idx].train_episode(environment)
+                            except Exception as err:
+                                print(f"Environment {idx} training failed: {err}")
+                                import traceback
+                                traceback.print_exc()
+                                return {
+                                    'episode': self.current_episode + 1,
+                                    'score': 0,
+                                    'reward': 0.0,
+                                    'length': 0,
+                                    'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
+                                    'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
+                                }
+                        tasks.append(asyncio.create_task(run_env(i, env)))
+
+                    # Await all tasks without blocking websocket operations (tasks yield internally)
+                    episode_results_raw = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    # Normalize results and handle exceptions gracefully
+                    episode_results = []
+                    for res in episode_results_raw:
+                        if isinstance(res, Exception):
+                            print(f"Environment task raised exception: {res}")
                             episode_results.append({
                                 'episode': self.current_episode + 1,
                                 'score': 0,
@@ -522,10 +526,12 @@ class TrainingManager:
                                 'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
                                 'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
                             })
-                    
-                    self.timing_logger.end_operation("sequential_training", "training", f"results={len(episode_results)}")
+                        else:
+                            episode_results.append(res)
+
+                    self.timing_logger.end_operation("concurrent_training", "training", f"results={len(episode_results)}")
                     if self.current_episode < 5:  # Debug logging
-                        print(f"Training completed, got {len(episode_results)} results")
+                        print(f"Concurrent training completed, got {len(episode_results)} results")
 
                     # Convenience: last result for logging / checkpoint metrics
                     last_res = episode_results[-1] if episode_results else {}

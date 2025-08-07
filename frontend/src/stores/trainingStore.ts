@@ -122,7 +122,7 @@ export interface TrainingState {
   totalEpisodes: number
   
   // Model configuration
-  modelSize: 'tiny' | 'small' | 'medium' | 'large'
+  modelSize: 'lightning' | 'base' | 'expert'
   
   // Training data
   trainingData: TrainingData | null
@@ -159,7 +159,7 @@ export interface TrainingState {
   setPlayingCheckpoint: (playing: boolean) => void
   setGameCompletionData: (data: GameCompletionData | null) => void
   setShowingGameOver: (showing: boolean) => void
-  setModelSize: (size: 'tiny' | 'small' | 'medium' | 'large') => void
+  setModelSize: (size: 'lightning' | 'base' | 'expert') => void
   setLoadingState: (key: keyof LoadingStates, value: boolean | string | null) => void
   startLoadingOperation: (operationType: 'training' | 'playback' | 'newGame' | 'reset', steps: string[]) => void
   updateLoadingProgress: (progress: number, step?: string, estimatedTime?: number) => void
@@ -188,7 +188,7 @@ export const useTrainingStore = create<TrainingState>()(
       isPaused: false,
       currentEpisode: 0,
       totalEpisodes: 10000,
-      modelSize: 'tiny',
+      modelSize: 'base',
       trainingData: null,
       lossHistory: {episodes: [], values: []},
       scoreHistory: {episodes: [], values: []},

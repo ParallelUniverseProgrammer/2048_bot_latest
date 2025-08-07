@@ -250,7 +250,14 @@ class PPOTrainer:
                                        f"model_params={self.model.count_parameters():,}, device={self.device}, batch_size={self.batch_size}")
     
     def calculate_load_balancing_reward(self) -> float:
-        """Calculate load balancing reward based on expert usage distribution with enhanced anti-starvation mechanisms"""
+        """Calculate intrinsic reward promoting sparsity, utilization and exploration.
+
+        Components:
+        - Expert utilization balance (low variance, avoid starvation)
+        - Router entropy/diversity and activity sparsity
+        - Recovery incentives to prevent collapse
+        - Progressive scaling and early-training boosts
+        """
         self.timing_logger.start_operation("calculate_lb_reward", "reward")
         
         # Get current expert usage from the model
@@ -363,12 +370,12 @@ class PPOTrainer:
             self.lb_progressive_factor = progress_factor
         
         # Combine all components
-        lb_reward = (entropy_bonus + 
-                    sparsity_bonus + 
-                    balance_bonus - 
-                    variance_penalty - 
-                    starvation_penalty - 
-                    diversity_penalty)
+        lb_reward = (entropy_bonus +
+                     sparsity_bonus +
+                     balance_bonus -
+                     variance_penalty -
+                     starvation_penalty -
+                     diversity_penalty)
         
         # Apply adaptive factor based on model size
         lb_reward *= self.lb_adaptive_factor
@@ -416,8 +423,14 @@ class PPOTrainer:
             self.latest_action_probs = action_probs.cpu().numpy().tolist()
         self.timing_logger.end_operation("model_forward", "inference", f"legal_actions={len(legal_actions)}")
         
-        # Use fallback mechanism to select action
+        # Use fallback mechanism to select action with adaptive exploration
         self.timing_logger.start_operation("action_fallback", "inference")
+        # Schedule exploration temperature and epsilon over training
+        # High exploration early, anneal gradually, but keep floor to avoid stagnation
+        temp = max(0.7, 1.5 - 0.0001 * self.total_steps)
+        eps = max(0.02, 0.2 - 0.00005 * self.total_steps)
+        dir_alpha = 0.3 if self.episode_count < 500 else 0.05
+        dir_weight = 0.25 if self.episode_count < 500 else 0.1
         action, log_prob, attention_weights = select_action_with_fallback(
             model=self.model,
             state=state,
@@ -425,7 +438,12 @@ class PPOTrainer:
             env_game=env_game,
             device=self.device,
             sample_action=True,
-            max_attempts=4
+            max_attempts=4,
+            temperature=temp,
+            epsilon=eps,
+            min_explore_prob=0.01,
+            dirichlet_alpha=dir_alpha,
+            dirichlet_weight=dir_weight,
         )
         self.timing_logger.end_operation("action_fallback", "inference", f"selected_action={action}")
         

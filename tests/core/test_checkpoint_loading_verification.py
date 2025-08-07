@@ -49,8 +49,8 @@ class CheckpointVerificationTester:
             # Create training manager
             self.training_manager = TrainingManager(ws_manager, n_envs=2)
             
-            # Create a test config
-            config = DynamicModelConfig.select_config(target_vram=2.0)  # Small model
+            # Create a test config (select a small/light profile deterministically)
+            config = DynamicModelConfig.select_config(target_vram=2.0, target_profile="lightning")
             
             # Create a test trainer and save a checkpoint
             test_trainer = PPOTrainer(config=config, learning_rate=0.0003)

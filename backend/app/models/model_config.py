@@ -21,6 +21,8 @@ class ModelConfig:
     top_k: int
     dropout: float
     attention_dropout: float
+    # Optional label for UI/selection
+    model_size: Optional[str] = None
     
     @property
     def estimated_params(self) -> float:
@@ -30,60 +32,69 @@ class ModelConfig:
         # Attention: n_layers * n_heads * d_model * d_model * 3 (Q, K, V)
         # MoE: n_layers * n_experts * d_model * d_ff * 2
         # Output heads: d_model * 4 (policy) + d_model * 1 (value)
-        
+
         embedding = 16 * self.d_model
         attention = self.n_layers * self.n_heads * self.d_model * self.d_model * 3
         moe = self.n_layers * self.n_experts * self.d_model * self.d_ff * 2
         output_heads = self.d_model * 5
-        
+
         total = embedding + attention + moe + output_heads
         return total / 1e6  # Convert to millions
 
+    @property
+    def estimated_active_params(self) -> float:
+        """Estimate active parameters used per forward pass in millions.
+
+        Assumes attention fully active and MoE activates only ``top_k`` experts
+        per token.
+        """
+        attention_active = self.n_layers * self.n_heads * self.d_model * self.d_model * 3
+        moe_active = self.n_layers * self.top_k * self.d_model * self.d_ff * 2
+        output_heads = self.d_model * 5
+        total_active = attention_active + moe_active + output_heads
+        return total_active / 1e6
+
 class DynamicModelConfig:
     """Dynamically configure model based on available resources"""
-    
-    # Predefined configurations for different VRAM levels
+
+    # Predefined configurations targeting total/active parameter budgets
+    # lightning: ~2M total, ~0.5M active
+    # base: ~12M total, ~3M active
+    # expert: ~100M total, ~10M active
     CONFIGS = {
-        "tiny": ModelConfig(
-            d_model=60,
+        "lightning": ModelConfig(
+            d_model=128,
             n_heads=2,
-            n_layers=2,  # Increased from 1 to 2 layers
-            n_experts=4,
-            d_ff=60,
-            top_k=2,
-            dropout=0.1,
-            attention_dropout=0.1
-        ),
-        "small": ModelConfig(
-            d_model=256,
-            n_heads=8,
-            n_layers=4,
-            n_experts=4,
-            d_ff=1024,
-            top_k=2,
-            dropout=0.1,
-            attention_dropout=0.1
-        ),
-        "medium": ModelConfig(
-            d_model=384,
-            n_heads=12,
-            n_layers=6,
-            n_experts=6,
-            d_ff=1536,
-            top_k=2,
-            dropout=0.1,
-            attention_dropout=0.1
-        ),
-        "large": ModelConfig(
-            d_model=512,
-            n_heads=16,
-            n_layers=8,
+            n_layers=3,
             n_experts=8,
-            d_ff=2048,
-            top_k=2,
+            d_ff=256,
+            top_k=1,
             dropout=0.1,
-            attention_dropout=0.1
-        )
+            attention_dropout=0.1,
+            model_size="lightning",
+        ),
+        "base": ModelConfig(
+            d_model=256,
+            n_heads=4,
+            n_layers=3,
+            n_experts=12,
+            d_ff=512,
+            top_k=1,
+            dropout=0.1,
+            attention_dropout=0.1,
+            model_size="base",
+        ),
+        "expert": ModelConfig(
+            d_model=512,
+            n_heads=3,
+            n_layers=3,
+            n_experts=30,
+            d_ff=1024,
+            top_k=1,
+            dropout=0.1,
+            attention_dropout=0.1,
+            model_size="expert",
+        ),
     }
     
     @classmethod
@@ -114,43 +125,51 @@ class DynamicModelConfig:
             return 4.0  # Default fallback
     
     @classmethod
-    def select_config(cls, target_vram: Optional[float] = None) -> ModelConfig:
-        """Select appropriate configuration based on available resources"""
-        
-        if target_vram is not None:
-            if target_vram < 2.0:
-                config_name = "tiny"
-            elif target_vram < 4.0:
-                config_name = "small"
-            elif target_vram < 6.0:
-                config_name = "medium"
+    def select_config(
+        cls,
+        target_vram: Optional[float] = None,
+        target_profile: Optional[str] = None,
+    ) -> ModelConfig:
+        """Select appropriate configuration.
+
+        Priority:
+        1) If ``target_profile`` in {lightning, base, expert} is provided, use that.
+        2) Else select by available VRAM.
+        """
+
+        if target_profile in cls.CONFIGS:
+            config_name = target_profile
+            available_vram = target_vram if target_vram is not None else cls.get_available_vram()
+        elif target_vram is not None:
+            if target_vram < 4.0:
+                config_name = "lightning"
+            elif target_vram < 12.0:
+                config_name = "base"
             else:
-                config_name = "large"
+                config_name = "expert"
             available_vram = target_vram
         else:
             available_vram = cls.get_available_vram()
-            if available_vram >= 6.0:
-                config_name = "large"
+            if available_vram >= 12.0:
+                config_name = "expert"
             elif available_vram >= 4.0:
-                config_name = "medium"
-            elif available_vram >= 2.0:
-                config_name = "small"
+                config_name = "base"
             else:
-                config_name = "tiny"
+                config_name = "lightning"
         
         system_ram = cls.get_system_ram()
         
         console.print(f"[blue]Available VRAM: {available_vram:.1f}GB")
         console.print(f"[blue]Available RAM: {system_ram:.1f}GB")
         
-        # Fallback to CPU if very low VRAM
-        if available_vram < 2.0 and system_ram >= 8.0 and config_name != "tiny":
-            console.print("[yellow]Low VRAM detected, using CPU-optimized config")
-            config_name = "small"
+        # Fallback to CPU-optimized config names preserved in our scheme
+        if available_vram < 2.0 and system_ram >= 8.0 and config_name != "lightning":
+            console.print("[yellow]Low VRAM detected, using CPU-optimized lightning config")
+            config_name = "lightning"
         
         config = cls.CONFIGS[config_name]
         console.print(f"[green]Selected config: {config_name}")
-        console.print(f"[green]Estimated parameters: {config.estimated_params:.1f}M")
+        console.print(f"[green]Estimated parameters: {config.estimated_params:.1f}M (active ~{config.estimated_active_params:.1f}M)")
         
         return config
     
@@ -161,19 +180,19 @@ class DynamicModelConfig:
         if available_vram is None:
             available_vram = cls.get_available_vram() or 0.0  # Handle None case
         
-        # Optimized for speed: larger base batch sizes
-        if config.d_model >= 512:
-            base_batch_size = 64  # Increased from 32
-        elif config.d_model >= 384:
-            base_batch_size = 128  # Increased from 64
+        # Optimized baseline based on profile and model width
+        if config.model_size == "expert" or config.d_model >= 512:
+            base_batch_size = 64
+        elif config.model_size == "base" or config.d_model >= 256:
+            base_batch_size = 128
         else:
-            base_batch_size = 256  # Increased from 128
-        
-        # Adjust based on available VRAM - more aggressive for speed
+            base_batch_size = 256
+
+        # Adjust based on available VRAM
         if available_vram < 4.0:
-            batch_size = max(32, int(base_batch_size // 2))  # Less aggressive reduction
-        elif available_vram < 6.0:
-            batch_size = max(64, int(base_batch_size // 1.5))  # Less aggressive reduction
+            batch_size = max(32, int(base_batch_size // 2))
+        elif available_vram < 12.0:
+            batch_size = max(64, int(base_batch_size // 1.5))
         else:
             batch_size = base_batch_size
         

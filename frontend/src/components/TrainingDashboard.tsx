@@ -642,6 +642,21 @@ const TrainingDashboard: React.FC = () => {
       color: 'text-cyan-400',
       bgColor: 'bg-cyan-500/20',
     },
+    {
+      title: 'Active Params',
+      value: (() => {
+        // Approximate active params based on profile selection
+        const profile = modelSize
+        let activeM = 0
+        if (profile === 'lightning') activeM = 0.5
+        else if (profile === 'base') activeM = 3
+        else if (profile === 'expert') activeM = 10
+        return `${activeM.toFixed(1)}M`
+      })(),
+      icon: Scale,
+      color: 'text-pink-400',
+      bgColor: 'bg-pink-500/20',
+    },
   ]
 
   const enhancedMetrics = [
@@ -812,10 +827,10 @@ const TrainingDashboard: React.FC = () => {
         {/* Model Size Selector - Only show when not training */}
         {!isTraining && (
           <div className="mb-2">
-            <label className="block text-xs text-ui-text-secondary mb-1">Model Size</label>
+            <label className="block text-xs text-ui-text-secondary mb-1">Model Profile</label>
             <select
               value={modelSize}
-              onChange={(e) => setModelSize(e.target.value as 'tiny' | 'small' | 'medium' | 'large')}
+              onChange={(e) => setModelSize(e.target.value as 'lightning' | 'base' | 'expert')}
               disabled={isTraining || loadingStates.isTrainingStarting}
               className={`
                 w-full bg-ui-surface-elevated text-ui-text-primary rounded-lg px-3 py-2 text-sm border border-ui-border-muted
@@ -823,10 +838,9 @@ const TrainingDashboard: React.FC = () => {
                 ${isTraining || loadingStates.isTrainingStarting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-700/40'}
               `}
             >
-              <option value="tiny">Tiny Model</option>
-              <option value="small">Small Model</option>
-              <option value="medium">Medium Model</option>
-              <option value="large">Large Model</option>
+              <option value="lightning">Lightning (≈2M params, ~0.5M active)</option>
+              <option value="base">Base (≈12M params, ~3M active)</option>
+              <option value="expert">Expert (≈100M params, ~10M active)</option>
             </select>
           </div>
         )}

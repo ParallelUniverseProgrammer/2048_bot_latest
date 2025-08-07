@@ -261,6 +261,13 @@ export const useWebSocket = () => {
         // Clear any loading states
         useTrainingStore.getState().setLoadingState('isTrainingStarting', false)
         useTrainingStore.getState().setLoadingState('loadingMessage', null)
+        // If backend includes model_config, optionally update UI model profile
+        if (data.model_config && data.model_config.model_size) {
+          const size = data.model_config.model_size as 'lightning' | 'base' | 'expert'
+          if (size === 'lightning' || size === 'base' || size === 'expert') {
+            useTrainingStore.getState().setModelSize(size)
+          }
+        }
       } else if (data.type === 'training_complete') {
         console.log('Received training complete:', data)
         useTrainingStore.getState().setTrainingStatus(false, false)
