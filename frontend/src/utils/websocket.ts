@@ -359,6 +359,13 @@ export const useWebSocket = () => {
       } else if (data.type === 'checkpoint_created') {
         console.log('Received checkpoint created:', data)
         // Handle new checkpoint creation
+      } else if (data.type === 'evaluation_metrics') {
+        console.log('Received evaluation metrics:', data)
+        try {
+          useTrainingStore.getState().updateEvaluationMetrics({ metrics: data.metrics || {} })
+        } catch (e) {
+          console.warn('Failed to update evaluation metrics in store:', e)
+        }
       } else {
         console.log('Unknown message type:', data.type)
       }

@@ -8,10 +8,16 @@
 
 ### Current status (grounded in code)
 - Backend serves training control endpoints, checkpoint management, and WebSocket streaming from `backend/main.py` using `TrainingManager`.
+- Deterministic evaluation loop has been added: after synchronous PPO updates, the backend runs greedy (no‑exploration) evaluation over fixed seeds, computes robust metrics (median/percentiles, solve‑rates, max‑tile histogram), broadcasts `evaluation_metrics`, and checkpoints the best model by median score.
+- PPO trainer has been upgraded for stability and learning speed:
+  - Dual‑critic architecture (extrinsic and intrinsic value heads) with blended advantages for the policy and separate clipped value losses.
+  - Synchronous rollout → update cadence driven by the manager.
+  - Target‑KL early stop per update, value function clipping (Huber), and clip/entropy schedules.
+  - Intrinsic signals are decoupled from extrinsic returns; load‑balancing remains an auxiliary loss only.
 - Frontend tabs (mobile‑first PWA) are implemented in `frontend/src` with Zustand stores and a centralized WebSocket client:
   - `Controls` (`components/ControlsDashboard.tsx`) — start/pause/resume/stop/reset training, model size selection (icon updated to Sliders in `App.tsx`).
   - `Game` (`components/GameBoard.tsx`) — live board with attention overlays and playback controls.
-  - `Metrics` (`components/TrainingDashboard.tsx`) — training charts and KPIs (formerly “Training” tab label; now shown as Metrics).
+  - `Metrics` (`components/TrainingDashboard.tsx`) — graph‑heavy dashboard with loss/score trends, evaluation median trend and max‑tile histogram, action distribution, and an MoE router usage trend with health KPIs (router entropy & active experts) and color‑coded statuses.
   - `Checkpoints` (`components/CheckpointManager.tsx`) — list/stats, search/sort/filter, rename, delete (with confirmation dialog), resume training, and playback; includes autosave interval + long‑run configuration.
   - `Model Studio` (`components/ModelStudioTab.tsx`) — canvas, validation, and stubs for compile/train.
 - Checkpoint playback is implemented server‑side (`CheckpointPlayback`) with live step streaming over WebSocket and polling fallback.
@@ -34,7 +40,12 @@
 ---
 
 ### Key features
-- Real‑time training dashboard (Metrics) with loss/score charts, action distribution, expert usage, and derived KPIs streamed every episode via WebSocket with batching and rate limiting.
+- Real‑time training dashboard (Metrics) with:
+  - Loss/score charts with smooth animations
+  - Deterministic evaluation visuals: median score trend, max‑tile histogram, and solve‑rates
+  - Action distribution
+  - MoE routing diagnostics: expert usage trend (stacked‑like filled lines), router entropy and active‑expert KPIs
+  - All metrics streamed via WebSocket with batching and rate limiting
 - Interactive game viewer with attention overlays and live action probabilities; checkpoint playback with pause/resume/stop and speed control.
 - Controls tab: start/pause/resume/stop/reset training and model size selection with tokenized, touch‑friendly UI (icon updated to Sliders).
 - Checkpoint manager: list, stats, search/sort/filter, nickname edit, delete (gated with confirmation dialog), resume‑training, and playback; autosave interval + long‑run configuration.
@@ -52,8 +63,8 @@ Design system & UX (recent updates)
 
 ### Architecture overview
 - Backend: `FastAPI` app in `backend/main.py`
-  - Training lifecycle: `TrainingManager` (async loop, metrics batching, checkpoint autosave)
-  - WebSocket: connection health, batching, rate limiting, adaptive timeouts (`app/api/websocket_manager.py`)
+  - Training lifecycle: `TrainingManager` (async loop, synchronous rollout→update, metrics batching, periodic deterministic evaluation, checkpoint autosave & best‑by‑median)
+  - WebSocket: connection health, batching, rate limiting, adaptive timeouts (`app/api/websocket_manager.py`); broadcasts `training_update`, `evaluation_metrics`, status/batch messages
   - Checkpoints: list/metadata, manual/interval saves, load/resume, playback (live stream + polling fallback)
   - Model Studio: design CRUD, validation, codegen stub, compile/train routes (`app/api/design_router.py`)
 - Frontend: React + Zustand in `frontend/src`
@@ -136,7 +147,7 @@ python launcher.py --config path/to/custom.config.json  # use custom JSON config
 - Playback: POST `/checkpoints/{id}/playback/start`, `.../pause`, `.../resume`, `.../stop`, `.../speed`, GET status/data/model
 
 **WebSocket**
-- `/ws` streams `training_update`, checkpoint playback steps, status updates, and heartbeats; batching and rate limiting enabled
+- `/ws` streams `training_update`, `evaluation_metrics`, checkpoint playback steps, status updates, and heartbeats; batching and rate limiting enabled
 
 ---
 
@@ -152,6 +163,7 @@ python launcher.py --config path/to/custom.config.json  # use custom JSON config
 - Frontend dev server: `npm i && npm run dev` in `frontend/`
 - Backend dev: `uvicorn backend.main:app --reload --port 8000` (or run via launcher `--dev`)
 - PWA build: `npm run build` (served by backend if `frontend/dist` exists)
+- PPO internals: dual‑critic returns and schedules live in `backend/app/training/ppo_trainer.py`; evaluation loop runs via `TrainingManager` after updates; best checkpointing uses median eval score.
 - Tests: use the project’s python test runners in `tests/` as needed
 
 License: MIT

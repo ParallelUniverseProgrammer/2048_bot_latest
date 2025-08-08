@@ -46,13 +46,12 @@ const TrainingDashboard: React.FC = () => {
   const { 
     lossHistory, 
     scoreHistory, 
-    // isTraining, 
-    // isPaused,
     lastPolicyLoss, 
     lastValueLoss, 
-    //
     getCurrentTrainingData,
-    //
+    evaluationHistory,
+    lastEvaluation,
+    routerHistory,
   } = useTrainingStore()
 
   const { displayMode } = useDeviceDetection()
@@ -73,16 +72,7 @@ const TrainingDashboard: React.FC = () => {
   const currentTrainingData = getCurrentTrainingData()
 
   // Derived dominance metrics (fallback if not provided by backend)
-  const dominance = useMemo(() => {
-    const usage = currentTrainingData?.expert_usage as number[] | undefined
-    if (!usage || usage.length === 0) return { hhi: 0, dominance: 0, top1: 0 }
-    const sumSquares = usage.reduce((s, u) => s + u * u, 0)
-    const n = usage.length
-    const minHhi = 1 / n
-    const normHhi = Math.max(0, Math.min(1, (sumSquares - minHhi) / (1 - minHhi)))
-    const top1 = Math.max(...usage)
-    return { hhi: normHhi, dominance: normHhi, top1 }
-  }, [currentTrainingData?.expert_usage])
+  // Removed old dominance calc (superseded by routerHistory-based health)
 
   // NEW: Chart expansion handlers
   const handleChartDoubleTap = (chartType: 'loss' | 'score' | 'actions' | 'experts', title: string) => {
@@ -201,25 +191,68 @@ const TrainingDashboard: React.FC = () => {
     }
   }, [currentTrainingData?.actions, isMobile])
 
-  const expertUsageData = useMemo(() => {
-    const expertUsage = currentTrainingData?.expert_usage || [0.2, 0.2, 0.2, 0.2, 0.2]
+  const expertUsageTrendData = useMemo(() => {
+    const labels = routerHistory.map(e => new Date(e.timestamp).toLocaleTimeString())
+    const last = routerHistory.length > 0 ? routerHistory[routerHistory.length - 1] : undefined
+    const seriesCount = last?.usage.length || 0
+    const colors = [ui.info, ui.brand, ui.success, ui.warning, ui.danger, '#34d399', '#60a5fa', '#f472b6']
+    const datasets = Array.from({ length: seriesCount }).map((_, idx) => ({
+      label: `E${idx + 1}`,
+      data: routerHistory.map(e => (e.usage[idx] || 0) * 100),
+      borderColor: colors[idx % colors.length],
+      backgroundColor: hexToRgba(colors[idx % colors.length], 0.15),
+      borderWidth: 2,
+      fill: true,
+      tension: 0.35,
+      pointRadius: 0,
+    }))
+    return { labels, datasets }
+  }, [routerHistory, isMobile])
 
+  const routerHealth = useMemo(() => {
+    const last = routerHistory.length > 0 ? routerHistory[routerHistory.length - 1] : undefined
+    if (!last) return { entropy: 0, hhi: 0, activeExperts: 0 }
+    return last
+  }, [routerHistory])
+
+  // Evaluation charts
+  const evalScoreLineData = useMemo(() => {
+    const labels = evaluationHistory.map(e => new Date(e.timestamp).toLocaleTimeString())
+    const medians = evaluationHistory.map(e => e.median_score)
     return {
-      labels: expertUsage.map((_, index) => isMobile ? `E${index + 1}` : `Expert ${index + 1}`),
+      labels,
       datasets: [
         {
-          label: 'Expert Usage %',
-          data: expertUsage.map(usage => usage * 100),
-          backgroundColor: ui.info,
-          borderColor: ui.white,
-          borderWidth: 2,
-          borderRadius: 4,
-          hoverBackgroundColor: ui.info,
-          hoverBorderWidth: 3,
+          label: 'Eval Median',
+          data: medians,
+          borderColor: ui.brand,
+          backgroundColor: hexToRgba(ui.brand, 0.1),
+          borderWidth: isMobile ? 2 : 3,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 0,
         },
       ],
     }
-  }, [currentTrainingData?.expert_usage, isMobile])
+  }, [evaluationHistory, isMobile])
+
+  const evalTileBarData = useMemo(() => {
+    const freq = lastEvaluation?.max_tile_frequency || {}
+    const tiles = Object.keys(freq).map(Number).sort((a, b) => a - b)
+    const values = tiles.map(t => (freq as any)[t] || 0)
+    return {
+      labels: tiles.map(t => `${t}`),
+      datasets: [
+        {
+          label: 'Max Tile Frequency',
+          data: values,
+          backgroundColor: ui.info,
+          borderColor: ui.white,
+          borderWidth: 1,
+        },
+      ],
+    }
+  }, [lastEvaluation])
 
   // Enhanced chart options for larger charts
   const enhancedChartOptions = {
@@ -457,64 +490,7 @@ const TrainingDashboard: React.FC = () => {
     },
   }
 
-  // NEW: Enhanced bar options for expanded view
-  const expandedBarOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: true,
-        position: 'top' as const,
-        labels: {
-          color: '#ffffff',
-          font: { size: 14 },
-          padding: 20,
-        },
-      },
-      tooltip: {
-        enabled: true,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: '#374151',
-        borderWidth: 1,
-        cornerRadius: 12,
-        displayColors: true,
-        padding: 12,
-        titleFont: { size: 14 },
-        bodyFont: { size: 13 },
-        callbacks: {
-          label: function(context: any) {
-            return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}%`;
-          }
-        }
-      },
-    },
-    scales: {
-      x: {
-        display: true,
-        grid: {
-          display: true,
-          color: 'rgba(255, 255, 255, 0.1)',
-        },
-        ticks: {
-          color: '#9ca3af',
-          font: { size: 12 },
-        },
-      },
-      y: {
-        display: true,
-        grid: {
-          display: true,
-          color: 'rgba(255, 255, 255, 0.1)',
-        },
-        ticks: {
-          color: '#9ca3af',
-          font: { size: 12 },
-        },
-      },
-    },
-  }
+  // Removed unused expandedBarOptions (replaced expert bar with trend line)
 
   // Enhanced metrics calculations
   const getScoreTrendIcon = () => {
@@ -541,6 +517,13 @@ const TrainingDashboard: React.FC = () => {
     if (avgEfficiency > 0.7) return { icon: <CheckCircle className="w-4 h-4 text-green-400" />, color: 'text-green-400' }
     if (avgEfficiency > 0.4) return { icon: <AlertTriangle className="w-4 h-4 text-yellow-400" />, color: 'text-yellow-400' }
     return { icon: <AlertTriangle className="w-4 h-4 text-red-400" />, color: 'text-red-400' }
+  }
+
+  const evalColor = (value: number, goodHigher = true) => {
+    if (Number.isNaN(value)) return 'text-gray-400'
+    const v = value
+    if (goodHigher) return v >= 0.9 ? 'text-green-400' : v >= 0.6 ? 'text-yellow-400' : 'text-red-400'
+    return v <= 0.1 ? 'text-green-400' : v <= 0.3 ? 'text-yellow-400' : 'text-red-400'
   }
 
   const metrics = [
@@ -593,6 +576,21 @@ const TrainingDashboard: React.FC = () => {
       icon: Brain,
       color: 'text-cyan-400',
       bgColor: 'bg-cyan-500/20',
+    },
+    // Eval KPIs
+    {
+      title: 'Eval Median',
+      value: lastEvaluation ? lastEvaluation.median_score.toFixed(0) : '—',
+      icon: Target,
+      color: lastEvaluation ? (lastEvaluation.median_score > 1500 ? 'text-green-400' : lastEvaluation.median_score > 800 ? 'text-yellow-400' : 'text-red-400') : 'text-gray-400',
+      bgColor: 'bg-green-500/10',
+    },
+    {
+      title: 'Eval 2048 Solve',
+      value: lastEvaluation ? `${(lastEvaluation.solve_rate_2048 * 100).toFixed(0)}%` : '—',
+      icon: CheckCircle,
+      color: lastEvaluation ? evalColor(lastEvaluation.solve_rate_2048, true) : 'text-gray-400',
+      bgColor: 'bg-green-500/10',
     },
     // NEW: Novelty signal
     {
@@ -753,7 +751,7 @@ const TrainingDashboard: React.FC = () => {
                   <Doughnut data={actionDistributionData} options={expandedDoughnutOptions} />
                 )}
                 {expandedChart.type === 'experts' && (
-                  <Bar data={expertUsageData} options={expandedBarOptions} />
+                  <Line data={expertUsageTrendData} options={expandedChartOptions} />
                 )}
               </div>
             </div>
@@ -846,12 +844,25 @@ const TrainingDashboard: React.FC = () => {
             </div>
           </div>
           <div className="flex flex-col space-y-1">
-            <div className="text-xs text-ui-text-secondary font-medium">Expert Usage</div>
-            <div
-              className="w-full h-20 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors"
-              onDoubleClick={() => handleChartDoubleTap('experts', 'Expert Usage')}
-            >
-              <Bar data={expertUsageData} options={enhancedBarOptions} />
+            <div className="text-xs text-ui-text-secondary font-medium">Expert Usage (trend)</div>
+            <div className="w-full h-20 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors">
+              <Line data={expertUsageTrendData} options={enhancedChartOptions} />
+            </div>
+          </div>
+        </div>
+
+        {/* Evaluation Row */}
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <div className="flex flex-col space-y-1">
+            <div className="text-xs text-ui-text-secondary font-medium">Eval Median (trend)</div>
+            <div className="w-full h-16 bg-gray-800/50 rounded-xl p-2">
+              <Line data={evalScoreLineData} options={enhancedChartOptions} />
+            </div>
+          </div>
+          <div className="flex flex-col space-y-1">
+            <div className="text-xs text-ui-text-secondary font-medium">Eval Max Tile Histogram</div>
+            <div className="w-full h-16 bg-gray-800/50 rounded-xl p-2">
+              <Bar data={evalTileBarData} options={enhancedBarOptions} />
             </div>
           </div>
         </div>
@@ -880,8 +891,12 @@ const TrainingDashboard: React.FC = () => {
             <span className={`text-xs ${getEfficiencyStatus().color}`}>{currentTrainingData?.training_efficiency ? `${((currentTrainingData.training_efficiency.score_consistency + currentTrainingData.training_efficiency.loss_stability + currentTrainingData.training_efficiency.improvement_rate + currentTrainingData.training_efficiency.plateau_detection)/4*100).toFixed(0)}%` : 'N/A'}</span>
           </div>
           <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-gray-800/40">
-            <span className="text-xs text-ui-text-secondary">Dominance (HHI)</span>
-            <span className="text-xs numeric text-ui-text-primary">{(dominance.hhi * 100).toFixed(0)}%</span>
+            <span className="text-xs text-ui-text-secondary">Active Experts</span>
+            <span className={`text-xs numeric ${routerHealth.activeExperts >= 4 ? 'text-green-400' : routerHealth.activeExperts >= 3 ? 'text-yellow-400' : 'text-red-400'}`}>{routerHealth.activeExperts}</span>
+          </div>
+          <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-gray-800/40">
+            <span className="text-xs text-ui-text-secondary">Router Entropy</span>
+            <span className={`text-xs numeric ${routerHealth.entropy >= 0.7 ? 'text-green-400' : routerHealth.entropy >= 0.5 ? 'text-yellow-400' : 'text-red-400'}`}>{(routerHealth.entropy * 100).toFixed(0)}%</span>
           </div>
         </div>
       </motion.div>

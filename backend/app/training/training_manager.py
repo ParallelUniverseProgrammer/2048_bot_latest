@@ -132,6 +132,13 @@ class TrainingManager:
         
         self.timing_logger.end_operation("manager_init", "setup")
 
+        # ------------------------------ Evaluation config ------------------------------
+        # Run evaluation every N synchronous updates
+        self._eval_every_updates = 10
+        self._eval_num_episodes = 100
+        self._best_median_score: Optional[float] = None
+        self._updates_since_last_eval = 0
+
     def __del__(self):
         """Cleanup when training manager is destroyed"""
         try:
@@ -511,13 +518,13 @@ class TrainingManager:
                     if len(self._episode_start_times) > 20:
                         self._episode_start_times = self._episode_start_times[-20:]
                     
-                    # Train one episode per environment concurrently with robust safety
-                    if self.current_episode < 5:  # Debug logging for first few iterations
-                        print(f"Training {len(self.envs)} environments concurrently...")
+                    # Train one episode per environment concurrently, then update policy synchronously
+                    if self.current_episode < 5:
+                        print(f"Collecting rollouts from {len(self.envs)} environments...")
 
-                    self.timing_logger.start_operation("concurrent_training", "training", f"n_envs={len(self.envs)}")
+                    self.timing_logger.start_operation("collect_rollouts", "training", f"n_envs={len(self.envs)}")
 
-                    # Create tasks for each environment
+                    # Collect episodes concurrently
                     tasks = []
                     for i, env in enumerate(self.envs):
                         async def run_env(idx: int, environment: Gym2048Env):
@@ -537,9 +544,7 @@ class TrainingManager:
                                 }
                         tasks.append(asyncio.create_task(run_env(i, env)))
 
-                    # Stream the first finished result immediately to reduce perceived latency
                     episode_results = []
-                    first_broadcast_done = False
                     for future in asyncio.as_completed(tasks):
                         res = await future
                         if isinstance(res, Exception):
@@ -554,26 +559,54 @@ class TrainingManager:
                             }
                         episode_results.append(res)
 
-                        # Early, lightweight broadcast from the first finished environment
-                        if not first_broadcast_done:
-                            try:
-                                metrics_preview = self._build_metrics(res, self.envs[-1])
-                                metrics_preview['is_training_active'] = True
-                                metrics_preview['next_episode_estimate'] = self._estimate_next_episode_time()
-                                now = time.time()
-                                if now - self._last_broadcast_time >= self._broadcast_interval:
-                                    await asyncio.wait_for(
-                                        self.ws_manager.broadcast(metrics_preview, priority="normal"),
-                                        timeout=0.5
-                                    )
-                                    self._last_broadcast_time = now
-                                first_broadcast_done = True
-                            except Exception as e:
-                                print(f"Warning: early metrics preview broadcast failed: {e}")
+                    self.timing_logger.end_operation("collect_rollouts", "training", f"results={len(episode_results)}")
+                    if self.current_episode < 5:
+                        print(f"Rollout collection completed with {len(episode_results)} episodes")
 
-                    self.timing_logger.end_operation("concurrent_training", "training", f"results={len(episode_results)}")
-                    if self.current_episode < 5:  # Debug logging
-                        print(f"Concurrent training completed, got {len(episode_results)} results")
+                    # Synchronous PPO update once per collection window (trainer manages minibatches)
+                    self.timing_logger.start_operation("synchronous_update", "training")
+                    try:
+                        losses_sync = self.trainer.update_policy()
+                    finally:
+                        self.timing_logger.end_operation("synchronous_update", "training")
+
+                    # --------------------------- Deterministic evaluation ---------------------------
+                    self._updates_since_last_eval += 1
+                    if self._updates_since_last_eval >= self._eval_every_updates:
+                        self._updates_since_last_eval = 0
+                        self.timing_logger.start_operation("evaluation", "eval")
+                        try:
+                            eval_metrics = self.trainer.evaluate_policy(num_episodes=self._eval_num_episodes)
+                        except Exception as e:
+                            eval_metrics = { 'error': str(e) }
+                        self.timing_logger.end_operation("evaluation", "eval")
+
+                        # Broadcast evaluation metrics
+                        try:
+                            await asyncio.wait_for(
+                                self.ws_manager.broadcast({
+                                    'type': 'evaluation_metrics',
+                                    'metrics': eval_metrics,
+                                }, priority="high"),
+                                timeout=1.0,
+                            )
+                        except Exception:
+                            pass
+
+                        # Checkpoint best-by-median-score
+                        if 'median_score' in eval_metrics:
+                            median_score = float(eval_metrics['median_score'])
+                            should_save = (self._best_median_score is None) or (median_score > (self._best_median_score or 0.0))
+                            if should_save:
+                                self._best_median_score = median_score
+                                try:
+                                    await self._save_checkpoint(
+                                        training_speed=self._calculate_training_speed_with_checkpoint_offset(),
+                                        avg_game_length=float(eval_metrics.get('mean_length', 0.0)),
+                                        metrics={'evaluation': eval_metrics, 'reason': 'best_median_score'}
+                                    )
+                                except Exception:
+                                    pass
 
                     # Convenience: last result for logging / checkpoint metrics
                     last_res = episode_results[-1] if episode_results else {}

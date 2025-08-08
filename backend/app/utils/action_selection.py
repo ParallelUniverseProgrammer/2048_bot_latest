@@ -176,7 +176,12 @@ def select_action_with_fallback(
             
             # Get policy and value from model with error handling
             try:
-                policy_logits, value = model(state_tensor)
+                out = model(state_tensor)
+                # Support models that return (policy, value) or (policy, value_ext, value_int)
+                if isinstance(out, (list, tuple)) and len(out) >= 1:
+                    policy_logits = out[0]
+                else:
+                    policy_logits = out
                 # Ensure logits are on the correct device to avoid CUDA/CPU mismatch
                 policy_logits = policy_logits.to(device)
             except RuntimeError as e:
@@ -186,7 +191,8 @@ def select_action_with_fallback(
                     try:
                         state_tensor = state_tensor.cpu()
                         model_cpu = model.cpu()
-                        policy_logits, value = model_cpu(state_tensor)
+                        out = model_cpu(state_tensor)
+                        policy_logits = out[0] if isinstance(out, (list, tuple)) else out
                         device = torch.device('cpu')
                     except Exception as cpu_e:
                         logger.error(f"CPU fallback also failed: {cpu_e}")
@@ -352,7 +358,8 @@ def select_action_with_fallback_for_playback(
             
             # Get policy and value from model with error handling
             try:
-                policy_logits, value = model(state_tensor)
+                out = model(state_tensor)
+                policy_logits = out[0] if isinstance(out, (list, tuple)) else out
                 # Ensure logits are on the correct device to avoid CUDA/CPU mismatch
                 policy_logits = policy_logits.to(device)
             except RuntimeError as e:
@@ -362,7 +369,8 @@ def select_action_with_fallback_for_playback(
                     try:
                         state_tensor = state_tensor.cpu()
                         model_cpu = model.cpu()
-                        policy_logits, value = model_cpu(state_tensor)
+                        out = model_cpu(state_tensor)
+                        policy_logits = out[0] if isinstance(out, (list, tuple)) else out
                         device = torch.device('cpu')
                     except Exception as cpu_e:
                         logger.error(f"CPU fallback also failed: {cpu_e}")

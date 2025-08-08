@@ -352,12 +352,22 @@ class GameTransformer(nn.Module):
             nn.Linear(config.d_model // 2, 4)  # 4 actions: up, down, left, right
         )
         
+        # Extrinsic value head (for game score)
         self.value_head = nn.Sequential(
             nn.LayerNorm(config.d_model),
             nn.Linear(config.d_model, config.d_model // 2),
             nn.GELU(),
             nn.Dropout(config.dropout),
             nn.Linear(config.d_model // 2, 1)  # Single value output
+        )
+
+        # Intrinsic value head (for novelty/intrinsic rewards)
+        self.intrinsic_value_head = nn.Sequential(
+            nn.LayerNorm(config.d_model),
+            nn.Linear(config.d_model, config.d_model // 2),
+            nn.GELU(),
+            nn.Dropout(config.dropout),
+            nn.Linear(config.d_model // 2, 1)
         )
         
         # Initialize weights
@@ -407,8 +417,9 @@ class GameTransformer(nn.Module):
             board: (batch_size, 4, 4) tensor of board values
             
         Returns:
-            policy_logits: (batch_size, 4) action probabilities
-            value: (batch_size, 1) state value
+            policy_logits: (batch_size, 4) action logits
+            value_ext: (batch_size, 1) extrinsic state value
+            value_int: (batch_size, 1) intrinsic state value
         """
         batch_size = board.size(0)
         
@@ -459,9 +470,10 @@ class GameTransformer(nn.Module):
         
         # Output heads
         policy_logits = self.policy_head(pooled)
-        value = self.value_head(pooled)
-        
-        return policy_logits, value
+        value_ext = self.value_head(pooled)
+        value_int = self.intrinsic_value_head(pooled)
+
+        return policy_logits, value_ext, value_int
     
     def get_attention_weights(self) -> Optional[torch.Tensor]:
         """Get attention weights for visualization"""

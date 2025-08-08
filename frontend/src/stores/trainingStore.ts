@@ -128,6 +128,39 @@ export interface TrainingState {
   trainingData: TrainingData | null
   lossHistory: {episodes: number[], values: number[]}
   scoreHistory: {episodes: number[], values: number[]}
+  // Evaluation metrics history
+  evaluationHistory: Array<{
+    timestamp: number
+    episodes: number
+    mean_score: number
+    median_score: number
+    p75_score: number
+    p90_score: number
+    mean_length: number
+    solve_rate_1024: number
+    solve_rate_2048: number
+    max_tile_frequency: Record<number, number>
+  }>
+  lastEvaluation: {
+    timestamp: number
+    episodes: number
+    mean_score: number
+    median_score: number
+    p75_score: number
+    p90_score: number
+    mean_length: number
+    solve_rate_1024: number
+    solve_rate_2048: number
+    max_tile_frequency: Record<number, number>
+  } | null
+  // Router usage history for MoE monitoring
+  routerHistory: Array<{
+    timestamp: number
+    usage: number[]
+    entropy: number // normalized 0..1
+    hhi: number // sum(p^2)
+    activeExperts: number
+  }>
   
   // Checkpoint playback data
   checkpointPlaybackData: CheckpointPlaybackData | null
@@ -155,6 +188,7 @@ export interface TrainingState {
   setTrainingStatus: (training: boolean, paused?: boolean) => void
   setEpisode: (episode: number) => void
   updateTrainingData: (data: TrainingData) => void
+  updateEvaluationMetrics: (payload: { metrics: any }) => void
   updateCheckpointPlaybackData: (data: CheckpointPlaybackData) => void
   setPlayingCheckpoint: (playing: boolean) => void
   setGameCompletionData: (data: GameCompletionData | null) => void
@@ -192,6 +226,9 @@ export const useTrainingStore = create<TrainingState>()(
       trainingData: null,
       lossHistory: {episodes: [], values: []},
       scoreHistory: {episodes: [], values: []},
+      evaluationHistory: [],
+      lastEvaluation: null,
+      routerHistory: [],
       
       // Checkpoint playback data
       checkpointPlaybackData: null,
@@ -256,6 +293,30 @@ export const useTrainingStore = create<TrainingState>()(
 
       updateTrainingData: (data) => {
         const state = get()
+        // Update router usage history if present
+        if (Array.isArray(data.expert_usage) && data.expert_usage.length > 0) {
+          const usage = data.expert_usage
+          const n = usage.length
+          const eps = 1e-8
+          const sum = usage.reduce((s, u) => s + u, 0)
+          const probs = sum > 0 ? usage.map(u => u / sum) : usage.map(() => 0)
+          const entropyRaw = probs.reduce((s, p) => s + (p > 0 ? -p * Math.log(p + eps) : 0), 0)
+          const entropyMax = Math.log(Math.max(1, n))
+          const entropy = entropyMax > 0 ? entropyRaw / entropyMax : 0
+          const hhi = probs.reduce((s, p) => s + p * p, 0)
+          const uniform = 1 / Math.max(1, n)
+          const activeExperts = probs.reduce((c, p) => c + (p > uniform * 0.1 ? 1 : 0), 0)
+          const entry = {
+            timestamp: data.timestamp || Date.now(),
+            usage: probs,
+            entropy,
+            hhi,
+            activeExperts,
+          }
+          const nextHistory = [...state.routerHistory, entry]
+          const capped = nextHistory.length > 200 ? nextHistory.slice(-200) : nextHistory
+          set({ routerHistory: capped })
+        }
         set({
           trainingData: data,
           currentEpisode: data.episode,
@@ -275,6 +336,26 @@ export const useTrainingStore = create<TrainingState>()(
           },
           // NEW: Mark that we've received the first data
           isWaitingForFirstData: false
+        })
+      },
+
+      updateEvaluationMetrics: ({ metrics }) => {
+        const state = get()
+        const entry = {
+          timestamp: Date.now(),
+          episodes: Number(metrics.episodes || 0),
+          mean_score: Number(metrics.mean_score || 0),
+          median_score: Number(metrics.median_score || 0),
+          p75_score: Number(metrics.p75_score || 0),
+          p90_score: Number(metrics.p90_score || 0),
+          mean_length: Number(metrics.mean_length || 0),
+          solve_rate_1024: Number(metrics.solve_rate_1024 || 0),
+          solve_rate_2048: Number(metrics.solve_rate_2048 || 0),
+          max_tile_frequency: (metrics.max_tile_frequency || {}) as Record<number, number>,
+        }
+        set({
+          lastEvaluation: entry,
+          evaluationHistory: [...state.evaluationHistory.slice(-99), entry],
         })
       },
       

@@ -16,6 +16,7 @@ import json
 import asyncio
 from datetime import datetime
 import hashlib
+import statistics
 
 from app.models import GameTransformer, DynamicModelConfig
 from app.environment.gym_2048_env import Gym2048Env
@@ -167,7 +168,7 @@ class PPOTrainer:
         
         # Initialize optimizer
         self.timing_logger.start_operation("optimizer_setup", "setup")
-        self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, eps=1e-5)
         # Cosine decay scheduler for smoother optimisation
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=100_000, eta_min=1e-6
@@ -175,11 +176,16 @@ class PPOTrainer:
         self.timing_logger.end_operation("optimizer_setup", "setup")
         
         # PPO hyperparameters
+        # PPO base hyperparameters (scheduled during training)
         self.clip_epsilon = 0.2
+        self.clip_epsilon_final = 0.1
         self.value_loss_coef = 0.5
-        self.entropy_coef = 0.01
+        self.entropy_coef = 0.02
+        self.entropy_coef_final = 0.0
+        self.target_kl = 0.02
         # Auxiliary loss coefficients - ENHANCED for tiny models
-        self.lb_loss_coef = 0.05  # Increased from 0.01 to 0.05 for stronger load balancing
+        # Keep load balancing only as auxiliary loss; lower its weight
+        self.lb_loss_coef = 0.005
         self.max_grad_norm = 0.5
         
         # Load balancing reward parameters - ENHANCED for all model sizes
@@ -228,7 +234,7 @@ class PPOTrainer:
         # New: Expert diversity tracking
         self.expert_usage_history = deque(maxlen=100)  # Track recent usage patterns
         self.lb_diversity_penalty = 0.2  # Penalty for low diversity
-        self.ppo_epochs = 2  # Reduced from 4 to 2 for faster updates
+        self.ppo_epochs = 4
         # Use more aggressive batch sizing when ample VRAM is available
         self.batch_size = DynamicModelConfig.get_batch_size(config)
 
@@ -244,10 +250,10 @@ class PPOTrainer:
         # Action validation toggle (avoid expensive deep copies by default)
         self.validate_moves = validate_moves
 
-        # Novelty-driven exploration settings
+        # Novelty-driven exploration settings (intrinsic signal)
         self._novelty_counts = {}
         self._novelty_order = deque(maxlen=200_000)
-        self.novelty_bonus_coef = 0.12
+        self.novelty_bonus_coef = 0.1
         self.novelty_min = 0.0
         self.novelty_max = 1.0
         self._stagnation_steps = 0
@@ -268,6 +274,10 @@ class PPOTrainer:
         self.episode_count = 0
         self.total_steps = 0
         self.best_score = 0
+        self.update_steps = 0
+        # Intrinsic blending schedule (anneal to zero over updates)
+        self.intrinsic_weight_initial = 0.3
+        self.intrinsic_weight_decay_updates = 2000
         
         # Store latest action probabilities for visualization
         self.latest_action_probs = [0.25, 0.25, 0.25, 0.25]  # Initialize with uniform
@@ -279,14 +289,16 @@ class PPOTrainer:
         self.value_loss_history = deque(maxlen=1000)
         self.entropy_history = deque(maxlen=1000)
         
-        # Experience buffer
-        self.buffer_size = 512  # Reduced from 1024 to 512 for faster policy updates
+        # Experience buffer (separate extrinsic/intrinsic rewards and values)
+        self.buffer_size = 2048
         # Preallocated ring buffer for faster writes and snapshotting
         self._buf_capacity = self.buffer_size
         self._buf_states = np.zeros((self._buf_capacity, 4, 4), dtype=np.float32)
         self._buf_actions = np.zeros((self._buf_capacity,), dtype=np.int64)
-        self._buf_rewards = np.zeros((self._buf_capacity,), dtype=np.float32)
-        self._buf_values = np.zeros((self._buf_capacity,), dtype=np.float32)
+        self._buf_rewards_ext = np.zeros((self._buf_capacity,), dtype=np.float32)
+        self._buf_rewards_int = np.zeros((self._buf_capacity,), dtype=np.float32)
+        self._buf_values_ext = np.zeros((self._buf_capacity,), dtype=np.float32)
+        self._buf_values_int = np.zeros((self._buf_capacity,), dtype=np.float32)
         self._buf_log_probs = np.zeros((self._buf_capacity,), dtype=np.float32)
         self._buf_dones = np.zeros((self._buf_capacity,), dtype=np.bool_)
         self._buf_count = 0  # number of valid entries (<= capacity)
@@ -296,7 +308,8 @@ class PPOTrainer:
         
         # Optimization: Track if policy update is needed
         self._policy_update_counter = 0
-        self._policy_update_frequency = 2  # Update policy every 2 episodes instead of every buffer fill
+        # With synchronous updates from manager, we can keep a fallback frequency
+        self._policy_update_frequency = 999999  # Manager drives updates
         
         print(f"PPO Trainer initialized:")
         print(f"  Model parameters: {self.model.count_parameters():,}")
@@ -467,21 +480,21 @@ class PPOTrainer:
         
         return final_reward
     
-    def select_action(self, state: np.ndarray, legal_actions: List[int], env_game) -> Tuple[int, float, float]:
+    def select_action(self, state: np.ndarray, legal_actions: List[int], env_game) -> Tuple[int, float, float, float]:
         """Select action using current policy with fallback for invalid moves"""
         
         self.timing_logger.start_operation("action_selection", "inference")
         
-        # Single forward pass for logits and value (AMP-enabled)
+        # Single forward pass for logits and values (AMP-enabled)
         self.timing_logger.start_operation("model_forward", "inference")
         with torch.inference_mode():
             state_tensor = torch.as_tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
             # Enable AMP for inference on CUDA to accelerate forward pass
             if self.use_amp and self.device and str(self.device).startswith("cuda"):
                 with torch.autocast(device_type="cuda", dtype=torch.float16):
-                    policy_logits, value = self.model(state_tensor)
+                    policy_logits, value_ext, value_int = self.model(state_tensor)
             else:
-                policy_logits, value = self.model(state_tensor)
+                policy_logits, value_ext, value_int = self.model(state_tensor)
 
             # Mask illegal actions for visualization
             action_mask = torch.full((4,), -float('inf'), device=self.device)
@@ -534,9 +547,91 @@ class PPOTrainer:
         )
         self.timing_logger.end_operation("action_fallback", "inference", f"selected_action={action}")
 
-        self.timing_logger.end_operation("action_selection", "inference", f"action={action}, value={value.item():.3f}")
+        self.timing_logger.end_operation("action_selection", "inference", f"action={action}")
         
-        return action, log_prob, value.item()
+        return action, log_prob, float(value_ext.item()), float(value_int.item())
+
+    # ------------------------------ Evaluation ------------------------------
+    def _select_action_greedy(self, state: np.ndarray, legal_actions: List[int]) -> int:
+        """Deterministic greedy action selection (no exploration, no validation).
+        Masks illegal actions and picks argmax.
+        """
+        with torch.inference_mode():
+            state_tensor = torch.as_tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
+            if self.use_amp and self.device and str(self.device).startswith("cuda"):
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    policy_logits, _, _ = self.model(state_tensor)
+            else:
+                policy_logits, _, _ = self.model(state_tensor)
+            action_mask = torch.full((4,), -float('inf'), device=self.device)
+            action_mask[legal_actions] = 0.0
+            masked_logits = policy_logits[0] + action_mask
+            action = int(torch.argmax(masked_logits).item())
+            if action not in legal_actions and len(legal_actions) > 0:
+                action = legal_actions[0]
+            return action
+
+    def evaluate_policy(self, *, num_episodes: int = 100, seeds: Optional[List[int]] = None) -> Dict[str, Any]:
+        """Run deterministic evaluation episodes and compute metrics.
+
+        - No exploration, novelty, or intrinsic signals are used.
+        - Uses greedy masked argmax action selection.
+        - Returns aggregate metrics for checkpointing/monitoring.
+        """
+        scores: List[int] = []
+        lengths: List[int] = []
+        max_tiles: List[int] = []
+
+        seeds = seeds or list(range(num_episodes))
+        if len(seeds) < num_episodes:
+            # Repeat seeds deterministically if fewer provided
+            seeds = (seeds * ((num_episodes + len(seeds) - 1) // len(seeds)))[:num_episodes]
+
+        for i in range(num_episodes):
+            env = Gym2048Env(seed=seeds[i])
+            state, _ = env.reset()
+            done = False
+            steps = 0
+            while not done:
+                legal_actions = env.game.legal_moves()
+                if not legal_actions:
+                    break
+                action = self._select_action_greedy(state, legal_actions)
+                state, reward, done, _, _ = env.step(action)
+                steps += 1
+
+            lengths.append(steps)
+            scores.append(int(env.get_score()))
+            max_tiles.append(int(np.max(state)))
+
+        # Aggregate metrics
+        scores_sorted = sorted(scores)
+        p50 = statistics.median(scores_sorted) if scores_sorted else 0.0
+        p75 = scores_sorted[int(0.75 * (len(scores_sorted) - 1))] if scores_sorted else 0.0
+        p90 = scores_sorted[int(0.90 * (len(scores_sorted) - 1))] if scores_sorted else 0.0
+        mean_score = float(sum(scores) / len(scores)) if scores else 0.0
+        mean_len = float(sum(lengths) / len(lengths)) if lengths else 0.0
+        # Solve rates by max tile achieved
+        solve_1024 = float(sum(1 for t in max_tiles if t >= 1024)) / float(len(max_tiles)) if max_tiles else 0.0
+        solve_2048 = float(sum(1 for t in max_tiles if t >= 2048)) / float(len(max_tiles)) if max_tiles else 0.0
+        # Max tile frequency histogram
+        tile_freq: Dict[int, int] = {}
+        for t in max_tiles:
+            tile_freq[t] = tile_freq.get(t, 0) + 1
+
+        return {
+            'episodes': num_episodes,
+            'mean_score': mean_score,
+            'median_score': float(p50),
+            'p75_score': float(p75),
+            'p90_score': float(p90),
+            'mean_length': mean_len,
+            'solve_rate_1024': solve_1024,
+            'solve_rate_2048': solve_2048,
+            'max_tile_frequency': tile_freq,
+            'scores': scores,
+            'lengths': lengths,
+        }
 
     # ---- Novelty utilities ----
     def _encode_state(self, state: np.ndarray) -> tuple:
@@ -598,8 +693,19 @@ class PPOTrainer:
         """Get the latest action probabilities for visualization"""
         return self.latest_action_probs
     
-    def store_transition(self, state: np.ndarray, action: int, reward: float, 
-                        value: float, log_prob: float, done: bool):
+    def _current_clip(self) -> float:
+        # Linear schedule from clip_epsilon to clip_epsilon_final over intrinsic_weight_decay_updates
+        steps = max(1, self.intrinsic_weight_decay_updates)
+        progress = min(1.0, self.update_steps / steps)
+        return float(self.clip_epsilon + (self.clip_epsilon_final - self.clip_epsilon) * progress)
+
+    def _current_entropy_coef(self) -> float:
+        steps = max(1, self.intrinsic_weight_decay_updates)
+        progress = min(1.0, self.update_steps / steps)
+        return float(self.entropy_coef + (self.entropy_coef_final - self.entropy_coef) * progress)
+    
+    def store_transition(self, state: np.ndarray, action: int, reward_ext: float, reward_int: float,
+                        value_ext: float, value_int: float, log_prob: float, done: bool):
         """Store transition in experience buffer (thread-safe)"""
         
         self.timing_logger.start_operation("store_transition", "buffer")
@@ -612,8 +718,10 @@ class PPOTrainer:
                 self._buf_count += 1
             self._buf_states[idx, :, :] = state
             self._buf_actions[idx] = int(action)
-            self._buf_rewards[idx] = float(reward)
-            self._buf_values[idx] = float(value)
+            self._buf_rewards_ext[idx] = float(reward_ext)
+            self._buf_rewards_int[idx] = float(reward_int)
+            self._buf_values_ext[idx] = float(value_ext)
+            self._buf_values_int[idx] = float(value_int)
             self._buf_log_probs[idx] = float(log_prob)
             self._buf_dones[idx] = bool(done)
         lock_duration = time.perf_counter() - lock_start
@@ -625,7 +733,7 @@ class PPOTrainer:
     def compute_advantages(self, rewards: List[float], values: List[float], 
                           dones: List[bool], gamma: float = 0.99, 
                           lambda_: float = 0.95) -> Tuple[np.ndarray, np.ndarray]:
-        """Compute advantages using GAE (Generalized Advantage Estimation)"""
+        """Compute advantages using GAE (Generalized Advantage Estimation) for a single reward/value stream."""
         
         self.timing_logger.start_operation("compute_advantages", "training")
         
@@ -659,6 +767,13 @@ class PPOTrainer:
         self.timing_logger.end_operation("compute_advantages", "training", f"sequence_length={len(rewards)}")
         
         return advantages, returns
+
+    def _intrinsic_weight(self) -> float:
+        # Linearly anneal from initial to 0 over intrinsic_weight_decay_updates
+        w0 = self.intrinsic_weight_initial
+        steps = max(1, self.intrinsic_weight_decay_updates)
+        w = max(0.0, w0 * (1.0 - self.update_steps / steps))
+        return float(w)
     
     def update_policy(self) -> Dict[str, Optional[float]]:
         """Update policy using PPO (thread-safe)"""
@@ -678,8 +793,10 @@ class PPOTrainer:
                     # Simple slice when not wrapped
                     states_np = self._buf_states[:count].copy()
                     actions_list = self._buf_actions[:count].copy()
-                    rewards_list = self._buf_rewards[:count].copy().tolist()
-                    values_list = self._buf_values[:count].copy().tolist()
+                    rewards_list_ext = self._buf_rewards_ext[:count].copy().tolist()
+                    rewards_list_int = self._buf_rewards_int[:count].copy().tolist()
+                    values_list_ext = self._buf_values_ext[:count].copy().tolist()
+                    values_list_int = self._buf_values_int[:count].copy().tolist()
                     log_probs_list = self._buf_log_probs[:count].copy()
                     dones_list = self._buf_dones[:count].copy().tolist()
                 else:
@@ -687,8 +804,10 @@ class PPOTrainer:
                     roll = -self._buf_head
                     states_np = np.roll(self._buf_states, roll, axis=0).copy()
                     actions_list = np.roll(self._buf_actions, roll, axis=0).copy()
-                    rewards_list = np.roll(self._buf_rewards, roll, axis=0).copy().tolist()
-                    values_list = np.roll(self._buf_values, roll, axis=0).copy().tolist()
+                    rewards_list_ext = np.roll(self._buf_rewards_ext, roll, axis=0).copy().tolist()
+                    rewards_list_int = np.roll(self._buf_rewards_int, roll, axis=0).copy().tolist()
+                    values_list_ext = np.roll(self._buf_values_ext, roll, axis=0).copy().tolist()
+                    values_list_int = np.roll(self._buf_values_int, roll, axis=0).copy().tolist()
                     log_probs_list = np.roll(self._buf_log_probs, roll, axis=0).copy()
                     dones_list = np.roll(self._buf_dones, roll, axis=0).copy().tolist()
                 # Reset pointers (arrays are reused)
@@ -707,31 +826,58 @@ class PPOTrainer:
             cpu_states = torch.from_numpy(states_np).float()
             cpu_actions = torch.from_numpy(actions_list).long()
             cpu_old_log_probs = torch.from_numpy(log_probs_list).float()
+            cpu_rewards_ext = torch.from_numpy(np.array(rewards_list_ext, dtype=np.float32))
+            cpu_rewards_int = torch.from_numpy(np.array(rewards_list_int, dtype=np.float32))
+            cpu_values_ext = torch.from_numpy(np.array(values_list_ext, dtype=np.float32))
+            cpu_values_int = torch.from_numpy(np.array(values_list_int, dtype=np.float32))
             if self.use_amp and self.device and str(self.device).startswith("cuda"):
                 try:
                     cpu_states = cpu_states.pin_memory()
                     cpu_actions = cpu_actions.pin_memory()
                     cpu_old_log_probs = cpu_old_log_probs.pin_memory()
+                    cpu_rewards_ext = cpu_rewards_ext.pin_memory()
+                    cpu_rewards_int = cpu_rewards_int.pin_memory()
+                    cpu_values_ext = cpu_values_ext.pin_memory()
+                    cpu_values_int = cpu_values_int.pin_memory()
                 except Exception:
                     pass
                 states = cpu_states.to(self.device, non_blocking=True)
                 actions = cpu_actions.to(self.device, non_blocking=True)
                 old_log_probs = cpu_old_log_probs.to(self.device, non_blocking=True)
+                rewards_ext_t = cpu_rewards_ext.to(self.device, non_blocking=True)
+                rewards_int_t = cpu_rewards_int.to(self.device, non_blocking=True)
+                values_ext_t = cpu_values_ext.to(self.device, non_blocking=True)
+                values_int_t = cpu_values_int.to(self.device, non_blocking=True)
             else:
                 states = cpu_states.to(self.device)
                 actions = cpu_actions.to(self.device)
                 old_log_probs = cpu_old_log_probs.to(self.device)
+                rewards_ext_t = cpu_rewards_ext.to(self.device)
+                rewards_int_t = cpu_rewards_int.to(self.device)
+                values_ext_t = cpu_values_ext.to(self.device)
+                values_int_t = cpu_values_int.to(self.device)
             self.timing_logger.end_operation("tensor_conversion", "training", f"tensors={len(states)}")
 
-            # Compute advantages and returns
-            advantages, returns = self.compute_advantages(
-                rewards_list,
-                values_list,
+            # Compute separate advantages/returns for extrinsic and intrinsic
+            advantages_ext_np, returns_ext_np = self.compute_advantages(
+                rewards_list_ext,
+                values_list_ext,
+                dones_list,
+            )
+            advantages_int_np, returns_int_np = self.compute_advantages(
+                rewards_list_int,
+                values_list_int,
                 dones_list,
             )
 
-            advantages = torch.as_tensor(advantages, dtype=torch.float32, device=self.device)
-            returns = torch.as_tensor(returns, dtype=torch.float32, device=self.device)
+            # Blend advantages for policy with annealed intrinsic weight
+            w_int = self._intrinsic_weight()
+            advantages_np = advantages_ext_np + w_int * advantages_int_np
+            # Keep value losses separate (extrinsic/intinsic) to avoid interference
+
+            advantages = torch.as_tensor(advantages_np, dtype=torch.float32, device=self.device)
+            returns_ext = torch.as_tensor(returns_ext_np, dtype=torch.float32, device=self.device)
+            returns_int = torch.as_tensor(returns_int_np, dtype=torch.float32, device=self.device)
 
             # PPO update
             total_policy_loss = 0.0
@@ -747,6 +893,7 @@ class PPOTrainer:
                 indices = torch.randperm(len(states), device=self.device)
                 
                 batch_count = 0
+                early_stop = False
                 for start in range(0, len(states), self.batch_size):
                     batch_count += 1
                     self.timing_logger.start_operation("batch_update", "training", f"epoch={epoch}, batch={batch_count}")
@@ -759,35 +906,52 @@ class PPOTrainer:
                     batch_actions = actions[batch_indices]
                     batch_old_log_probs = old_log_probs[batch_indices]
                     batch_advantages = advantages[batch_indices]
-                    batch_returns = returns[batch_indices]
+                    # For dual critics, we keep separate returns and use clipped losses; batch_returns not used
                     
                     # Forward pass (AMP-enabled)
                     self.timing_logger.start_operation("batch_forward", "training")
                     if self.use_amp and self.device and str(self.device).startswith("cuda"):
                         with torch.autocast(device_type="cuda", dtype=torch.float16):
-                            policy_logits, values = self.model(batch_states)
+                            policy_logits, values_ext, values_int = self.model(batch_states)
                             action_dist = torch.distributions.Categorical(logits=policy_logits)
                             new_log_probs = action_dist.log_prob(batch_actions)
                             ratio = torch.exp(new_log_probs - batch_old_log_probs)
                             surr1 = ratio * batch_advantages
-                            surr2 = torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * batch_advantages
+                            surr2 = torch.clamp(ratio, 1 - self._current_clip(), 1 + self._current_clip()) * batch_advantages
                             policy_loss = -torch.min(surr1, surr2).mean()
-                            value_loss = F.mse_loss(values.view(-1), batch_returns)
+                            # Value losses with clipping
+                            values_ext = values_ext.view(-1)
+                            values_int = values_int.view(-1)
+                            v_ext_pred_clipped = values_ext + (returns_ext[batch_indices] - values_ext).clamp(-self._current_clip(), self._current_clip())
+                            v_int_pred_clipped = values_int + (returns_int[batch_indices] - values_int).clamp(-self._current_clip(), self._current_clip())
+                            v_ext_loss_unclipped = F.huber_loss(values_ext, returns_ext[batch_indices], delta=1.0)
+                            v_ext_loss_clipped = F.huber_loss(v_ext_pred_clipped, returns_ext[batch_indices], delta=1.0)
+                            v_int_loss_unclipped = F.huber_loss(values_int, returns_int[batch_indices], delta=1.0)
+                            v_int_loss_clipped = F.huber_loss(v_int_pred_clipped, returns_int[batch_indices], delta=1.0)
+                            value_loss = 0.5 * (torch.max(v_ext_loss_unclipped, v_ext_loss_clipped) + torch.max(v_int_loss_unclipped, v_int_loss_clipped))
                             entropy = action_dist.entropy().mean()
                             lb_loss = self.model.latest_lb_loss if getattr(self.model, 'latest_lb_loss', None) is not None else 0.0
-                            loss = (policy_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy + self.lb_loss_coef * (lb_loss if isinstance(lb_loss, (int, float)) else 0.0))
+                            loss = (policy_loss + self.value_loss_coef * value_loss - self._current_entropy_coef() * entropy + self.lb_loss_coef * (lb_loss if isinstance(lb_loss, (int, float)) else 0.0))
                     else:
-                        policy_logits, values = self.model(batch_states)
+                        policy_logits, values_ext, values_int = self.model(batch_states)
                         action_dist = torch.distributions.Categorical(logits=policy_logits)
                         new_log_probs = action_dist.log_prob(batch_actions)
                         ratio = torch.exp(new_log_probs - batch_old_log_probs)
                         surr1 = ratio * batch_advantages
-                        surr2 = torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * batch_advantages
+                        surr2 = torch.clamp(ratio, 1 - self._current_clip(), 1 + self._current_clip()) * batch_advantages
                         policy_loss = -torch.min(surr1, surr2).mean()
-                        value_loss = F.mse_loss(values.view(-1), batch_returns)
+                        values_ext = values_ext.view(-1)
+                        values_int = values_int.view(-1)
+                        v_ext_pred_clipped = values_ext + (returns_ext[batch_indices] - values_ext).clamp(-self._current_clip(), self._current_clip())
+                        v_int_pred_clipped = values_int + (returns_int[batch_indices] - values_int).clamp(-self._current_clip(), self._current_clip())
+                        v_ext_loss_unclipped = F.huber_loss(values_ext, returns_ext[batch_indices], delta=1.0)
+                        v_ext_loss_clipped = F.huber_loss(v_ext_pred_clipped, returns_ext[batch_indices], delta=1.0)
+                        v_int_loss_unclipped = F.huber_loss(values_int, returns_int[batch_indices], delta=1.0)
+                        v_int_loss_clipped = F.huber_loss(v_int_pred_clipped, returns_int[batch_indices], delta=1.0)
+                        value_loss = 0.5 * (torch.max(v_ext_loss_unclipped, v_ext_loss_clipped) + torch.max(v_int_loss_unclipped, v_int_loss_clipped))
                         entropy = action_dist.entropy().mean()
                         lb_loss = self.model.latest_lb_loss if getattr(self.model, 'latest_lb_loss', None) is not None else 0.0
-                        loss = (policy_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy + self.lb_loss_coef * (lb_loss if isinstance(lb_loss, (int, float)) else 0.0))
+                        loss = (policy_loss + self.value_loss_coef * value_loss - self._current_entropy_coef() * entropy + self.lb_loss_coef * (lb_loss if isinstance(lb_loss, (int, float)) else 0.0))
                     self.timing_logger.end_operation("batch_forward", "training", f"batch_size={len(batch_states)}")
 
                     # Backward pass (AMP-aware)
@@ -816,11 +980,25 @@ class PPOTrainer:
                         total_lb_loss += float(lb_loss)
                     
                     self.timing_logger.end_operation("batch_update", "training", f"batch_size={len(batch_states)}")
+
+                    # Approximate KL on this mini-batch and early stop if too large
+                    with torch.no_grad():
+                        approx_kl_mb = torch.mean((batch_old_log_probs - new_log_probs)).abs().item()
+                    if approx_kl_mb > 1.5 * self.target_kl:
+                        early_stop = True
+                        break
                 
-                self.timing_logger.end_operation("ppo_epoch", "training", f"batches={batch_count}")
+                self.timing_logger.end_operation("ppo_epoch", "training", f"batches={batch_count}, early_stop={early_stop}")
+                if early_stop:
+                    break
             
             self.timing_logger.end_operation("ppo_epochs", "training")
             
+            # Early stop by target KL (approximate KL)
+            with torch.no_grad():
+                # Approximate KL over the last minibatch processed (cheap proxy)
+                approx_kl = torch.mean((batch_old_log_probs - new_log_probs)).abs().item()
+
             # Average losses
             num_updates = self.ppo_epochs * max(1, len(states) // self.batch_size)
             avg_policy_loss = total_policy_loss / num_updates
@@ -831,11 +1009,13 @@ class PPOTrainer:
             self.timing_logger.end_operation("update_policy", "training", 
                                            f"updates={num_updates}, policy_loss={avg_policy_loss:.4f}")
             
+            self.update_steps += 1
             return {
                 'policy_loss': avg_policy_loss,
                 'value_loss': avg_value_loss,
                 'entropy': avg_entropy,
-                'lb_loss': avg_lb_loss
+                'lb_loss': avg_lb_loss,
+                'kl': approx_kl
             }
     
     async def train_episode(self, env: Gym2048Env) -> Dict[str, Any]:
@@ -861,27 +1041,24 @@ class PPOTrainer:
                         break
 
                     try:
-                        action, log_prob, value = self.select_action(obs, legal_actions, env.game)
+                        action, log_prob, value_ext, value_int = self.select_action(obs, legal_actions, env.game)
                     except Exception as sel_err:
                         print(f"Warning: select_action failed at step {episode_length}: {sel_err}")
                         action = legal_actions[0]
                         log_prob = 0.0
-                        value = 0.0
+                        value_ext = 0.0
+                        value_int = 0.0
 
                     # Take step
                     self.timing_logger.start_operation("env_step", "episode")
                     next_obs, reward, done, _, _ = env.step(action)
                     self.timing_logger.end_operation("env_step", "episode", f"action={action}, reward={reward}")
                     
-                    # Calculate load balancing reward (anti-starvation, anti-dominance)
+                    # Calculate intrinsic reward only (do not mix into extrinsic returns)
                     lb_reward = self.calculate_load_balancing_reward()
-
-                    # Intrinsic novelty bonus on next state
                     novelty_next = self._get_state_novelty(next_obs)
-                    novelty_bonus = self.novelty_bonus_coef * novelty_next
-
-                    # Combine extrinsic and intrinsic rewards
-                    total_reward = reward + lb_reward + novelty_bonus
+                    intrinsic_reward = self.novelty_bonus_coef * novelty_next  # consider adding RND later
+                    # Keep extrinsic reward as environment reward
 
                     # Update novelty table and stagnation tracker
                     self._update_state_novelty(next_obs)
@@ -890,8 +1067,8 @@ class PPOTrainer:
                     else:
                         self._stagnation_steps = 0
 
-                    # Store transition with combined reward
-                    self.store_transition(obs, action, total_reward, value, log_prob, done)
+                    # Store transition with separated extrinsic/intrinsic rewards and values
+                    self.store_transition(obs, action, reward, intrinsic_reward + lb_reward, value_ext, value_int, log_prob, done)
                     
                     obs = next_obs
                     episode_reward += reward
@@ -923,22 +1100,8 @@ class PPOTrainer:
                 'best_score': self.best_score
             }
         
-        # Update policy if buffer is full or based on frequency
+        # Defer updates to manager's synchronous phase; keep placeholder losses
         losses = {'policy_loss': None, 'value_loss': None, 'entropy': None}
-        self._policy_update_counter += 1
-        
-        # Update policy based on frequency rather than buffer size for more consistent updates
-        if self._policy_update_counter >= self._policy_update_frequency:
-            self.timing_logger.start_operation("policy_update", "episode")
-            losses = self.update_policy()
-            self.timing_logger.end_operation("policy_update", "episode")
-            self._policy_update_counter = 0  # Reset counter
-        elif len(self.buffer['states']) >= self.buffer_size:
-            # Fallback: still update if buffer is full
-            self.timing_logger.start_operation("policy_update", "episode")
-            losses = self.update_policy()
-            self.timing_logger.end_operation("policy_update", "episode")
-            self._policy_update_counter = 0  # Reset counter
         
         # Update metrics
         self.episode_count += 1
