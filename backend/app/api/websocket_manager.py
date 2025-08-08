@@ -387,7 +387,8 @@ class WebSocketManager:
                 self.broadcast_rate_limiter['queue_process_task'] = asyncio.create_task(self._process_queued_messages())
             return
 
-        self.broadcast_rate_limiter['last_broadcast'] = int(current_time)
+        # Use higher precision timestamp to allow sub-second scheduling
+        self.broadcast_rate_limiter['last_broadcast'] = current_time
         self.performance_stats['total_broadcasts'] += 1
 
         # Purge dead connections before we start

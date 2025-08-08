@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Activity, Brain, GamepadIcon, Archive, Palette } from 'lucide-react'
 
 import TrainingDashboard from './components/TrainingDashboard'
-// GameBoard removed from tabs in new IA
+import GameBoard from './components/GameBoard'
 import ConnectionStatus from './components/ConnectionStatus'
 import ControlsDashboard from './components/ControlsDashboard'
 
@@ -16,7 +16,7 @@ import { useDeviceDetection } from './utils/deviceDetection'
 import config from './utils/config'
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'controls' | 'checkpoints' | 'model-studio'>('controls')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'controls' | 'game' | 'checkpoints' | 'model-studio'>('controls')
   const [showIOSTooltip, setShowIOSTooltip] = useState(false)
   
   // Intelligent device detection
@@ -83,7 +83,7 @@ const App: React.FC = () => {
   
   // Navigation handler for child components
   const handleNavigateToTab = (tab: string) => {
-    const validTabs = ['dashboard', 'controls', 'checkpoints', 'model-studio'] as const
+    const validTabs = ['dashboard', 'controls', 'game', 'checkpoints', 'model-studio'] as const
     if (validTabs.includes(tab as any)) {
       setActiveTab(tab as typeof activeTab)
     }
@@ -91,6 +91,7 @@ const App: React.FC = () => {
 
   const tabs = [
     { id: 'controls', label: 'Controls', icon: GamepadIcon },
+    { id: 'game', label: 'Game', icon: GamepadIcon },
     { id: 'dashboard', label: 'Metrics', icon: Activity },
     { id: 'checkpoints', label: 'Checkpoints', icon: Archive },
     { id: 'model-studio', label: 'Studio', icon: Palette },
@@ -292,6 +293,7 @@ const App: React.FC = () => {
           >
                 {activeTab === 'dashboard' && <TrainingDashboard />}
                 {activeTab === 'controls' && <ControlsDashboard />}
+                {activeTab === 'game' && <GameBoard />}
             {activeTab === 'checkpoints' && <CheckpointManager onNavigateToTab={handleNavigateToTab} />}
             {activeTab === 'model-studio' && <ModelStudioTab />}
           </motion.div>

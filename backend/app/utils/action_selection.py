@@ -81,18 +81,17 @@ def select_action_from_logits_with_validation(
         else:
             candidate_actions = [int(a.item()) for a in sorted_actions[: max_attempts, ...]]
 
-        # Optional validation using env clone to ensure movement
+        # Optional validation using in-place fast can-move check (no deep copy)
         if validate_moves:
             for action in candidate_actions:
                 if action not in legal_actions:
                     continue
                 try:
-                    temp_game = deepcopy(env_game)
-                    moved, _ = temp_game._move(action)
-                    if moved:
-                        action_dist = torch.distributions.Categorical(action_probs)
-                        log_prob = action_dist.log_prob(torch.tensor(action, device=device))
-                        return action, float(log_prob.item())
+                    if getattr(env_game, "_can_move", None) is not None:
+                        if env_game._can_move(action):  # type: ignore[attr-defined]
+                            action_dist = torch.distributions.Categorical(action_probs)
+                            log_prob = action_dist.log_prob(torch.tensor(action, device=device))
+                            return action, float(log_prob.item())
                 except Exception as e:
                     logger.debug(f"Validation error for action {action}: {e}")
             # fallback to first legal
@@ -273,17 +272,11 @@ def select_action_with_fallback(
                     if action not in legal_actions:
                         continue
                     
-                    # Test if this action results in a valid move (same logic as _can_move)
+                    # Use fast can-move validation if available
                     try:
-                        temp_game = deepcopy(env_game)
-                        moved, reward = temp_game._move(action)
-                        
-                        # Check if the move was valid
-                        if moved:
-                            # Valid move found! Calculate log probability
+                        if getattr(env_game, "_can_move", None) is not None and env_game._can_move(action):  # type: ignore[attr-defined]
                             action_dist = torch.distributions.Categorical(action_probs)
                             log_prob = action_dist.log_prob(torch.tensor(action).to(device))
-                            
                             return action, log_prob.item(), attention_weights
                     except Exception as e:
                         logger.warning(f"Error testing action {action}: {e}")
@@ -427,19 +420,14 @@ def select_action_with_fallback_for_playback(
                     if action not in legal_actions:
                         continue
                     
-                    # Test if this action results in a valid move (same logic as _can_move)
-                    try:
-                        temp_game = deepcopy(env_game)
-                        moved, reward = temp_game._move(action)
-                        
-                        # Check if the move was valid
-                        if moved:
-                            # Valid move found!
-                            return action, action_probs_list, attention_weights
-                    except Exception as e:
-                        logger.warning(f"Error testing action {action}: {e}")
-                        continue
-                        
+                    # Use fast can-move validation if available
+                    if getattr(env_game, "_can_move", None) is not None:
+                        try:
+                            if env_game._can_move(action):  # type: ignore[attr-defined]
+                                return action, action_probs_list, attention_weights
+                        except Exception as e:
+                            logger.warning(f"Error testing action {action}: {e}")
+                            continue
                 except Exception as e:
                     logger.warning(f"Error in action selection attempt {attempt}: {e}")
                     continue

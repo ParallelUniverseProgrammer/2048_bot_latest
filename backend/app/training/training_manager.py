@@ -30,30 +30,51 @@ from app.models.checkpoint_metadata import CheckpointManager
 class TrainingManager:
     """Manage training lifecycle and push streaming metrics."""
 
-    def __init__(self, websocket_manager: WebSocketManager, n_envs: int = 2):  # Reduced from 4 to 2 for better memory management
+    def __init__(self, websocket_manager: WebSocketManager, n_envs: int = 2):  # Default; will auto-scale
         self.ws_manager = websocket_manager
         
         # Initialize timing logger
         self.timing_logger = self._create_timing_logger()
         self.timing_logger.start_operation("manager_init", "setup", f"n_envs={n_envs}")
         
-        # Create multiple parallel environments
+        # Auto-scale number of environments based on VRAM + CPU cores
         self.timing_logger.start_operation("env_creation", "setup")
-        self.envs: List[Gym2048Env] = [Gym2048Env() for _ in range(n_envs)]
-        self.timing_logger.end_operation("env_creation", "setup", f"created={len(self.envs)}_environments")
+        try:
+            from app.models.model_config import DynamicModelConfig
+            available_vram = DynamicModelConfig.get_available_vram()
+        except Exception:
+            available_vram = 0.0
+        try:
+            import multiprocessing
+            cpu_cores = multiprocessing.cpu_count()
+        except Exception:
+            cpu_cores = 2
+        # Base on VRAM tiers; envs are light but training shares a single model
+        if available_vram >= 24.0:
+            auto_envs = min(8, max(4, cpu_cores // 2))
+        elif available_vram >= 12.0:
+            auto_envs = min(6, max(3, (cpu_cores + 1) // 2))
+        elif available_vram >= 8.0:
+            auto_envs = min(4, max(2, (cpu_cores + 1) // 3))
+        else:
+            auto_envs = max(2, min(3, cpu_cores // 2))
+        self._auto_envs = max(n_envs, auto_envs)
+        self.envs: List[Gym2048Env] = [Gym2048Env() for _ in range(self._auto_envs)]
+        self.timing_logger.end_operation("env_creation", "setup", f"created={len(self.envs)}_environments (auto)")
         
         self._task: Optional[asyncio.Task] = None
         
         # Initialize PPO trainer with default config (will be updated when training starts)
         self.timing_logger.start_operation("trainer_init", "setup")
-        self.trainer = PPOTrainer(validate_moves=True, compile_model=False)
+        # Validation clones are expensive; rely on env.legal_moves + fast can-move
+        self.trainer = PPOTrainer(validate_moves=False, compile_model=False)
         self.timing_logger.end_operation("trainer_init", "setup")
         
         # MEMORY OPTIMIZATION: Use single shared trainer instead of multiple trainers
         # This significantly reduces GPU memory usage
         self.timing_logger.start_operation("shared_trainer_setup", "setup")
-        self.env_trainers = [self.trainer] * n_envs  # All environments share the same trainer
-        self.timing_logger.end_operation("shared_trainer_setup", "setup", f"shared_trainer_for={n_envs}_environments")
+        self.env_trainers = [self.trainer] * len(self.envs)  # All environments share the same trainer
+        self.timing_logger.end_operation("shared_trainer_setup", "setup", f"shared_trainer_for={len(self.envs)}_environments")
         
         self.current_config = None
         
@@ -102,11 +123,9 @@ class TrainingManager:
         self._expert_recovery_tracking: Dict[int, List[float]] = {}  # Track recovery of specific experts
         self._starvation_severity_tracking: List[float] = []  # Track how severe starvation is
         
-        # Optimization: Batch metrics for reduced WebSocket overhead
-        self._metrics_batch: List[Dict[str, Any]] = []
-        self._batch_size = 4  # Send metrics in batches of 4
+        # Optimization: Rate limit broadcasts adaptively based on episode time
         self._last_broadcast_time = 0.0
-        self._broadcast_interval = 0.1  # Broadcast every 100ms instead of every episode
+        self._broadcast_interval = 0.05  # Faster baseline cadence for snappier UI
         
         # Thread safety for load balancing calculations
         self._lb_lock = threading.Lock()
@@ -242,7 +261,7 @@ class TrainingManager:
         self.trainer = PPOTrainer(
             config=self.current_config,
             learning_rate=config_dict.get('learning_rate', 0.0003),
-            validate_moves=True,
+            validate_moves=False,
             compile_model=False,
         )
         
@@ -269,7 +288,7 @@ class TrainingManager:
         self.trainer = PPOTrainer(
             config=config,
             learning_rate=0.0003,  # Default learning rate, can be adjusted via UI later
-            validate_moves=True,
+            validate_moves=False,
             compile_model=False,
         )
         
@@ -518,24 +537,39 @@ class TrainingManager:
                                 }
                         tasks.append(asyncio.create_task(run_env(i, env)))
 
-                    # Await all tasks without blocking websocket operations (tasks yield internally)
-                    episode_results_raw = await asyncio.gather(*tasks, return_exceptions=True)
-
-                    # Normalize results and handle exceptions gracefully
+                    # Stream the first finished result immediately to reduce perceived latency
                     episode_results = []
-                    for res in episode_results_raw:
+                    first_broadcast_done = False
+                    for future in asyncio.as_completed(tasks):
+                        res = await future
                         if isinstance(res, Exception):
                             print(f"Environment task raised exception: {res}")
-                            episode_results.append({
+                            res = {
                                 'episode': self.current_episode + 1,
                                 'score': 0,
                                 'reward': 0.0,
                                 'length': 0,
                                 'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
                                 'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
-                            })
-                        else:
-                            episode_results.append(res)
+                            }
+                        episode_results.append(res)
+
+                        # Early, lightweight broadcast from the first finished environment
+                        if not first_broadcast_done:
+                            try:
+                                metrics_preview = self._build_metrics(res, self.envs[-1])
+                                metrics_preview['is_training_active'] = True
+                                metrics_preview['next_episode_estimate'] = self._estimate_next_episode_time()
+                                now = time.time()
+                                if now - self._last_broadcast_time >= self._broadcast_interval:
+                                    await asyncio.wait_for(
+                                        self.ws_manager.broadcast(metrics_preview, priority="normal"),
+                                        timeout=0.5
+                                    )
+                                    self._last_broadcast_time = now
+                                first_broadcast_done = True
+                            except Exception as e:
+                                print(f"Warning: early metrics preview broadcast failed: {e}")
 
                     self.timing_logger.end_operation("concurrent_training", "training", f"results={len(episode_results)}")
                     if self.current_episode < 5:  # Debug logging

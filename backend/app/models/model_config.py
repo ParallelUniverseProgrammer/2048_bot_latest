@@ -188,13 +188,19 @@ class DynamicModelConfig:
         else:
             base_batch_size = 256
 
-        # Adjust based on available VRAM
+        # Adjust based on available VRAM (more aggressive scaling for high VRAM)
         if available_vram < 4.0:
             batch_size = max(32, int(base_batch_size // 2))
         elif available_vram < 12.0:
             batch_size = max(64, int(base_batch_size // 1.5))
-        else:
+        elif available_vram < 16.0:
             batch_size = base_batch_size
+        elif available_vram < 24.0:
+            batch_size = int(base_batch_size * 1.5)
+        else:
+            batch_size = int(base_batch_size * 2)
+        # Round to nearest multiple of 16 for better kernel efficiency
+        batch_size = max(32, (batch_size // 16) * 16)
         
         console.print(f"[blue]Selected batch size: {batch_size}")
         return batch_size

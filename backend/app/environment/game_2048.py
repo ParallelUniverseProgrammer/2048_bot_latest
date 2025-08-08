@@ -57,7 +57,11 @@ class Game2048:
 
     # ----------------------------------------------------- Public API
     def reset(self, seed: int | None = None) -> Board:
-        """Reset board to initial state and return the new board."""
+        """Reset board to initial state and return the new board.
+
+        Performance: avoid deep-copy here. The Gym wrapper converts this to a
+        NumPy array, which already materializes a separate copy for callers.
+        """
         if seed is not None:
             self._rng.seed(seed)
         self.board = [[0] * SIZE for _ in range(SIZE)]
@@ -65,7 +69,7 @@ class Game2048:
         self.done = False
         self._spawn_tile()
         self._spawn_tile()
-        return deepcopy(self.board)
+        return self.board
 
     def step(self, action: int) -> Tuple[Board, int, bool]:
         """Apply *action* (0=up,1=down,2=left,3=right).
@@ -73,7 +77,7 @@ class Game2048:
         Returns ``(next_board, reward, done)``.
         """
         if self.done:
-            return deepcopy(self.board), 0, True
+            return self.board, 0, True
 
         moved, reward = self._move(action)
         if moved:
@@ -82,7 +86,7 @@ class Game2048:
             if not self._has_moves():
                 self.done = True
         # If move is invalid, reward is 0 and board unchanged.
-        return deepcopy(self.board), reward, self.done
+        return self.board, reward, self.done
 
     def legal_moves(self) -> List[int]:
         """Return list of **valid** actions from the current state."""
@@ -164,9 +168,49 @@ class Game2048:
 
     # ---- game over detection -------------------------------------------------
     def _can_move(self, action: int) -> bool:
-        temp = deepcopy(self)
-        moved, _ = temp._move(action)
-        return moved
+        """Fast check without copying the full game state.
+
+        Scans rows/columns to determine if a move in the given direction would
+        cause any tile to slide or merge.
+        """
+        b = self.board
+        if action == 2:  # left
+            for r in range(SIZE):
+                for c in range(1, SIZE):
+                    v = b[r][c]
+                    if v == 0:
+                        continue
+                    if b[r][c - 1] == 0 or b[r][c - 1] == v:
+                        return True
+            return False
+        if action == 3:  # right
+            for r in range(SIZE):
+                for c in range(SIZE - 2, -1, -1):
+                    v = b[r][c]
+                    if v == 0:
+                        continue
+                    if b[r][c + 1] == 0 or b[r][c + 1] == v:
+                        return True
+            return False
+        if action == 0:  # up
+            for c in range(SIZE):
+                for r in range(1, SIZE):
+                    v = b[r][c]
+                    if v == 0:
+                        continue
+                    if b[r - 1][c] == 0 or b[r - 1][c] == v:
+                        return True
+            return False
+        if action == 1:  # down
+            for c in range(SIZE):
+                for r in range(SIZE - 2, -1, -1):
+                    v = b[r][c]
+                    if v == 0:
+                        continue
+                    if b[r + 1][c] == 0 or b[r + 1][c] == v:
+                        return True
+            return False
+        return False
 
     def _has_moves(self) -> bool:
         for a in range(4):

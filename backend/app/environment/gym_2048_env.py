@@ -51,10 +51,11 @@ class Gym2048Env(gym.Env):
         return np.array(board, dtype=np.int32), {}
 
     def step(self, action: int):  # type: ignore[override]
-        board, reward, done = self.game.step(action)
+        board, reward_raw, done = self.game.step(action)
         # Reward shaping: log2 scaling for PPO stability
-        reward = math.log2(reward + 1)
-        obs = np.array(board, dtype=np.int32)
+        reward = math.log2(reward_raw + 1)
+        # Avoid extra array allocations by reusing buffer when possible
+        obs = np.asarray(board, dtype=np.int32)
         return obs, float(reward), done, False, {}
 
     # ------------------------------------------------------------------ Render

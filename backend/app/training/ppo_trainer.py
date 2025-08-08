@@ -229,6 +229,7 @@ class PPOTrainer:
         self.expert_usage_history = deque(maxlen=100)  # Track recent usage patterns
         self.lb_diversity_penalty = 0.2  # Penalty for low diversity
         self.ppo_epochs = 2  # Reduced from 4 to 2 for faster updates
+        # Use more aggressive batch sizing when ample VRAM is available
         self.batch_size = DynamicModelConfig.get_batch_size(config)
 
         # ---- NEW: lock for thread-safe experience buffer operations ----
@@ -251,6 +252,17 @@ class PPOTrainer:
         self.novelty_max = 1.0
         self._stagnation_steps = 0
         self._stagnation_threshold_steps = 10
+        # Precompute novelty lookup for 0..65536 (tile values)
+        try:
+            self._novelty_lookup = np.zeros(65537, dtype=np.uint8)
+            for v in range(1, 65537):
+                # For powers of two typical in 2048: exponent is bit_length - 1
+                self._novelty_lookup[v] = (v.bit_length() - 1)
+        except Exception:
+            # Fallback: small table to at least cover common range
+            self._novelty_lookup = np.zeros(1025, dtype=np.uint8)
+            for v in range(1, 1025):
+                self._novelty_lookup[v] = (v.bit_length() - 1)
 
         # Training state
         self.episode_count = 0
@@ -269,14 +281,18 @@ class PPOTrainer:
         
         # Experience buffer
         self.buffer_size = 512  # Reduced from 1024 to 512 for faster policy updates
-        self.buffer = {
-            'states': [],
-            'actions': [],
-            'rewards': [],
-            'values': [],
-            'log_probs': [],
-            'dones': []
-        }
+        # Preallocated ring buffer for faster writes and snapshotting
+        self._buf_capacity = self.buffer_size
+        self._buf_states = np.zeros((self._buf_capacity, 4, 4), dtype=np.float32)
+        self._buf_actions = np.zeros((self._buf_capacity,), dtype=np.int64)
+        self._buf_rewards = np.zeros((self._buf_capacity,), dtype=np.float32)
+        self._buf_values = np.zeros((self._buf_capacity,), dtype=np.float32)
+        self._buf_log_probs = np.zeros((self._buf_capacity,), dtype=np.float32)
+        self._buf_dones = np.zeros((self._buf_capacity,), dtype=np.bool_)
+        self._buf_count = 0  # number of valid entries (<= capacity)
+        self._buf_head = 0   # next write index (ring buffer)
+        # Legacy field retained for compatibility with cleanup routines
+        self.buffer = {'states': []}
         
         # Optimization: Track if policy update is needed
         self._policy_update_counter = 0
@@ -458,10 +474,14 @@ class PPOTrainer:
         
         # Single forward pass for logits and value (AMP-enabled)
         self.timing_logger.start_operation("model_forward", "inference")
-        with torch.no_grad():
+        with torch.inference_mode():
             state_tensor = torch.as_tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
-            # Use plain inference for stability; AMP can stay on for training updates
-            policy_logits, value = self.model(state_tensor)
+            # Enable AMP for inference on CUDA to accelerate forward pass
+            if self.use_amp and self.device and str(self.device).startswith("cuda"):
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    policy_logits, value = self.model(state_tensor)
+            else:
+                policy_logits, value = self.model(state_tensor)
 
             # Mask illegal actions for visualization
             action_mask = torch.full((4,), -float('inf'), device=self.device)
@@ -519,21 +539,26 @@ class PPOTrainer:
         return action, log_prob, value.item()
 
     # ---- Novelty utilities ----
-    def _encode_state(self, state: np.ndarray) -> bytes:
-        arr = np.array(state, dtype=np.float32).flatten()
-        exps = []
-        for v in arr:
-            if v <= 0:
-                exps.append(0)
-            else:
-                exp = int(np.log2(max(1.0, float(v))))
-                exps.append(max(0, exp))
-        exps_bytes = bytes(int(min(255, e)) for e in exps)
-        return exps_bytes
+    def _encode_state(self, state: np.ndarray) -> tuple:
+        # Vectorized lookup: map tile values to exponents
+        arr = np.asarray(state, dtype=np.int64).ravel()
+        if self._novelty_lookup.shape[0] > 1025:
+            exps = self._novelty_lookup[arr]
+        else:
+            # Fallback for larger tiles not in small table
+            exps = np.empty_like(arr, dtype=np.uint8)
+            for i, v in enumerate(arr):
+                if 0 <= v < self._novelty_lookup.shape[0]:
+                    exps[i] = self._novelty_lookup[v]
+                elif v > 0:
+                    exps[i] = (int(v).bit_length() - 1)
+                else:
+                    exps[i] = 0
+        return tuple(int(x) for x in exps)
 
-    def _hash_state(self, state: np.ndarray) -> str:
-        enc = self._encode_state(state)
-        return hashlib.blake2b(enc, digest_size=8).hexdigest()
+    def _hash_state(self, state: np.ndarray) -> tuple:
+        # Use encoded tuple directly as dictionary key (faster than cryptographic hash)
+        return self._encode_state(state)
 
     def _get_state_novelty(self, state: np.ndarray) -> float:
         h = self._hash_state(state)
@@ -580,12 +605,17 @@ class PPOTrainer:
         self.timing_logger.start_operation("store_transition", "buffer")
         lock_start = time.perf_counter()
         with self._buffer_lock:
-            self.buffer['states'].append(state.copy())
-            self.buffer['actions'].append(action)
-            self.buffer['rewards'].append(reward)
-            self.buffer['values'].append(value)
-            self.buffer['log_probs'].append(log_prob)
-            self.buffer['dones'].append(done)
+            # Write at head, then advance (ring buffer)
+            idx = self._buf_head
+            self._buf_head = (self._buf_head + 1) % self._buf_capacity
+            if self._buf_count < self._buf_capacity:
+                self._buf_count += 1
+            self._buf_states[idx, :, :] = state
+            self._buf_actions[idx] = int(action)
+            self._buf_rewards[idx] = float(reward)
+            self._buf_values[idx] = float(value)
+            self._buf_log_probs[idx] = float(log_prob)
+            self._buf_dones[idx] = bool(done)
         lock_duration = time.perf_counter() - lock_start
         self.timing_logger.end_operation("store_transition", "buffer", f"buffer_size={len(self.buffer['states'])}, lock_duration={lock_duration:.4f}s")
         
@@ -638,19 +668,32 @@ class PPOTrainer:
         with self._update_lock:
             lock_start = time.perf_counter()
             with self._buffer_lock:
-                if len(self.buffer['states']) < self.batch_size:
+                if self._buf_count < self.batch_size:
                     self.timing_logger.end_operation("update_policy", "training", "insufficient_buffer")
                     return {'policy_loss': None, 'value_loss': None, 'entropy': None}
 
                 # Snapshot buffer and clear for concurrent writes while updating
-                states_np = np.array(self.buffer['states'])
-                actions_list = self.buffer['actions']
-                rewards_list = self.buffer['rewards']
-                values_list = self.buffer['values']
-                log_probs_list = self.buffer['log_probs']
-                dones_list = self.buffer['dones']
-                # Reset buffer
-                self.buffer = {key: [] for key in self.buffer}
+                count = self._buf_count
+                if count < self._buf_capacity:
+                    # Simple slice when not wrapped
+                    states_np = self._buf_states[:count].copy()
+                    actions_list = self._buf_actions[:count].copy()
+                    rewards_list = self._buf_rewards[:count].copy().tolist()
+                    values_list = self._buf_values[:count].copy().tolist()
+                    log_probs_list = self._buf_log_probs[:count].copy()
+                    dones_list = self._buf_dones[:count].copy().tolist()
+                else:
+                    # When full and wrapped, roll so that oldest is first
+                    roll = -self._buf_head
+                    states_np = np.roll(self._buf_states, roll, axis=0).copy()
+                    actions_list = np.roll(self._buf_actions, roll, axis=0).copy()
+                    rewards_list = np.roll(self._buf_rewards, roll, axis=0).copy().tolist()
+                    values_list = np.roll(self._buf_values, roll, axis=0).copy().tolist()
+                    log_probs_list = np.roll(self._buf_log_probs, roll, axis=0).copy()
+                    dones_list = np.roll(self._buf_dones, roll, axis=0).copy().tolist()
+                # Reset pointers (arrays are reused)
+                self._buf_count = 0
+                self._buf_head = 0
 
             lock_duration = time.perf_counter() - lock_start
             self.timing_logger.log_event("buffer_snapshot", "training", lock_duration * 1000, f"states={len(states_np)}")
@@ -660,9 +703,24 @@ class PPOTrainer:
 
             # Convert buffer to tensors _outside_ the lock so other threads can continue
             self.timing_logger.start_operation("tensor_conversion", "training")
-            states = torch.as_tensor(states_np, dtype=torch.float32, device=self.device)
-            actions = torch.as_tensor(actions_list, dtype=torch.long, device=self.device)
-            old_log_probs = torch.as_tensor(log_probs_list, dtype=torch.float32, device=self.device)
+            # Use pinned memory + non_blocking H2D for better transfer throughput
+            cpu_states = torch.from_numpy(states_np).float()
+            cpu_actions = torch.from_numpy(actions_list).long()
+            cpu_old_log_probs = torch.from_numpy(log_probs_list).float()
+            if self.use_amp and self.device and str(self.device).startswith("cuda"):
+                try:
+                    cpu_states = cpu_states.pin_memory()
+                    cpu_actions = cpu_actions.pin_memory()
+                    cpu_old_log_probs = cpu_old_log_probs.pin_memory()
+                except Exception:
+                    pass
+                states = cpu_states.to(self.device, non_blocking=True)
+                actions = cpu_actions.to(self.device, non_blocking=True)
+                old_log_probs = cpu_old_log_probs.to(self.device, non_blocking=True)
+            else:
+                states = cpu_states.to(self.device)
+                actions = cpu_actions.to(self.device)
+                old_log_probs = cpu_old_log_probs.to(self.device)
             self.timing_logger.end_operation("tensor_conversion", "training", f"tensors={len(states)}")
 
             # Compute advantages and returns
@@ -842,7 +900,7 @@ class PPOTrainer:
                     
                     # CRITICAL FIX: Yield control to event loop every 10 steps to prevent blocking
                     if episode_length % 10 == 0:
-                        await asyncio.sleep(0.001)  # Minimal yield to allow WebSocket processing
+                        await asyncio.sleep(0)  # Yield to event loop without delay
                 except Exception as step_error:
                     print(f"Error in episode step {episode_length}: {step_error}")
                     import traceback

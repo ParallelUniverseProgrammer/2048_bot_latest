@@ -75,6 +75,7 @@ if frontend_dist.exists():
 
 # WebSocket manager for real-time updates
 websocket_manager = WebSocketManager()
+# Let the manager auto-scale environment count based on VRAM/CPU
 training_manager = TrainingManager(websocket_manager)
 checkpoint_playback = CheckpointPlayback(training_manager.checkpoint_manager)
 
