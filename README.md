@@ -111,11 +111,11 @@ python launcher.py --config path/to/custom.config.json  # use custom JSON config
 ---
 
 - **Controls**
-  1) Open the Controls tab and select model size (tiny/small/medium/large)
+  1) Open the Controls tab and select model profile (lightning/base/expert)
   2) Start training; WebSocket metrics populate the Metrics tab
   3) Pause/Resume/Stop/Reset; create a manual checkpoint anytime
 - **Game**
-  - View live board, attention overlay, action probabilities; during playback, use pause/resume/stop & speed control
+  - View live board with optional attention overlay; during playback, use pause/resume/stop & speed control
 - **Checkpoints**
   - Browse, search, rename, delete; resume training from a checkpoint or start playback
   - Configure autosave interval and long‑run behavior
@@ -132,7 +132,7 @@ python launcher.py --config path/to/custom.config.json  # use custom JSON config
 
 ### API surface (selected)
 **Training**
-- POST `/training/start` { model_size }
+- POST `/training/start` { model_size }  where model_size ∈ { `lightning`, `base`, `expert` }
 - POST `/training/pause` | `/training/resume` | `/training/stop`
 - POST `/training/reset`
 - GET  `/training/status` | `/training/config`
@@ -155,7 +155,7 @@ python launcher.py --config path/to/custom.config.json  # use custom JSON config
 - WebSocket on mobile/Safari: client falls back to polling; ensure same LAN or use tunnel
 - Port conflicts: the backend kills conflicting processes at startup; if needed, change ports via launcher flags
 - GUI launcher deps: `customtkinter`, `pillow`, `psutil`, `pystray`; the launcher attempts installation
-- Slow GPU/CPU: choose `tiny`/`small` model_size; trainer auto‑selects config based on VRAM
+- Slow GPU/CPU: choose `lightning`/`base`/`expert` model_size; trainer auto‑selects config based on VRAM
 
 ---
 
