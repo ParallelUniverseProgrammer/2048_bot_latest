@@ -204,6 +204,7 @@ class MoELayer(nn.Module):
             self.current_expert_usage = usage.cpu().numpy()
         
         # Apply experts with capacity limiting
+        # Ensure output uses the same dtype as input activations to avoid AMP dtype mismatches
         output = torch.zeros_like(x_flat)
         for i, expert in enumerate(self.experts):
             # Tokens (indices) that selected this expert in any of their top-k routes
@@ -219,6 +220,9 @@ class MoELayer(nn.Module):
 
             # Run through expert
             expert_output = expert(x_flat[token_indices])
+            # Align dtypes for safe "index_put" under autocast (expert may be fp16 while output is fp32)
+            if expert_output.dtype != output.dtype:
+                expert_output = expert_output.to(output.dtype)
 
             # Simple assignment (weight ≈1) – keep implementation lightweight for 16-token boards
             output[token_indices] = expert_output

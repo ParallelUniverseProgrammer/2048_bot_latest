@@ -3,8 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Activity, Brain, GamepadIcon, Archive, Palette } from 'lucide-react'
 
 import TrainingDashboard from './components/TrainingDashboard'
-import GameBoard from './components/GameBoard'
+// GameBoard removed from tabs in new IA
 import ConnectionStatus from './components/ConnectionStatus'
+import ControlsDashboard from './components/ControlsDashboard'
 
 import CheckpointManager from './components/CheckpointManager'
 import ModelStudioTab from './components/ModelStudioTab'
@@ -15,7 +16,7 @@ import { useDeviceDetection } from './utils/deviceDetection'
 import config from './utils/config'
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'game' | 'checkpoints' | 'model-studio'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'controls' | 'checkpoints' | 'model-studio'>('controls')
   const [showIOSTooltip, setShowIOSTooltip] = useState(false)
   
   // Intelligent device detection
@@ -82,21 +83,21 @@ const App: React.FC = () => {
   
   // Navigation handler for child components
   const handleNavigateToTab = (tab: string) => {
-    const validTabs = ['dashboard', 'game', 'checkpoints', 'model-studio'] as const
+    const validTabs = ['dashboard', 'controls', 'checkpoints', 'model-studio'] as const
     if (validTabs.includes(tab as any)) {
       setActiveTab(tab as typeof activeTab)
     }
   }
 
   const tabs = [
-    { id: 'dashboard', label: 'Training', icon: Activity },
-    { id: 'game', label: 'Game', icon: GamepadIcon },
+    { id: 'controls', label: 'Controls', icon: GamepadIcon },
+    { id: 'dashboard', label: 'Metrics', icon: Activity },
     { id: 'checkpoints', label: 'Checkpoints', icon: Archive },
     { id: 'model-studio', label: 'Studio', icon: Palette },
   ]
 
   return (
-    <div className={`h-screen flex flex-col relative transition-all duration-1000 ${
+    <div className={`viewport-page safe-area relative transition-all duration-1000 ${
       isTraining && !isPaused 
         ? 'bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900' 
         : isPaused 
@@ -235,7 +236,7 @@ const App: React.FC = () => {
 
       {/* Navigation Tabs - More compact */}
       <motion.nav 
-        className={`card-glass flex-shrink-0 mt-1 rounded-2xl ${isMobile ? 'mx-2' : 'mx-4 sm:mx-6 lg:mx-8'}`}
+        className={`card-glass flex-shrink-0 rounded-2xl ${isMobile ? 'mx-2' : 'mx-4 sm:mx-6 lg:mx-8'}`}
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6, delay: 0.2 }}
@@ -273,9 +274,9 @@ const App: React.FC = () => {
         </div>
       </motion.nav>
 
-      {/* Main Content - More generous padding */}
+      {/* Main Content - fills remaining space */}
       <motion.main 
-        className={`flex-1 overflow-hidden ${isMobile ? 'mobile-main pb-4' : 'px-6 py-4 sm:px-8 lg:px-10 pb-4'}`}
+        className={`page-content ${isMobile ? 'px-2 py-2' : 'px-6 py-4 sm:px-8 lg:px-10'}`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.6, delay: 0.4 }}
@@ -289,8 +290,8 @@ const App: React.FC = () => {
             transition={{ duration: 0.3 }}
             className="h-full"
           >
-            {activeTab === 'dashboard' && <TrainingDashboard />}
-            {activeTab === 'game' && <GameBoard />}
+                {activeTab === 'dashboard' && <TrainingDashboard />}
+                {activeTab === 'controls' && <ControlsDashboard />}
             {activeTab === 'checkpoints' && <CheckpointManager onNavigateToTab={handleNavigateToTab} />}
             {activeTab === 'model-studio' && <ModelStudioTab />}
           </motion.div>

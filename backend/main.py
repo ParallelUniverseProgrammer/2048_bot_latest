@@ -21,6 +21,11 @@ from app.api.design_router import router as design_router
 from app.training.training_manager import TrainingManager
 from app.training.ppo_trainer import PPOTrainer
 from app.models.checkpoint_playback import CheckpointPlayback
+from app.utils.system_health import (
+    initialize_health_monitoring,
+    get_health_monitor,
+    DegradationMode,
+)
 
 import logging
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
@@ -80,6 +85,8 @@ print(f"[main.py] CheckpointManager directory: {training_manager.checkpoint_mana
 @app.on_event("startup")
 async def startup_event():
     websocket_manager.start_batch_processor()
+    # Start system health monitoring
+    initialize_health_monitoring(auto_start=True)
 
 # ---------------------------------------------------------------------------
 # Bootstrap: ensure at least one checkpoint exists for test environments
@@ -1022,6 +1029,35 @@ async def get_websocket_stats():
 async def get_websocket_performance():
     """Get WebSocket performance statistics"""
     return websocket_manager.get_performance_stats()
+
+# ------------------------- System Health Endpoints --------------------------
+
+@app.get("/system/health")
+async def get_system_health():
+    """Return current system health report (CPU, memory, GPU, degradation)."""
+    monitor = get_health_monitor()
+    return monitor.get_health_report()
+
+
+class DegradationRequest(BaseModel):
+    mode: str
+
+
+@app.post("/system/degradation")
+async def set_system_degradation(req: DegradationRequest):
+    """Force a degradation mode: normal, lightweight, minimal, emergency."""
+    monitor = get_health_monitor()
+    mode_map = {
+        "normal": DegradationMode.NORMAL,
+        "lightweight": DegradationMode.LIGHTWEIGHT,
+        "minimal": DegradationMode.MINIMAL,
+        "emergency": DegradationMode.EMERGENCY,
+    }
+    key = req.mode.strip().lower()
+    if key not in mode_map:
+        raise HTTPException(status_code=400, detail="Invalid mode")
+    monitor.force_degradation_mode(mode_map[key])
+    return {"status": "ok", "mode": key}
 
 # Catch-all route for SPA - must be last
 @app.get("/{path:path}")

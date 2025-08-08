@@ -45,7 +45,7 @@ html, body {
 /* Lock scrolling on all app containers */
 #root, .App, [data-reactroot] {
   overflow: hidden !important;
-  height: 100vh !important;
+  height: 100dvh !important; /* Use dynamic viewport for mobile */
   position: relative !important;
 }
 
@@ -69,6 +69,18 @@ body {
   position: fixed; /* Prevent any scroll behavior */
   width: 100%;
   height: 100%;
+}
+
+/* Viewport page helpers */
+.viewport-page {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.page-content {
+  flex: 1 1 auto;
+  min-height: 0; /* allow inner scroll regions */
+  overflow: hidden;
 }
 
 /* Scrollbar styles */
@@ -179,6 +191,66 @@ body {
   .bg-token-surface-50 { background-color: color-mix(in srgb, var(--ui-surface-elevated) 50%, transparent); }
   .bg-token-surface-70 { background-color: color-mix(in srgb, var(--ui-surface-elevated) 70%, transparent); }
   .bg-token-surface-80 { background-color: color-mix(in srgb, var(--ui-surface-elevated) 80%, transparent); }
+
+  /* Accent button variants (token gradients) */
+  .btn-solid-success {
+    background: var(--success-gradient);
+    color: #0b0f14;
+    border: 1px solid color-mix(in srgb, var(--ui-success) 40%, transparent);
+    border-radius: 12px;
+  }
+  .btn-solid-warning {
+    background: var(--warning-gradient);
+    color: #0b0f14;
+    border: 1px solid color-mix(in srgb, var(--ui-warning) 40%, transparent);
+    border-radius: 12px;
+  }
+  .btn-solid-danger {
+    background: var(--error-gradient);
+    color: #ffffff;
+    border: 1px solid color-mix(in srgb, var(--ui-danger) 40%, transparent);
+    border-radius: 12px;
+  }
+  .btn-outline-neutral {
+    background: transparent;
+    color: var(--ui-text-secondary);
+    border: 1px solid var(--ui-border-muted);
+    border-radius: 12px;
+  }
+
+  /* Subtle pulse for active status */
+  .status-pulse {
+    animation: statusPulse 1.8s ease-in-out infinite;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ui-success) 25%, transparent);
+  }
+
+  /* Animated brand ring for selected chips */
+  .ring-pulse-brand {
+    animation: ringPulseBrand 1.8s ease-in-out infinite;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ui-brand-primary) 25%, transparent);
+  }
+
+  /* Shimmer overlay for loading buttons */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      110deg,
+      transparent 0%,
+      rgba(255,255,255,0.18) 45%,
+      rgba(255,255,255,0.35) 50%,
+      rgba(255,255,255,0.18) 55%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmerMove 1.2s linear infinite;
+    pointer-events: none;
+  }
 }
 
 /* Animation utilities */
@@ -225,6 +297,26 @@ body {
     transform: scale(1);
     opacity: 1;
   }
+}
+
+/* Keyframes for pulsing status */
+@keyframes statusPulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ui-success) 25%, transparent); }
+  70% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--ui-success) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ui-success) 0%, transparent); }
+}
+
+/* Keyframes for pulsing brand ring */
+@keyframes ringPulseBrand {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ui-brand-primary) 25%, transparent); }
+  70% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--ui-brand-primary) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ui-brand-primary) 0%, transparent); }
+}
+
+/* Keyframes for shimmer */
+@keyframes shimmerMove {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 /* Custom component styles */

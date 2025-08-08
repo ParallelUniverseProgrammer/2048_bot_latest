@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Clock, Target, TrendingUp, Timer, Zap, Scale, Activity, GitBranch } from 'lucide-react'
+import { Clock, Target, TrendingUp, Timer, Zap, Scale, Activity, GitBranch, Compass, Flame, Thermometer } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 
 const TrainingMetrics: React.FC = () => {
@@ -80,6 +80,20 @@ const TrainingMetrics: React.FC = () => {
     return formatTime(currentTrainingData.next_episode_estimate)
   }
 
+  // Derived dominance metrics from expert usage (fallback if backend fields absent)
+  const dominance = useMemo(() => {
+    const usage = currentTrainingData?.expert_usage as number[] | undefined
+    if (!usage || usage.length === 0) return { hhi: 0, dominance: 0, top1: 0 }
+    const sumSquares = usage.reduce((s, u) => s + u * u, 0)
+    const n = usage.length
+    const minHhi = 1 / n
+    const normHhi = Math.max(0, Math.min(1, (sumSquares - minHhi) / (1 - minHhi)))
+    const top1 = Math.max(...usage)
+    return { hhi: normHhi, dominance: normHhi, top1 }
+  }, [currentTrainingData?.expert_usage])
+
+  const exploration = (currentTrainingData as any)?.exploration || {}
+
   const metrics = [
     {
       icon: Zap,
@@ -121,9 +135,41 @@ const TrainingMetrics: React.FC = () => {
     {
       icon: Scale,
       label: 'Load Balance',
-      value: currentTrainingData?.load_balancing_reward ? `${currentTrainingData.load_balancing_reward.toFixed(3)}` : '0.000',
+      value: currentTrainingData?.load_balancing_reward != null ? `${currentTrainingData.load_balancing_reward.toFixed(3)}` : '0.000',
       color: 'text-pink-400',
       bgColor: 'bg-pink-500/20',
+    },
+    // NEW: Novelty and exploration glance
+    {
+      icon: Compass,
+      label: 'Novelty',
+      value: (() => {
+        const td: any = currentTrainingData as any
+        const v = td?.avg_novelty ?? td?.novelty_rate ?? td?.novelty_bonus
+        return v != null ? `${(Number(v) * 100).toFixed(0)}%` : 'N/A'
+      })(),
+      color: 'text-indigo-400',
+      bgColor: 'bg-indigo-500/20',
+    },
+    {
+      icon: Thermometer,
+      label: 'Exploration',
+      value: (() => {
+        const t = exploration.temperature
+        const e = exploration.epsilon
+        if (t != null && e != null) return `T ${Number(t).toFixed(2)} • ε ${Number(e).toFixed(2)}`
+        return 'Adaptive'
+      })(),
+      color: 'text-cyan-400',
+      bgColor: 'bg-cyan-500/20',
+    },
+    // NEW: Router dominance glance
+    {
+      icon: Flame,
+      label: 'Dominance',
+      value: `${(dominance.dominance * 100).toFixed(0)}%`,
+      color: dominance.dominance > 0.6 ? 'text-red-400' : dominance.dominance > 0.3 ? 'text-yellow-400' : 'text-green-400',
+      bgColor: 'bg-red-500/20',
     },
     // NEW: Enhanced expert starvation metrics
     {

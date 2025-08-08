@@ -2,14 +2,15 @@ import React, { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Line, Doughnut, Bar } from 'react-chartjs-2'
 import { 
-  TrendingDown, Brain, Zap, Target, Activity,
+  TrendingDown, Brain, Zap, Target,
   Clock, Gauge, BarChart3, TrendingUpIcon, TrendingDownIcon, 
-  CheckCircle, AlertTriangle, Info, Star, Scale, GitBranch,
-  Play, Pause, AlertTriangle as StopIcon, Save, X, Maximize2
+  CheckCircle, AlertTriangle, Info,
+  X, Maximize2,
+  Compass
 } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 import { useDeviceDetection } from '../utils/deviceDetection'
-import config from '../utils/config'
+// config no longer needed on metrics tab
 
 const TrainingDashboard: React.FC = () => {
   const readCssVar = (name: string, fallback: string) => {
@@ -45,28 +46,20 @@ const TrainingDashboard: React.FC = () => {
   const { 
     lossHistory, 
     scoreHistory, 
-    isTraining, 
-    isPaused,
-    isConnected,
+    // isTraining, 
+    // isPaused,
     lastPolicyLoss, 
     lastValueLoss, 
-    modelSize, 
-    setModelSize, 
-    loadingStates,
-    isWaitingForFirstData,
+    //
     getCurrentTrainingData,
-    startTraining,
-    pauseTraining,
-    resumeTraining,
-    stopTraining
+    //
   } = useTrainingStore()
 
   const { displayMode } = useDeviceDetection()
   const isMobile = displayMode === 'mobile'
-  const [activeTab, setActiveTab] = useState<'core' | 'trends' | 'stats'>('core')
+  // Tab state removed in compact redesign
   
-  // NEW: Manual checkpoint state
-  const [isCreatingCheckpoint, setIsCreatingCheckpoint] = useState(false)
+  // Controls removed from Metrics tab; no local checkpoint state needed
 
   // NEW: Chart expansion state
   const [expandedChart, setExpandedChart] = useState<{
@@ -74,11 +67,22 @@ const TrainingDashboard: React.FC = () => {
     title: string
   } | null>(null)
 
-  // Use isWaitingForFirstData from store
-  const showWaitingForFirstData = isWaitingForFirstData
+  // Use isWaitingForFirstData from store (directly where needed)
 
   // Get current training data with fallback
   const currentTrainingData = getCurrentTrainingData()
+
+  // Derived dominance metrics (fallback if not provided by backend)
+  const dominance = useMemo(() => {
+    const usage = currentTrainingData?.expert_usage as number[] | undefined
+    if (!usage || usage.length === 0) return { hhi: 0, dominance: 0, top1: 0 }
+    const sumSquares = usage.reduce((s, u) => s + u * u, 0)
+    const n = usage.length
+    const minHhi = 1 / n
+    const normHhi = Math.max(0, Math.min(1, (sumSquares - minHhi) / (1 - minHhi)))
+    const top1 = Math.max(...usage)
+    return { hhi: normHhi, dominance: normHhi, top1 }
+  }, [currentTrainingData?.expert_usage])
 
   // NEW: Chart expansion handlers
   const handleChartDoubleTap = (chartType: 'loss' | 'score' | 'actions' | 'experts', title: string) => {
@@ -99,59 +103,7 @@ const TrainingDashboard: React.FC = () => {
     }
   }
 
-  // Training control functions
-  const handleTrainingControl = async (action: 'start' | 'pause' | 'resume' | 'stop') => {
-    try {
-      switch (action) {
-        case 'start':
-          await startTraining()
-          break
-        case 'pause':
-          await pauseTraining()
-          break
-        case 'resume':
-          await resumeTraining()
-          break
-        case 'stop':
-          await stopTraining()
-          break
-      }
-    } catch (error) {
-      console.error('Training control error:', error)
-    }
-  }
-
-  // NEW: Manual checkpoint creation
-  const handleManualCheckpoint = async () => {
-    if (!isTraining) {
-      console.warn('Cannot create checkpoint: training not active')
-      return
-    }
-    
-    try {
-      setIsCreatingCheckpoint(true)
-      const res = await fetch(`${config.api.baseUrl}/training/checkpoint/manual`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      
-      if (!res.ok) {
-        throw new Error('Failed to create manual checkpoint')
-      }
-      
-      const result = await res.json()
-      console.log('Manual checkpoint created:', result.checkpoint_id)
-      
-      // Show success feedback (could be enhanced with a toast notification)
-      alert(`Checkpoint created successfully: ${result.checkpoint_id}`)
-      
-    } catch (error) {
-      console.error('Manual checkpoint error:', error)
-      alert(`Failed to create checkpoint: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    } finally {
-      setIsCreatingCheckpoint(false)
-    }
-  }
+  // Controls removed from Metrics tab; actions relocated to Controls tab
 
   // Chart data preparation with fallback mock data
   const createMockData = (episodes: number[], baseValue: number, variance: number = 0.2) => {
@@ -642,24 +594,27 @@ const TrainingDashboard: React.FC = () => {
       color: 'text-cyan-400',
       bgColor: 'bg-cyan-500/20',
     },
+    // NEW: Novelty signal
     {
-      title: 'Active Params',
+      title: 'Novelty',
       value: (() => {
-        // Approximate active params based on profile selection
-        const profile = modelSize
-        let activeM = 0
-        if (profile === 'lightning') activeM = 0.5
-        else if (profile === 'base') activeM = 3
-        else if (profile === 'expert') activeM = 10
-        return `${activeM.toFixed(1)}M`
+        const td: any = currentTrainingData as any
+        const v = td?.avg_novelty ?? td?.novelty_rate ?? td?.novelty_bonus
+        return v != null ? `${(Number(v) * 100).toFixed(0)}%` : 'N/A'
       })(),
-      icon: Scale,
-      color: 'text-pink-400',
-      bgColor: 'bg-pink-500/20',
+      icon: Compass,
+      color: 'text-indigo-400',
+      bgColor: 'bg-indigo-500/20',
     },
+    // Removed Active Params tile from metrics tab (moved to Controls)
   ]
 
-  const enhancedMetrics = [
+  /*
+   * Retain enhanced metrics template for future expansion
+   * (disabled in compact view to keep layout minimal)
+   */
+  // Temporarily comment out to avoid unused warnings in compact view
+  /* const _enhancedMetricsTemplate = [
     {
       title: 'Score Trend',
       value: currentTrainingData?.score_trend ? `${currentTrainingData.score_trend > 0 ? '+' : ''}${currentTrainingData.score_trend.toFixed(0)}` : 'N/A',
@@ -695,24 +650,45 @@ const TrainingDashboard: React.FC = () => {
     },
     {
       title: 'Load Balance',
-      value: currentTrainingData?.load_balancing_reward ? `${currentTrainingData.load_balancing_reward.toFixed(3)}` : 'N/A',
+      value: currentTrainingData?.load_balancing_reward != null ? `${currentTrainingData.load_balancing_reward.toFixed(3)}` : 'N/A',
       icon: <Scale className="w-4 h-4 text-pink-400" />,
       color: 'text-pink-400',
       bgColor: 'bg-pink-500/20',
     },
     {
       title: 'Expert Starvation',
-      value: currentTrainingData?.expert_starvation_rate ? `${(currentTrainingData.expert_starvation_rate * 100).toFixed(1)}%` : 'N/A',
+      value: currentTrainingData?.expert_starvation_rate != null ? `${(currentTrainingData.expert_starvation_rate * 100).toFixed(1)}%` : 'N/A',
       icon: <AlertTriangle className="w-4 h-4 text-red-400" />,
       color: currentTrainingData?.expert_starvation_rate ? (currentTrainingData.expert_starvation_rate > 0.1 ? 'text-red-400' : currentTrainingData.expert_starvation_rate > 0.05 ? 'text-yellow-400' : 'text-green-400') : 'text-gray-400',
       bgColor: 'bg-red-500/20',
     },
+    // Replaced sparsity with dominance visuals
     {
-      title: 'Sparsity Score',
-      value: currentTrainingData?.avg_sparsity_score ? `${(currentTrainingData.avg_sparsity_score * 100).toFixed(0)}%` : 'N/A',
+      title: 'Dominance (HHI)',
+      value: `${(dominance.hhi * 100).toFixed(0)}%`,
+      icon: <Flame className="w-4 h-4" />,
+      color: dominance.hhi > 0.6 ? 'text-red-400' : dominance.hhi > 0.3 ? 'text-yellow-400' : 'text-green-400',
+      bgColor: 'bg-red-500/20',
+    },
+    {
+      title: 'Top Expert Share',
+      value: `${(dominance.top1 * 100).toFixed(0)}%`,
       icon: <GitBranch className="w-4 h-4 text-blue-400" />,
-      color: currentTrainingData?.avg_sparsity_score ? (currentTrainingData.avg_sparsity_score > 0.75 ? 'text-green-400' : currentTrainingData.avg_sparsity_score > 0.5 ? 'text-yellow-400' : 'text-red-400') : 'text-gray-400',
+      color: dominance.top1 > 0.5 ? 'text-red-400' : dominance.top1 > 0.35 ? 'text-yellow-400' : 'text-green-400',
       bgColor: 'bg-blue-500/20',
+    },
+    {
+      title: 'Exploration',
+      value: (() => {
+        const td: any = currentTrainingData as any
+        const t = td?.exploration?.temperature
+        const e = td?.exploration?.epsilon
+        if (t != null && e != null) return `T ${Number(t).toFixed(2)} • ε ${Number(e).toFixed(2)}`
+        return 'Adaptive'
+      })(),
+      icon: <Thermometer className="w-4 h-4 text-cyan-400" />,
+      color: 'text-cyan-400',
+      bgColor: 'bg-cyan-500/20',
     },
     {
       title: 'Balance Quality',
@@ -721,14 +697,10 @@ const TrainingDashboard: React.FC = () => {
       color: currentTrainingData?.avg_balance_quality ? (currentTrainingData.avg_balance_quality > 0.8 ? 'text-green-400' : currentTrainingData.avg_balance_quality > 0.6 ? 'text-yellow-400' : 'text-red-400') : 'text-gray-400',
       bgColor: 'bg-green-500/20',
     },
-  ]
+  ] */
 
   // determine which metrics to show based on selected tab
-  const displayedMetrics = activeTab === 'core'
-    ? metrics
-    : activeTab === 'trends'
-      ? enhancedMetrics.slice(0, 4)
-      : enhancedMetrics.slice(4)
+  // Compact redesign uses a curated subset inline
 
   // NEW: Render expanded chart overlay
   const renderExpandedChart = () => {
@@ -794,323 +766,43 @@ const TrainingDashboard: React.FC = () => {
   }
 
   return (
-    <div className="safe-area h-full grid grid-rows-[auto_auto_1fr] gap-2 pb-4 px-4">
-      {/* Redesigned Training Controls */}
+    <div className="safe-area h-full min-h-0 grid grid-rows-[1fr] gap-2 px-4 overflow-hidden">
+
+      {/* Combined Charts and Metrics Section (fills remaining space, internal scroll) */}
       <motion.div
-        className="card-glass p-3 rounded-2xl"
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        {/* Header Row */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center space-x-2">
-            <Activity className="w-4 h-4 text-blue-400" />
-            <h3 className="text-sm font-semibold text-white">Training Controls</h3>
-          </div>
-          
-          {/* Status Indicator */}
-          <div className="flex items-center space-x-2 text-xs">
-            <div className={`w-2 h-2 rounded-full ${isTraining ? 'bg-ui-state-success' : 'bg-ui-state-danger'}`} />
-            <span className={`font-medium ${isTraining ? 'text-ui-state-success' : 'text-ui-state-danger'}`}>
-              {isTraining ? 'Active' : 'Stopped'}
-            </span>
-            {isPaused && isTraining && (
-              <span className="text-ui-state-warning">(Paused)</span>
-            )}
-            {!isConnected && (
-              <span className="text-ui-state-danger">(Disconnected)</span>
-            )}
-          </div>
-        </div>
-
-        {/* Model Size Selector - Only show when not training */}
-        {!isTraining && (
-          <div className="mb-2">
-            <label className="block text-xs text-ui-text-secondary mb-1">Model Profile</label>
-            <select
-              value={modelSize}
-              onChange={(e) => setModelSize(e.target.value as 'lightning' | 'base' | 'expert')}
-              disabled={isTraining || loadingStates.isTrainingStarting}
-              className={`
-                w-full bg-ui-surface-elevated text-ui-text-primary rounded-lg px-3 py-2 text-sm border border-ui-border-muted
-                focus:outline-none focus:ring-1 focus:ring-ui-focus focus:border-ui-focus
-                ${isTraining || loadingStates.isTrainingStarting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-700/40'}
-              `}
-            >
-              <option value="lightning">Lightning (≈2M params, ~0.5M active)</option>
-              <option value="base">Base (≈12M params, ~3M active)</option>
-              <option value="expert">Expert (≈100M params, ~10M active)</option>
-            </select>
-          </div>
-        )}
-
-        {/* Control Buttons */}
-        <div className="grid grid-cols-2 gap-2">
-          {/* Primary Action Button */}
-          <button
-            onClick={() => {
-              if (!isTraining) {
-                handleTrainingControl('start')
-              } else if (isPaused) {
-                handleTrainingControl('resume')
-              } else {
-                handleTrainingControl('pause')
-              }
-            }}
-            disabled={loadingStates.isTrainingStarting || !isConnected}
-            className={`
-              flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-medium transition-all
-              ${!isTraining 
-                ? 'bg-ui-state-success/90 hover:bg-ui-state-success text-white' 
-                : isPaused 
-                  ? 'bg-ui-state-success/90 hover:bg-ui-state-success text-white'
-                  : 'bg-ui-state-warning/90 hover:bg-ui-state-warning text-black'
-              }
-              ${(loadingStates.isTrainingStarting || !isConnected) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}
-            `}
-          >
-            {!isTraining ? (
-              <>
-                <Play className="w-4 h-4 mr-2" />
-                Start Training
-              </>
-            ) : isPaused ? (
-              <>
-                <Play className="w-4 h-4 mr-2" />
-                Resume
-              </>
-            ) : (
-              <>
-                <Pause className="w-4 h-4 mr-2" />
-                Pause
-              </>
-            )}
-          </button>
-
-          {/* Secondary Action Button */}
-          <button
-            onClick={() => {
-              if (isTraining) {
-                handleTrainingControl('stop')
-              } else {
-                // If not training, this becomes a manual checkpoint button
-                handleManualCheckpoint()
-              }
-            }}
-            disabled={loadingStates.isTrainingStarting || !isConnected || isCreatingCheckpoint}
-            className={`
-              flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-medium transition-all
-              ${isTraining 
-                ? 'bg-ui-state-danger/90 hover:bg-ui-state-danger text-white' 
-                : 'bg-ui-state-info/90 hover:bg-ui-state-info text-white'
-              }
-              ${(loadingStates.isTrainingStarting || !isConnected || isCreatingCheckpoint) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}
-            `}
-          >
-            {isTraining ? (
-              <>
-                <StopIcon className="w-4 h-4 mr-2" />
-                Stop Training
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4 mr-2" />
-                {isCreatingCheckpoint ? 'Creating...' : 'Manual Checkpoint'}
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Manual Checkpoint Button - Only show when training */}
-        {isTraining && (
-          <div className="mt-2">
-            <button
-              onClick={handleManualCheckpoint}
-              disabled={loadingStates.isTrainingStarting || !isConnected || isCreatingCheckpoint}
-            className={`
-                w-full flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium transition-all
-                bg-ui-state-info/20 hover:bg-ui-state-info/30 text-ui-state-info border border-ui-state-info/30
-                ${(loadingStates.isTrainingStarting || !isConnected || isCreatingCheckpoint) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-102'}
-              `}
-            >
-              <Save className="w-4 h-4 mr-2" />
-              {isCreatingCheckpoint ? 'Creating Checkpoint...' : 'Create Manual Checkpoint'}
-            </button>
-          </div>
-        )}
-
-        {/* Waiting for Data Indicator */}
-        {showWaitingForFirstData && (
-          <div className="mt-2 p-2 rounded-lg border border-ui-state-info/30 bg-ui-state-info/10">
-            <div className="flex items-center space-x-2">
-              <Brain className="w-4 h-4 text-ui-state-info animate-pulse" />
-              <div className="flex-1">
-                <div className="text-xs font-medium text-ui-text-primary">Initializing Training</div>
-                <div className="text-xs text-ui-text-secondary">
-                  Waiting for first episode data...
-                </div>
-              </div>
-              {loadingStates.estimatedTimeRemaining !== null && (
-                <div className="text-xs text-ui-text-secondary numeric">
-                  ~{Math.ceil(loadingStates.estimatedTimeRemaining)}s
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </motion.div>
-
-      {/* Combined Charts and Metrics Section */}
-      <motion.div
-        className="card-glass p-3 rounded-2xl"
+        className="card-glass p-3 rounded-2xl h-full min-h-0 overflow-auto"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1 }}
+        style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
       >
-        <h3 className="text-sm font-semibold mb-2 flex items-center">
+        <h3 className="text-sm font-semibold mb-2 flex items-center justify-between">
           <BarChart3 className="w-4 h-4 mr-2 text-blue-400" />
-          Training Analytics
+          Training Insights
+          <a
+            href="#controls"
+            onClick={(e) => { e.preventDefault(); (window as any).scrollTo && (window as any).scrollTo(0, 0); }}
+            className="text-[11px] text-ui-text-secondary hover:text-ui-brand-primary"
+            title="Go to Controls"
+          >
+            Controls »
+          </a>
         </h3>
         
-        {/* Compact Charts Grid */}
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          {/* Training Loss Chart - Compact */}
-          <div className="flex flex-col items-center space-y-1">
-            <div className="text-xs text-ui-text-secondary font-medium text-center">Training Loss</div>
-            <div 
-              className="w-full h-14 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
-              onDoubleClick={() => handleChartDoubleTap('loss', 'Training Loss')}
-              onTouchEnd={(e) => {
-                const now = Date.now()
-                const lastTap = (e.currentTarget as any).lastTap || 0
-                if (now - lastTap < 300) {
-                  handleChartDoubleTap('loss', 'Training Loss')
-                }
-                (e.currentTarget as any).lastTap = now
-              }}
-            >
-              <Line data={lossChartData} options={enhancedChartOptions} />
-              {isMobile && (
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="text-xs text-ui-text-primary" style={{ background: 'var(--ui-overlay)', padding: '4px 8px', borderRadius: 8 }}>
-                    Double-tap to expand
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Game Score Chart - Compact */}
-          <div className="flex flex-col items-center space-y-1">
-            <div className="text-xs text-ui-text-secondary font-medium text-center">Game Score</div>
-            <div 
-              className="w-full h-14 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
-              onDoubleClick={() => handleChartDoubleTap('score', 'Game Score')}
-              onTouchEnd={(e) => {
-                const now = Date.now()
-                const lastTap = (e.currentTarget as any).lastTap || 0
-                if (now - lastTap < 300) {
-                  handleChartDoubleTap('score', 'Game Score')
-                }
-                (e.currentTarget as any).lastTap = now
-              }}
-            >
-              <Line data={scoreChartData} options={enhancedChartOptions} />
-              {isMobile && (
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="text-xs text-ui-text-primary" style={{ background: 'var(--ui-overlay)', padding: '4px 8px', borderRadius: 8 }}>
-                    Double-tap to expand
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Action Distribution Chart - Compact */}
-          <div className="flex flex-col items-center space-y-1">
-            <div className="text-xs text-ui-text-secondary font-medium text-center">Action Distribution</div>
-            <div 
-              className="w-full h-14 bg-gray-800/50 rounded-xl p-2 flex items-center justify-center cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
-              onDoubleClick={() => handleChartDoubleTap('actions', 'Action Distribution')}
-              onTouchEnd={(e) => {
-                const now = Date.now()
-                const lastTap = (e.currentTarget as any).lastTap || 0
-                if (now - lastTap < 300) {
-                  handleChartDoubleTap('actions', 'Action Distribution')
-                }
-                (e.currentTarget as any).lastTap = now
-              }}
-            >
-              <Doughnut data={actionDistributionData} options={enhancedDoughnutOptions} />
-              {isMobile && (
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="text-xs text-ui-text-primary" style={{ background: 'var(--ui-overlay)', padding: '4px 8px', borderRadius: 8 }}>
-                    Double-tap to expand
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Expert Usage Chart - Compact */}
-          <div className="flex flex-col items-center space-y-1">
-            <div className="text-xs text-ui-text-secondary font-medium text-center">Expert Usage</div>
-            <div 
-              className="w-full h-14 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative group"
-              onDoubleClick={() => handleChartDoubleTap('experts', 'Expert Usage')}
-              onTouchEnd={(e) => {
-                const now = Date.now()
-                const lastTap = (e.currentTarget as any).lastTap || 0
-                if (now - lastTap < 300) {
-                  handleChartDoubleTap('experts', 'Expert Usage')
-                }
-                (e.currentTarget as any).lastTap = now
-              }}
-            >
-              <Bar data={expertUsageData} options={enhancedBarOptions} />
-              {isMobile && (
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="text-xs text-ui-text-primary" style={{ background: 'var(--ui-overlay)', padding: '4px 8px', borderRadius: 8 }}>
-                    Double-tap to expand
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="flex space-x-2 mb-2">
-          <button
-            onClick={() => setActiveTab('core')}
-            className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'core' ? 'bg-ui-brand-primary text-white' : 'bg-ui-surface-elevated text-ui-text-secondary'}`}
-          >Core</button>
-          <button
-            onClick={() => setActiveTab('trends')}
-            className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'trends' ? 'bg-ui-brand-primary text-white' : 'bg-ui-surface-elevated text-ui-text-secondary'}`}
-          >Trends</button>
-          <button
-            onClick={() => setActiveTab('stats')}
-            className={`px-2 py-1 text-xs font-medium rounded ${activeTab === 'stats' ? 'bg-ui-brand-primary text-white' : 'bg-ui-surface-elevated text-ui-text-secondary'}`}
-          >Stats</button>
-        </div>
-
-        {/* Compact Metrics Grid */}
-        <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-4 gap-2'}`}>  
-          {displayedMetrics.map((metric, index) => (
+        {/* KPI Tiles */}
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          {metrics.slice(0, 4).map((metric, index) => (
             <motion.div
               key={metric.title}
               className="flex items-center space-x-2 p-2 bg-gray-800/30 rounded-xl"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 + index * 0.03 }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 * index }}
             >
-              <div className={`p-1 rounded ${metric.bgColor}`}>  
+              <div className={`p-1 rounded ${metric.bgColor}`}>
                 {React.isValidElement(metric.icon)
                   ? metric.icon
-                  : React.createElement(metric.icon as React.ElementType, { className: `w-3 h-3 ${metric.color}` })
-                }
+                  : React.createElement(metric.icon as React.ElementType, { className: `w-3 h-3 ${metric.color}` })}
               </div>
               <div className="min-w-0">
                 <div className="text-xs text-ui-text-secondary font-medium truncate">{metric.title}</div>
@@ -1118,6 +810,79 @@ const TrainingDashboard: React.FC = () => {
               </div>
             </motion.div>
           ))}
+        </div>
+
+        {/* Micro Charts Row */}
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <div className="flex flex-col space-y-1">
+            <div className="text-xs text-ui-text-secondary font-medium">Training Loss</div>
+            <div
+              className="w-full h-16 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors"
+              onDoubleClick={() => handleChartDoubleTap('loss', 'Training Loss')}
+            >
+              <Line data={lossChartData} options={enhancedChartOptions} />
+            </div>
+          </div>
+          <div className="flex flex-col space-y-1">
+            <div className="text-xs text-ui-text-secondary font-medium">Game Score</div>
+            <div
+              className="w-full h-16 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors"
+              onDoubleClick={() => handleChartDoubleTap('score', 'Game Score')}
+            >
+              <Line data={scoreChartData} options={enhancedChartOptions} />
+            </div>
+          </div>
+        </div>
+
+        {/* Distribution Row */}
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <div className="flex flex-col space-y-1">
+            <div className="text-xs text-ui-text-secondary font-medium">Action Distribution</div>
+            <div
+              className="w-full h-20 bg-gray-800/50 rounded-xl p-2 flex items-center justify-center cursor-pointer hover:bg-gray-700/50 transition-colors"
+              onDoubleClick={() => handleChartDoubleTap('actions', 'Action Distribution')}
+            >
+              <Doughnut data={actionDistributionData} options={enhancedDoughnutOptions} />
+            </div>
+          </div>
+          <div className="flex flex-col space-y-1">
+            <div className="text-xs text-ui-text-secondary font-medium">Expert Usage</div>
+            <div
+              className="w-full h-20 bg-gray-800/50 rounded-xl p-2 cursor-pointer hover:bg-gray-700/50 transition-colors"
+              onDoubleClick={() => handleChartDoubleTap('experts', 'Expert Usage')}
+            >
+              <Bar data={expertUsageData} options={enhancedBarOptions} />
+            </div>
+          </div>
+        </div>
+
+        {/* Health Strip */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-gray-800/40">
+            <div className="flex items-center gap-2">
+              {getScoreTrendIcon()}
+              <span className="text-xs text-ui-text-secondary">Score Trend</span>
+            </div>
+            <span className="text-xs numeric text-ui-text-primary">{currentTrainingData?.score_trend ? `${currentTrainingData.score_trend > 0 ? '+' : ''}${currentTrainingData.score_trend.toFixed(0)}` : 'N/A'}</span>
+          </div>
+          <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-gray-800/40">
+            <div className="flex items-center gap-2">
+              {getLossTrendIcon()}
+              <span className="text-xs text-ui-text-secondary">Loss Trend</span>
+            </div>
+            <span className="text-xs numeric text-ui-text-primary">{currentTrainingData?.loss_trend ? `${currentTrainingData.loss_trend > 0 ? '+' : ''}${currentTrainingData.loss_trend.toFixed(3)}` : 'N/A'}</span>
+          </div>
+          <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-gray-800/40">
+            <div className="flex items-center gap-2">
+              {getEfficiencyStatus().icon}
+              <span className="text-xs text-ui-text-secondary">Efficiency</span>
+            </div>
+            <span className={`text-xs ${getEfficiencyStatus().color}`}>{currentTrainingData?.training_efficiency ? `${((currentTrainingData.training_efficiency.score_consistency + currentTrainingData.training_efficiency.loss_stability + currentTrainingData.training_efficiency.improvement_rate + currentTrainingData.training_efficiency.plateau_detection)/4*100).toFixed(0)}%` : 'N/A'}</span>
+          </div>
+          <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-gray-800/40">
+            <span className="text-xs text-ui-text-secondary">Dominance (HHI)</span>
+            <span className="text-xs numeric text-ui-text-primary">{(dominance.hhi * 100).toFixed(0)}%</span>
+          </div>
         </div>
       </motion.div>
 

@@ -46,7 +46,7 @@ class TrainingManager:
         
         # Initialize PPO trainer with default config (will be updated when training starts)
         self.timing_logger.start_operation("trainer_init", "setup")
-        self.trainer = PPOTrainer()
+        self.trainer = PPOTrainer(validate_moves=True, compile_model=False)
         self.timing_logger.end_operation("trainer_init", "setup")
         
         # MEMORY OPTIMIZATION: Use single shared trainer instead of multiple trainers
@@ -189,6 +189,8 @@ class TrainingManager:
         self._long_run_mode = enabled
         if enabled:
             self._current_run_id = f"run_{int(time.time())}"
+            # Reset last checkpoint tracking to avoid deleting checkpoints from a previous run
+            self._last_checkpoint_path = None
             print(f"Long run mode enabled with run ID: {self._current_run_id}")
             
             # REMOVED: Don't clean up existing checkpoints when enabling long run mode
@@ -196,6 +198,8 @@ class TrainingManager:
             print("Long run mode will only affect future checkpoints from this run")
         else:
             self._current_run_id = None
+            # Also clear last checkpoint pointer when disabling
+            self._last_checkpoint_path = None
             print("Long run mode disabled")
 
     def _cleanup_previous_run_checkpoints(self):
@@ -237,7 +241,9 @@ class TrainingManager:
         self.timing_logger.start_operation("trainer_reinit", "config")
         self.trainer = PPOTrainer(
             config=self.current_config,
-            learning_rate=config_dict.get('learning_rate', 0.0003)
+            learning_rate=config_dict.get('learning_rate', 0.0003),
+            validate_moves=True,
+            compile_model=False,
         )
         
         # MEMORY OPTIMIZATION: Update shared trainer references
@@ -262,7 +268,9 @@ class TrainingManager:
         self.timing_logger.start_operation("trainer_checkpoint_init", "checkpoint")
         self.trainer = PPOTrainer(
             config=config,
-            learning_rate=0.0003  # Default learning rate, can be adjusted via UI later
+            learning_rate=0.0003,  # Default learning rate, can be adjusted via UI later
+            validate_moves=True,
+            compile_model=False,
         )
         
         # CRITICAL FIX: Update shared trainer references to use the new trainer
@@ -770,12 +778,25 @@ class TrainingManager:
         
         # NEW: Handle long run mode - delete previous checkpoint from this run
         if self._long_run_mode and self._current_run_id and self._last_checkpoint_path:
+            previous_id = self._last_checkpoint_path.stem
             try:
+                # Prefer deleting via CheckpointManager so metadata is also removed
+                deleted = False
+                try:
+                    deleted = self.checkpoint_manager.delete_checkpoint(previous_id)
+                except Exception as meta_e:
+                    print(f"Warning: Could not delete metadata for previous checkpoint {previous_id}: {meta_e}")
+                # Fallback: ensure file is gone even if metadata deletion path failed
                 if self._last_checkpoint_path.exists():
-                    self._last_checkpoint_path.unlink()
-                    print(f"Deleted previous checkpoint from long run: {self._last_checkpoint_path}")
+                    try:
+                        self._last_checkpoint_path.unlink()
+                        deleted = True or deleted
+                    except Exception as file_e:
+                        print(f"Warning: Could not delete previous checkpoint file {self._last_checkpoint_path}: {file_e}")
+                if deleted:
+                    print(f"Deleted previous checkpoint from long run: {previous_id}")
             except Exception as e:
-                print(f"Warning: Could not delete previous checkpoint {self._last_checkpoint_path}: {e}")
+                print(f"Warning: Could not clean up previous checkpoint {previous_id}: {e}")
         
         # Save model checkpoint
         self.timing_logger.start_operation("model_checkpoint_save", "io")
@@ -860,6 +881,26 @@ class TrainingManager:
         training_speed = self._calculate_training_speed_with_checkpoint_offset()
         avg_game_length = sum(self._game_lengths) / len(self._game_lengths) if self._game_lengths else 0
         
+        # In long run mode, remove previous checkpoint from this run before creating a new manual one
+        if self._long_run_mode and self._current_run_id and self._last_checkpoint_path:
+            previous_id = self._last_checkpoint_path.stem
+            try:
+                deleted = False
+                try:
+                    deleted = self.checkpoint_manager.delete_checkpoint(previous_id)
+                except Exception as meta_e:
+                    print(f"Warning: Could not delete metadata for previous checkpoint {previous_id}: {meta_e}")
+                if self._last_checkpoint_path.exists():
+                    try:
+                        self._last_checkpoint_path.unlink()
+                        deleted = True or deleted
+                    except Exception as file_e:
+                        print(f"Warning: Could not delete previous checkpoint file {self._last_checkpoint_path}: {file_e}")
+                if deleted:
+                    print(f"Deleted previous manual checkpoint from long run: {previous_id}")
+            except Exception as e:
+                print(f"Warning: Could not clean up previous manual checkpoint {previous_id}: {e}")
+        
         # Create a manual checkpoint with timestamp
         checkpoint_id = f"checkpoint_manual_{int(time.time())}"
         checkpoint_path = Path(self.checkpoint_dir) / f"{checkpoint_id}.pt"
@@ -904,6 +945,10 @@ class TrainingManager:
             nickname=f"Manual Checkpoint (Episode {self.current_episode})",
             tags=tags
         )
+        
+        # Track this checkpoint for long run mode so subsequent saves can clean up properly
+        if self._long_run_mode:
+            self._last_checkpoint_path = checkpoint_path
         
         # Notify clients
         await self.ws_manager.broadcast({

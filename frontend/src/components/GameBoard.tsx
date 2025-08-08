@@ -1,6 +1,6 @@
-import React, { useMemo, useCallback } from 'react'
+import React, { useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Eye, EyeOff, PlayCircle, PauseCircle, StopCircle } from 'lucide-react'
+import { Eye, EyeOff, PlayCircle, PauseCircle, StopCircle } from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 import { useDeviceDetection } from '../utils/deviceDetection'
 import config from '../utils/config'
@@ -262,21 +262,8 @@ const GameBoard: React.FC = () => {
     return 'text-white'
   }
 
-  // Action probabilities display with better performance
-  const actionProbabilities = useMemo(() => {
-    if (!currentData?.action_probs) return []
-    
-    const actions = ['Up', 'Down', 'Left', 'Right']
-    const icons = [ArrowUp, ArrowDown, ArrowLeft, ArrowRight]
-    const colors = ['text-blue-400', 'text-green-400', 'text-yellow-400', 'text-red-400']
-    
-    return currentData.action_probs.map((prob: number, index: number) => ({
-      name: actions[index],
-      probability: prob,
-      icon: icons[index],
-      color: colors[index],
-    }))
-  }, [currentData?.action_probs])
+  // Action probabilities (kept for potential future inline overlays)
+  // Removed UI usage for compact layout; compute only when needed.
 
   // Get attention opacity for a cell with better performance
   const getAttentionOpacity = useCallback((row: number, col: number) => {
@@ -287,71 +274,7 @@ const GameBoard: React.FC = () => {
   }, [showAttention, currentData?.attention_weights])
 
   return (
-    <div className="safe-area h-full flex flex-col gap-2 pb-6 px-4">
-      {/* Game Over Screen */}
-      {isShowingGameOver && gameCompletionData && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card-glass p-4 rounded-2xl border border-ui-state-danger/30 bg-ui-state-danger/5 flex-shrink-0"
-        >
-          <div className="text-center space-y-4">
-            {/* Game Over Header */}
-            <div className="space-y-2">
-              <h2 className="text-2xl font-bold text-ui-state-danger">Game Over!</h2>
-              <p className="text-sm text-ui-text-secondary">Game #{gameCompletionData.game_number} completed</p>
-            </div>
-            
-            {/* Final Stats */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="text-center">
-                <div className="text-lg font-bold text-ui-state-success numeric">
-                  {gameCompletionData.final_score.toLocaleString()}
-                </div>
-                <div className="text-xs text-ui-text-secondary">Final Score</div>
-              </div>
-              <div className="text-center">
-                <div className="text-lg font-bold text-ui-brand-primary numeric">
-                  {gameCompletionData.total_steps.toLocaleString()}
-                </div>
-                <div className="text-xs text-ui-text-secondary">Total Steps</div>
-              </div>
-              <div className="text-center">
-                <div className="text-lg font-bold text-ui-state-info numeric">
-                  {gameCompletionData.max_tile.toLocaleString()}
-                </div>
-                <div className="text-xs text-ui-text-secondary">Max Tile</div>
-              </div>
-            </div>
-            
-            {/* Final Board State */}
-            <div className="space-y-2">
-              <p className="text-sm text-ui-text-secondary">Final Board State</p>
-              <div className="grid grid-cols-4 gap-2 max-w-sm mx-auto">
-                {gameCompletionData.final_board_state.map((row, rowIndex) =>
-                  row.map((value, colIndex) => (
-                    <div
-                      key={`${rowIndex}-${colIndex}`}
-                      className={`game-tile aspect-square ${getTileColor(value)} ${getTextColor(value)}`}
-                    >
-                      <span className="text-sm font-bold numeric">
-                        {value > 0 ? value : ''}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-            
-            {/* Auto-restart notice and manual restart button */}
-            <div className="space-y-2">
-              <div className="text-xs text-ui-text-secondary">
-                Starting new game in {restartCountdown} seconds...
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
+    <div className="safe-area h-full grid grid-rows-[auto_1fr_auto] gap-2 pb-4 px-4 overflow-hidden">
 
       {/* Game Stats */}
       <motion.div
@@ -391,21 +314,38 @@ const GameBoard: React.FC = () => {
 
       {/* Game Board */}
       <motion.div
-        className={`card-glass p-4 rounded-2xl flex-shrink-0 relative ${
+        className={`card-glass p-3 rounded-2xl relative h-full overflow-hidden ${
           currentData?.done ? 'border border-ui-state-danger/30 bg-ui-state-danger/5' : ''
         }`}
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
       >
-        {currentData?.done && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl z-10" style={{ background: 'var(--ui-overlay)' }}>
-            <div className="text-center">
-              <div className="text-lg font-bold text-ui-state-danger mb-1">Game Over</div>
-              <div className="text-xs text-ui-text-secondary numeric">Final Score: {currentData.score?.toLocaleString()}</div>
+        {(currentData?.done || (isShowingGameOver && gameCompletionData)) && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl z-10 bg-[var(--ui-overlay)]">
+            <div className="card-glass p-4 rounded-xl border border-ui-state-danger/30 bg-ui-surface-elevated/80 max-w-xs w-full mx-4 text-center space-y-3">
+              <div>
+                <div className="text-lg font-bold text-ui-state-danger">Game Over</div>
+                <div className="text-xs text-ui-text-secondary">{gameCompletionData ? `Game #${gameCompletionData.game_number} completed` : 'Playback finished'}</div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <div className="text-sm font-bold text-ui-state-success numeric">{(gameCompletionData?.final_score ?? currentData?.score ?? 0).toLocaleString()}</div>
+                  <div className="text-xs text-ui-text-secondary">Score</div>
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-ui-brand-primary numeric">{(gameCompletionData?.total_steps ?? checkpointPlaybackData?.step_data?.step ?? 0).toLocaleString()}</div>
+                  <div className="text-xs text-ui-text-secondary">Steps</div>
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-ui-state-info numeric">{(gameCompletionData?.max_tile ?? 0).toLocaleString()}</div>
+                  <div className="text-xs text-ui-text-secondary">Max</div>
+                </div>
+              </div>
+              <div className="text-xs text-ui-text-secondary">Starting new game in {restartCountdown}s…</div>
             </div>
           </div>
         )}
-        <div className="grid grid-cols-4 gap-2 max-w-sm mx-auto">
+        <div className="grid grid-cols-4 gap-2 mx-auto" style={{ width: 'min(88vw, 420px)' }}>
           {displayBoard.map((row, rowIndex) =>
             row.map((value, colIndex) => (
               <div
@@ -424,37 +364,12 @@ const GameBoard: React.FC = () => {
         </div>
       </motion.div>
 
-      {/* Compact Next Action Bar */}
-      {actionProbabilities.length > 0 && (
-        <div className="flex items-center justify-between mt-1 px-3 py-2 bg-ui-surface-elevated/80 rounded-xl max-w-xs mx-auto">
-          {/* Most likely action */}
-          {(() => {
-            const maxProb = Math.max(...actionProbabilities.map((a: any) => a.probability))
-            const mainAction = actionProbabilities.find((a: any) => a.probability === maxProb)
-            if (!mainAction) return null
-            const Icon = mainAction.icon
-            return (
-              <div className="flex items-center space-x-2">
-                <Icon className={`w-5 h-5 ${mainAction.color}`} />
-                <span className={`font-bold text-sm numeric ${mainAction.color}`}>{(mainAction.probability * 100).toFixed(0)}%</span>
-              </div>
-            )
-          })()}
-          {/* Dots for other actions */}
-          <div className="flex items-center space-x-1 ml-2">
-            {actionProbabilities.map((action: any) => {
-              if (action.probability === Math.max(...actionProbabilities.map((a: any) => a.probability))) return null
-              return (
-                <span key={action.name} className={`w-2 h-2 rounded-full ${action.color} opacity-70`} title={`${action.name}: ${(action.probability * 100).toFixed(1)}%`} />
-              )
-            })}
-          </div>
-        </div>
-      )}
+      {/* Compact Next Action Bar moved into board overlay footer to save vertical space */}
+      
 
       {/* Playback Controls - Always Visible */}
       <motion.div
-        className={`card-glass p-4 rounded-2xl flex-shrink-0 ${
+        className={`card-glass p-3 rounded-2xl ${
           !isPlayingCheckpoint ? 'opacity-50' : ''
         }`}
         initial={{ opacity: 0, y: -10 }}

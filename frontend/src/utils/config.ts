@@ -42,11 +42,17 @@ export const config = {
         reset: '/training/reset',
         config: '/training/config'
       },
+      system: {
+        health: '/system/health',
+        degradation: '/system/degradation'
+      },
       checkpoints: {
         list: '/checkpoints',
         playback: '/checkpoints/playback'
       },
       websocket: '/ws'
+      ,
+      wsStats: '/ws/stats'
     }
   },
   websocket: {

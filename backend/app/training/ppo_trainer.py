@@ -15,10 +15,12 @@ import os
 import json
 import asyncio
 from datetime import datetime
+import hashlib
 
 from app.models import GameTransformer, DynamicModelConfig
 from app.environment.gym_2048_env import Gym2048Env
-from app.utils.action_selection import select_action_with_fallback
+from app.utils.action_selection import select_action_from_logits_with_validation
+from torch.cuda.amp import GradScaler
 
 class TimingLogger:
     """Comprehensive timing logger for performance diagnostics"""
@@ -119,7 +121,7 @@ class TimingLogger:
 class PPOTrainer:
     """PPO trainer for the GameTransformer model"""
     
-    def __init__(self, config=None, learning_rate: float = 3e-5, device=None):
+    def __init__(self, config=None, learning_rate: float = 3e-5, device=None, *, validate_moves: bool = False, compile_model: bool = False):
         """Initialize PPO trainer"""
         
         # Initialize timing logger
@@ -137,7 +139,30 @@ class PPOTrainer:
         
         # Initialize model
         self.timing_logger.start_operation("model_creation", "setup", f"device={self.device}")
+        # Enable high-precision TF32 matmul on Ampere+ for speed
+        try:
+            torch.set_float32_matmul_precision("high")
+        except Exception:
+            pass
+
         self.model = GameTransformer(config).to(self.device)
+        # Optionally compile model for throughput (off by default). Enable by setting
+        # ENABLE_TORCH_COMPILE=1 in the environment or passing compile_model=True.
+        try:
+            enable_compile = compile_model or (os.getenv("ENABLE_TORCH_COMPILE", "0") == "1")
+        except Exception:
+            enable_compile = compile_model
+        if enable_compile:
+            try:
+                # Best-effort: suppress errors and fall back to eager on failure
+                try:
+                    import torch._dynamo as _dynamo  # type: ignore
+                    _dynamo.config.suppress_errors = True
+                except Exception:
+                    pass
+                self.model = torch.compile(self.model, mode="max-autotune")  # type: ignore[attr-defined]
+            except Exception:
+                pass
         self.timing_logger.end_operation("model_creation", "setup", f"model_params={self.model.count_parameters():,}")
         
         # Initialize optimizer
@@ -208,6 +233,24 @@ class PPOTrainer:
 
         # ---- NEW: lock for thread-safe experience buffer operations ----
         self._buffer_lock = threading.Lock()
+        # NEW: serialize policy updates to avoid concurrent optimizer steps on shared trainer
+        self._update_lock = threading.Lock()
+
+        # Mixed precision configuration
+        self.use_amp = torch.cuda.is_available()
+        self.scaler = GradScaler(enabled=self.use_amp)
+
+        # Action validation toggle (avoid expensive deep copies by default)
+        self.validate_moves = validate_moves
+
+        # Novelty-driven exploration settings
+        self._novelty_counts = {}
+        self._novelty_order = deque(maxlen=200_000)
+        self.novelty_bonus_coef = 0.12
+        self.novelty_min = 0.0
+        self.novelty_max = 1.0
+        self._stagnation_steps = 0
+        self._stagnation_threshold_steps = 10
 
         # Training state
         self.episode_count = 0
@@ -250,11 +293,12 @@ class PPOTrainer:
                                        f"model_params={self.model.count_parameters():,}, device={self.device}, batch_size={self.batch_size}")
     
     def calculate_load_balancing_reward(self) -> float:
-        """Calculate intrinsic reward promoting sparsity, utilization and exploration.
+        """Calculate intrinsic reward focused on anti-starvation and anti-dominance.
 
         Components:
         - Expert utilization balance (low variance, avoid starvation)
-        - Router entropy/diversity and activity sparsity
+        - Router entropy/diversity (no sparsity pressure)
+        - Dominance penalties for over-concentration
         - Recovery incentives to prevent collapse
         - Progressive scaling and early-training boosts
         """
@@ -327,7 +371,7 @@ class PPOTrainer:
         if starved_experts > 1:
             starvation_penalty *= (1.0 + starved_experts * 0.5)
         
-        # 3. Entropy bonus (higher entropy = better diversity) - PRESERVE SPARSITY
+        # 3. Entropy bonus (higher entropy = better diversity) - no sparsity enforcement
         epsilon = 1e-8
         log_usage = np.log(usage_np + epsilon)
         entropy = float(-np.sum(usage_np.astype(np.float64) * log_usage))
@@ -354,14 +398,20 @@ class PPOTrainer:
                         if current_usage > avg_usage_val * 1.2:  # 20% improvement
                             diversity_penalty *= 0.8  # Reduce penalty for recovering experts
         
-        # 5. PRESERVE: Sparsity promotion (encourage using more experts)
-        active_experts = float(np.sum((usage_np > ideal_usage * 0.1).astype(np.float64)))  # Experts with >10% of ideal usage
-        sparsity_bonus = (active_experts / n_experts) * 0.5  # Keep current bonus
+        # 5. Dominance penalties (anti-monopoly): penalize over-concentration
+        hhi = float(np.sum(np.square(usage_np)))  # Herfindahl index
+        min_hhi = 1.0 / n_experts
+        norm_hhi = (hhi - min_hhi) / (1.0 - min_hhi) if n_experts > 1 else 0.0
+        hhi_penalty = norm_hhi * 0.8
+
+        top1 = float(np.max(usage_np))
+        dom_threshold = max(0.5, 1.5 * ideal_usage)
+        top1_overflow = max(0.0, (top1 - dom_threshold) / (1.0 - dom_threshold))
+        dominance_penalty = top1_overflow ** 2 * 1.2
         
-        # 6. Balance quality metric
-        # Reward for having usage close to uniform distribution
+        # 6. Balance quality metric (light touch)
         balance_quality = 1.0 - np.mean(np.abs(usage_np - ideal_usage)) / ideal_usage
-        balance_bonus = balance_quality * 0.3
+        balance_bonus = balance_quality * 0.1
         
         # ENHANCED: Progressive load balancing scaling
         if self.episode_count > self.lb_progressive_episodes:
@@ -369,13 +419,14 @@ class PPOTrainer:
             progress_factor = min(2.0, 1.0 + (self.episode_count - self.lb_progressive_episodes) / 5000)
             self.lb_progressive_factor = progress_factor
         
-        # Combine all components
+        # Combine all components (no sparsity bonus)
         lb_reward = (entropy_bonus +
-                     sparsity_bonus +
                      balance_bonus -
                      variance_penalty -
                      starvation_penalty -
-                     diversity_penalty)
+                     diversity_penalty -
+                     hhi_penalty -
+                     dominance_penalty)
         
         # Apply adaptive factor based on model size
         lb_reward *= self.lb_adaptive_factor
@@ -394,9 +445,9 @@ class PPOTrainer:
         self.timing_logger.end_operation("calculate_lb_reward", "reward", 
                                        f"reward={final_reward:.4f}, variance={normalized_variance:.4f}, "
                                        f"entropy={normalized_entropy:.4f}, starvation={starvation_penalty:.4f}, "
-                                       f"diversity={diversity_penalty:.4f}, sparsity={sparsity_bonus:.4f}, "
-                                       f"balance={balance_bonus:.4f}, active_experts={active_experts}/{n_experts}, "
-                                       f"progressive_factor={self.lb_progressive_factor:.2f}")
+                                       f"diversity={diversity_penalty:.4f}, "
+                                       f"balance={balance_bonus:.4f}, hhi_penalty={hhi_penalty:.4f}, "
+                                       f"dominance={dominance_penalty:.4f}, progressive_factor={self.lb_progressive_factor:.2f}")
         
         return final_reward
     
@@ -405,35 +456,50 @@ class PPOTrainer:
         
         self.timing_logger.start_operation("action_selection", "inference")
         
-        # Get policy and value for visualization
+        # Single forward pass for logits and value (AMP-enabled)
         self.timing_logger.start_operation("model_forward", "inference")
         with torch.no_grad():
-            state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+            state_tensor = torch.as_tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
+            # Use plain inference for stability; AMP can stay on for training updates
             policy_logits, value = self.model(state_tensor)
-            # Ensure logits are on trainer device to prevent CUDA/CPU mismatch
-            policy_logits = policy_logits.to(self.device)
-            
+
             # Mask illegal actions for visualization
             action_mask = torch.full((4,), -float('inf'), device=self.device)
             action_mask[legal_actions] = 0.0
             masked_logits = policy_logits[0] + action_mask
+            if torch.isnan(masked_logits).any() or torch.isinf(masked_logits).any():
+                # Fallback to uniform over legal actions if logits are invalid
+                masked_logits = torch.full((4,), -float('inf'), device=self.device)
+                masked_logits[legal_actions] = 0.0
             action_probs = F.softmax(masked_logits, dim=-1)
-            
+
             # Store latest action probabilities for visualization
-            self.latest_action_probs = action_probs.cpu().numpy().tolist()
+            self.latest_action_probs = action_probs.detach().cpu().numpy().tolist()
         self.timing_logger.end_operation("model_forward", "inference", f"legal_actions={len(legal_actions)}")
-        
-        # Use fallback mechanism to select action with adaptive exploration
+
+        # Use fallback mechanism to select action with adaptive exploration (no extra forward)
         self.timing_logger.start_operation("action_fallback", "inference")
-        # Schedule exploration temperature and epsilon over training
-        # High exploration early, anneal gradually, but keep floor to avoid stagnation
-        temp = max(0.7, 1.5 - 0.0001 * self.total_steps)
-        eps = max(0.02, 0.2 - 0.00005 * self.total_steps)
-        dir_alpha = 0.3 if self.episode_count < 500 else 0.05
-        dir_weight = 0.25 if self.episode_count < 500 else 0.1
-        action, log_prob, attention_weights = select_action_with_fallback(
-            model=self.model,
-            state=state,
+        # Novelty- and health-aware exploration: scale with novelty, stagnation, and dominance
+        state_novelty = self._get_state_novelty(state)
+        dominance_factor = self._get_router_dominance_factor()
+        stagnation_factor = min(1.0, self._stagnation_steps / max(1, self._stagnation_threshold_steps))
+
+        base_temp = 1.2 - 0.00005 * self.total_steps
+        base_temp = float(np.clip(base_temp, 0.7, 1.6))
+        temp = base_temp + 0.6 * (1.0 - state_novelty) + 0.4 * stagnation_factor + 0.3 * dominance_factor
+        temp = float(np.clip(temp, 0.7, 2.2))
+
+        base_eps = 0.12 - 0.00003 * self.total_steps
+        base_eps = float(np.clip(base_eps, 0.02, 0.15))
+        eps = base_eps + 0.25 * (1.0 - state_novelty) + 0.2 * stagnation_factor + 0.15 * dominance_factor
+        eps = float(np.clip(eps, 0.03, 0.6))
+
+        dir_alpha = 0.05 + 0.45 * (1.0 - state_novelty) + 0.4 * dominance_factor
+        dir_alpha = float(np.clip(dir_alpha, 0.05, 1.2))
+        dir_weight = 0.08 + 0.35 * (1.0 - state_novelty) + 0.25 * stagnation_factor + 0.2 * dominance_factor
+        dir_weight = float(np.clip(dir_weight, 0.05, 0.8))
+        action, log_prob = select_action_from_logits_with_validation(
+            policy_logits=policy_logits[0],
             legal_actions=legal_actions,
             env_game=env_game,
             device=self.device,
@@ -444,19 +510,64 @@ class PPOTrainer:
             min_explore_prob=0.01,
             dirichlet_alpha=dir_alpha,
             dirichlet_weight=dir_weight,
+            validate_moves=self.validate_moves,
         )
         self.timing_logger.end_operation("action_fallback", "inference", f"selected_action={action}")
-        
-        # Get value prediction for the selected action
-        self.timing_logger.start_operation("value_prediction", "inference")
-        with torch.no_grad():
-            state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
-            _, value = self.model(state_tensor)
-        self.timing_logger.end_operation("value_prediction", "inference")
-        
+
         self.timing_logger.end_operation("action_selection", "inference", f"action={action}, value={value.item():.3f}")
         
         return action, log_prob, value.item()
+
+    # ---- Novelty utilities ----
+    def _encode_state(self, state: np.ndarray) -> bytes:
+        arr = np.array(state, dtype=np.float32).flatten()
+        exps = []
+        for v in arr:
+            if v <= 0:
+                exps.append(0)
+            else:
+                exp = int(np.log2(max(1.0, float(v))))
+                exps.append(max(0, exp))
+        exps_bytes = bytes(int(min(255, e)) for e in exps)
+        return exps_bytes
+
+    def _hash_state(self, state: np.ndarray) -> str:
+        enc = self._encode_state(state)
+        return hashlib.blake2b(enc, digest_size=8).hexdigest()
+
+    def _get_state_novelty(self, state: np.ndarray) -> float:
+        h = self._hash_state(state)
+        c = self._novelty_counts.get(h, 0)
+        novelty = 1.0 / float(np.sqrt(1.0 + c))
+        return float(np.clip(novelty, self.novelty_min, self.novelty_max))
+
+    def _update_state_novelty(self, state: np.ndarray) -> float:
+        h = self._hash_state(state)
+        novelty = self._get_state_novelty(state)
+        if h not in self._novelty_counts:
+            if len(self._novelty_counts) >= self._novelty_order.maxlen:
+                try:
+                    old_key = self._novelty_order.popleft()
+                    if old_key in self._novelty_counts:
+                        del self._novelty_counts[old_key]
+                except Exception:
+                    pass
+            self._novelty_order.append(h)
+            self._novelty_counts[h] = 1
+        else:
+            self._novelty_counts[h] += 1
+        return novelty
+
+    def _get_router_dominance_factor(self) -> float:
+        expert_usage = self.model.get_expert_usage()
+        if expert_usage is None:
+            return 0.0
+        usage_np = expert_usage.cpu().numpy() if hasattr(expert_usage, 'cpu') else np.array(expert_usage)
+        n = len(usage_np) if len(usage_np) > 0 else 1
+        hhi = float(np.sum(np.square(usage_np)))
+        min_hhi = 1.0 / n
+        norm_hhi = (hhi - min_hhi) / (1.0 - min_hhi) if n > 1 else 0.0
+        return float(np.clip(norm_hhi, 0.0, 1.0))
     
     def get_latest_action_probs(self) -> List[float]:
         """Get the latest action probabilities for visualization"""
@@ -524,144 +635,150 @@ class PPOTrainer:
 
         self.timing_logger.start_operation("update_policy", "training")
         
-        lock_start = time.perf_counter()
-        with self._buffer_lock:
-            if len(self.buffer['states']) < self.batch_size:
-                self.timing_logger.end_operation("update_policy", "training", "insufficient_buffer")
-                return {'policy_loss': None, 'value_loss': None, 'entropy': None}
+        with self._update_lock:
+            lock_start = time.perf_counter()
+            with self._buffer_lock:
+                if len(self.buffer['states']) < self.batch_size:
+                    self.timing_logger.end_operation("update_policy", "training", "insufficient_buffer")
+                    return {'policy_loss': None, 'value_loss': None, 'entropy': None}
 
-            # Snapshot buffer and clear for concurrent writes while updating
-            states_np = np.array(self.buffer['states'])
-            actions_list = self.buffer['actions']
-            rewards_list = self.buffer['rewards']
-            values_list = self.buffer['values']
-            log_probs_list = self.buffer['log_probs']
-            dones_list = self.buffer['dones']
-            # Reset buffer
-            self.buffer = {key: [] for key in self.buffer}
+                # Snapshot buffer and clear for concurrent writes while updating
+                states_np = np.array(self.buffer['states'])
+                actions_list = self.buffer['actions']
+                rewards_list = self.buffer['rewards']
+                values_list = self.buffer['values']
+                log_probs_list = self.buffer['log_probs']
+                dones_list = self.buffer['dones']
+                # Reset buffer
+                self.buffer = {key: [] for key in self.buffer}
 
-        lock_duration = time.perf_counter() - lock_start
-        self.timing_logger.log_event("buffer_snapshot", "training", lock_duration * 1000, f"states={len(states_np)}")
-        
-        if lock_duration > 0.2:
-            print(f"[yellow]update_policy held buffer lock for {lock_duration:.3f}s with {len(states_np)} states")
-
-        # Convert buffer to tensors _outside_ the lock so other threads can continue
-        self.timing_logger.start_operation("tensor_conversion", "training")
-        states = torch.FloatTensor(states_np).to(self.device)
-        actions = torch.LongTensor(actions_list).to(self.device)
-        old_log_probs = torch.FloatTensor(log_probs_list).to(self.device)
-        self.timing_logger.end_operation("tensor_conversion", "training", f"tensors={len(states)}")
-
-        # Compute advantages and returns
-        advantages, returns = self.compute_advantages(
-            rewards_list,
-            values_list,
-            dones_list,
-        )
-
-        advantages = torch.FloatTensor(advantages).to(self.device)
-        returns = torch.FloatTensor(returns).to(self.device)
-
-        # PPO update
-        total_policy_loss = 0.0
-        total_value_loss = 0.0
-        total_entropy = 0.0
-        total_lb_loss = 0.0
-        
-        self.timing_logger.start_operation("ppo_epochs", "training", f"epochs={self.ppo_epochs}")
-        for epoch in range(self.ppo_epochs):
-            self.timing_logger.start_operation("ppo_epoch", "training", f"epoch={epoch}")
+            lock_duration = time.perf_counter() - lock_start
+            self.timing_logger.log_event("buffer_snapshot", "training", lock_duration * 1000, f"states={len(states_np)}")
             
-            # Shuffle data
-            indices = torch.randperm(len(states))
+            if lock_duration > 0.2:
+                print(f"[yellow]update_policy held buffer lock for {lock_duration:.3f}s with {len(states_np)} states")
+
+            # Convert buffer to tensors _outside_ the lock so other threads can continue
+            self.timing_logger.start_operation("tensor_conversion", "training")
+            states = torch.as_tensor(states_np, dtype=torch.float32, device=self.device)
+            actions = torch.as_tensor(actions_list, dtype=torch.long, device=self.device)
+            old_log_probs = torch.as_tensor(log_probs_list, dtype=torch.float32, device=self.device)
+            self.timing_logger.end_operation("tensor_conversion", "training", f"tensors={len(states)}")
+
+            # Compute advantages and returns
+            advantages, returns = self.compute_advantages(
+                rewards_list,
+                values_list,
+                dones_list,
+            )
+
+            advantages = torch.as_tensor(advantages, dtype=torch.float32, device=self.device)
+            returns = torch.as_tensor(returns, dtype=torch.float32, device=self.device)
+
+            # PPO update
+            total_policy_loss = 0.0
+            total_value_loss = 0.0
+            total_entropy = 0.0
+            total_lb_loss = 0.0
             
-            batch_count = 0
-            for start in range(0, len(states), self.batch_size):
-                batch_count += 1
-                self.timing_logger.start_operation("batch_update", "training", f"epoch={epoch}, batch={batch_count}")
+            self.timing_logger.start_operation("ppo_epochs", "training", f"epochs={self.ppo_epochs}")
+            for epoch in range(self.ppo_epochs):
+                self.timing_logger.start_operation("ppo_epoch", "training", f"epoch={epoch}")
                 
-                end = start + self.batch_size
-                batch_indices = indices[start:end]
+                # Shuffle data
+                indices = torch.randperm(len(states), device=self.device)
                 
-                # Get batch
-                batch_states = states[batch_indices]
-                batch_actions = actions[batch_indices]
-                batch_old_log_probs = old_log_probs[batch_indices]
-                batch_advantages = advantages[batch_indices]
-                batch_returns = returns[batch_indices]
+                batch_count = 0
+                for start in range(0, len(states), self.batch_size):
+                    batch_count += 1
+                    self.timing_logger.start_operation("batch_update", "training", f"epoch={epoch}, batch={batch_count}")
+                    
+                    end = start + self.batch_size
+                    batch_indices = indices[start:end]
+                    
+                    # Get batch
+                    batch_states = states[batch_indices]
+                    batch_actions = actions[batch_indices]
+                    batch_old_log_probs = old_log_probs[batch_indices]
+                    batch_advantages = advantages[batch_indices]
+                    batch_returns = returns[batch_indices]
+                    
+                    # Forward pass (AMP-enabled)
+                    self.timing_logger.start_operation("batch_forward", "training")
+                    if self.use_amp and self.device and str(self.device).startswith("cuda"):
+                        with torch.autocast(device_type="cuda", dtype=torch.float16):
+                            policy_logits, values = self.model(batch_states)
+                            action_dist = torch.distributions.Categorical(logits=policy_logits)
+                            new_log_probs = action_dist.log_prob(batch_actions)
+                            ratio = torch.exp(new_log_probs - batch_old_log_probs)
+                            surr1 = ratio * batch_advantages
+                            surr2 = torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * batch_advantages
+                            policy_loss = -torch.min(surr1, surr2).mean()
+                            value_loss = F.mse_loss(values.view(-1), batch_returns)
+                            entropy = action_dist.entropy().mean()
+                            lb_loss = self.model.latest_lb_loss if getattr(self.model, 'latest_lb_loss', None) is not None else 0.0
+                            loss = (policy_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy + self.lb_loss_coef * (lb_loss if isinstance(lb_loss, (int, float)) else 0.0))
+                    else:
+                        policy_logits, values = self.model(batch_states)
+                        action_dist = torch.distributions.Categorical(logits=policy_logits)
+                        new_log_probs = action_dist.log_prob(batch_actions)
+                        ratio = torch.exp(new_log_probs - batch_old_log_probs)
+                        surr1 = ratio * batch_advantages
+                        surr2 = torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * batch_advantages
+                        policy_loss = -torch.min(surr1, surr2).mean()
+                        value_loss = F.mse_loss(values.view(-1), batch_returns)
+                        entropy = action_dist.entropy().mean()
+                        lb_loss = self.model.latest_lb_loss if getattr(self.model, 'latest_lb_loss', None) is not None else 0.0
+                        loss = (policy_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy + self.lb_loss_coef * (lb_loss if isinstance(lb_loss, (int, float)) else 0.0))
+                    self.timing_logger.end_operation("batch_forward", "training", f"batch_size={len(batch_states)}")
+
+                    # Backward pass (AMP-aware)
+                    self.timing_logger.start_operation("backward_pass", "training")
+                    self.optimizer.zero_grad(set_to_none=True)
+                    if self.use_amp and self.device and str(self.device).startswith("cuda"):
+                        self.scaler.scale(loss).backward()
+                        self.scaler.unscale_(self.optimizer)
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
+                    else:
+                        loss.backward()
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+                        self.optimizer.step()
+                    # Step the LR scheduler once per optimisation step
+                    self.scheduler.step()
+                    self.timing_logger.end_operation("backward_pass", "training")
+                    
+                    total_policy_loss += float(policy_loss.item())
+                    total_value_loss += float(value_loss.item())
+                    total_entropy += float(entropy.item())
+                    if isinstance(lb_loss, torch.Tensor):
+                        total_lb_loss += float(lb_loss.item())
+                    elif isinstance(lb_loss, (int, float)):
+                        total_lb_loss += float(lb_loss)
+                    
+                    self.timing_logger.end_operation("batch_update", "training", f"batch_size={len(batch_states)}")
                 
-                # Forward pass
-                self.timing_logger.start_operation("batch_forward", "training")
-                policy_logits, values = self.model(batch_states)
-                self.timing_logger.end_operation("batch_forward", "training", f"batch_size={len(batch_states)}")
-                
-                # Compute policy loss
-                self.timing_logger.start_operation("loss_computation", "training")
-                action_dist = torch.distributions.Categorical(logits=policy_logits)
-                new_log_probs = action_dist.log_prob(batch_actions)
-                
-                ratio = torch.exp(new_log_probs - batch_old_log_probs)
-                surr1 = ratio * batch_advantages
-                surr2 = torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * batch_advantages
-                policy_loss = -torch.min(surr1, surr2).mean()
-                
-                # Compute value loss
-                value_loss = F.mse_loss(values.view(-1), batch_returns)
-                
-                # Compute entropy
-                entropy = action_dist.entropy().mean()
-                
-                # Auxiliary load-balancing loss from MoE layer
-                lb_loss = self.model.latest_lb_loss if getattr(self.model, 'latest_lb_loss', None) is not None else 0.0
-                
-                # Total loss (PPO + regularisers)
-                loss = (policy_loss +
-                        self.value_loss_coef * value_loss -
-                        self.entropy_coef * entropy +
-                        self.lb_loss_coef * (lb_loss if isinstance(lb_loss, (int, float)) else 0.0))
-                self.timing_logger.end_operation("loss_computation", "training")
-                
-                # Backward pass
-                self.timing_logger.start_operation("backward_pass", "training")
-                self.optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
-                self.optimizer.step()
-                # Step the LR scheduler once per optimisation step
-                self.scheduler.step()
-                self.timing_logger.end_operation("backward_pass", "training")
-                
-                total_policy_loss += policy_loss.item()
-                total_value_loss += value_loss.item()
-                total_entropy += entropy.item()
-                if isinstance(lb_loss, torch.Tensor):
-                    total_lb_loss += lb_loss.item()
-                elif isinstance(lb_loss, (int, float)):
-                    total_lb_loss += lb_loss
-                
-                self.timing_logger.end_operation("batch_update", "training", f"batch_size={len(batch_states)}")
+                self.timing_logger.end_operation("ppo_epoch", "training", f"batches={batch_count}")
             
-            self.timing_logger.end_operation("ppo_epoch", "training", f"batches={batch_count}")
-        
-        self.timing_logger.end_operation("ppo_epochs", "training")
-        
-        # Average losses
-        num_updates = self.ppo_epochs * max(1, len(states) // self.batch_size)
-        avg_policy_loss = total_policy_loss / num_updates
-        avg_value_loss = total_value_loss / num_updates
-        avg_entropy = total_entropy / num_updates
-        avg_lb_loss = total_lb_loss / num_updates
-        
-        self.timing_logger.end_operation("update_policy", "training", 
-                                       f"updates={num_updates}, policy_loss={avg_policy_loss:.4f}")
-        
-        return {
-            'policy_loss': avg_policy_loss,
-            'value_loss': avg_value_loss,
-            'entropy': avg_entropy,
-            'lb_loss': avg_lb_loss
-        }
+            self.timing_logger.end_operation("ppo_epochs", "training")
+            
+            # Average losses
+            num_updates = self.ppo_epochs * max(1, len(states) // self.batch_size)
+            avg_policy_loss = total_policy_loss / num_updates
+            avg_value_loss = total_value_loss / num_updates
+            avg_entropy = total_entropy / num_updates
+            avg_lb_loss = total_lb_loss / num_updates
+            
+            self.timing_logger.end_operation("update_policy", "training", 
+                                           f"updates={num_updates}, policy_loss={avg_policy_loss:.4f}")
+            
+            return {
+                'policy_loss': avg_policy_loss,
+                'value_loss': avg_value_loss,
+                'entropy': avg_entropy,
+                'lb_loss': avg_lb_loss
+            }
     
     async def train_episode(self, env: Gym2048Env) -> Dict[str, Any]:
         """Train for one episode"""
@@ -684,20 +801,37 @@ class PPOTrainer:
                     legal_actions = env.game.legal_moves()
                     if not legal_actions:
                         break
-                    
-                    action, log_prob, value = self.select_action(obs, legal_actions, env.game)
-                    
+
+                    try:
+                        action, log_prob, value = self.select_action(obs, legal_actions, env.game)
+                    except Exception as sel_err:
+                        print(f"Warning: select_action failed at step {episode_length}: {sel_err}")
+                        action = legal_actions[0]
+                        log_prob = 0.0
+                        value = 0.0
+
                     # Take step
                     self.timing_logger.start_operation("env_step", "episode")
                     next_obs, reward, done, _, _ = env.step(action)
                     self.timing_logger.end_operation("env_step", "episode", f"action={action}, reward={reward}")
                     
-                    # Calculate load balancing reward
+                    # Calculate load balancing reward (anti-starvation, anti-dominance)
                     lb_reward = self.calculate_load_balancing_reward()
-                    
-                    # Combine game reward with load balancing reward
-                    total_reward = reward + lb_reward
-                    
+
+                    # Intrinsic novelty bonus on next state
+                    novelty_next = self._get_state_novelty(next_obs)
+                    novelty_bonus = self.novelty_bonus_coef * novelty_next
+
+                    # Combine extrinsic and intrinsic rewards
+                    total_reward = reward + lb_reward + novelty_bonus
+
+                    # Update novelty table and stagnation tracker
+                    self._update_state_novelty(next_obs)
+                    if (abs(reward) < 1e-6) and (novelty_next < 0.2):
+                        self._stagnation_steps += 1
+                    else:
+                        self._stagnation_steps = 0
+
                     # Store transition with combined reward
                     self.store_transition(obs, action, total_reward, value, log_prob, done)
                     

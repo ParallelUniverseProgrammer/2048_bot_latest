@@ -87,29 +87,29 @@ const TrainingProgressBar: React.FC = () => {
     icon = <Loader2 className="w-3 h-3 animate-spin" />
   }
 
-  // Color scheme based on state
+  // Color scheme based on state (use design tokens)
   const barColor = checkpointLoadingError
-    ? 'bg-red-400'
+    ? 'bg-ui-state-danger'
     : progress === 100
-    ? 'bg-green-400'
+    ? 'bg-ui-state-success'
     : isWaitingForFirstData
-    ? 'bg-purple-400'
+    ? 'bg-ui-state-info'
     : isNewGameStarting
-    ? 'bg-blue-400'
+    ? 'bg-ui-brand-primary'
     : isPlaybackStarting
-    ? 'bg-green-400'
-    : 'bg-blue-400'
+    ? 'bg-ui-state-success'
+    : 'bg-ui-brand-primary'
   const bgTint = checkpointLoadingError
-    ? 'bg-red-500/20'
+    ? 'bg-ui-state-danger/20'
     : progress === 100
-    ? 'bg-green-500/20'
+    ? 'bg-ui-state-success/20'
     : isWaitingForFirstData
-    ? 'bg-purple-500/20'
+    ? 'bg-ui-state-info/20'
     : isNewGameStarting
-    ? 'bg-blue-500/20'
+    ? 'bg-ui-brand-primary/20'
     : isPlaybackStarting
-    ? 'bg-green-500/20'
-    : 'bg-blue-500/20'
+    ? 'bg-ui-state-success/20'
+    : 'bg-ui-brand-primary/20'
 
   return (
     <AnimatePresence>
@@ -134,7 +134,7 @@ const TrainingProgressBar: React.FC = () => {
         </div>
 
         {/* Optional status line */}
-        <div className="flex items-center justify-center gap-2 py-1 text-xs text-blue-200 backdrop-blur-sm bg-gray-900/40">
+        <div className="flex items-center justify-center gap-2 py-1 text-xs text-ui-text-secondary backdrop-blur-sm bg-ui-surface-elevated/60" role="status" aria-live="polite">
           {icon}
           <span className="truncate max-w-[50vw]">
             {message}

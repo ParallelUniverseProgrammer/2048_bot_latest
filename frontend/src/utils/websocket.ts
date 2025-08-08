@@ -258,6 +258,9 @@ export const useWebSocket = () => {
       } else if (data.type === 'training_start') {
         console.log('Received training start:', data)
         useTrainingStore.getState().setTrainingStatus(true, false)
+        // Ensure any Game Over overlay is cleared when training starts
+        useTrainingStore.getState().setShowingGameOver(false)
+        useTrainingStore.getState().setGameCompletionData(null)
         // Clear any loading states
         useTrainingStore.getState().setLoadingState('isTrainingStarting', false)
         useTrainingStore.getState().setLoadingState('loadingMessage', null)
@@ -308,6 +311,9 @@ export const useWebSocket = () => {
       } else if (data.type === 'new_game_started') {
         useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
         useTrainingStore.getState().setLoadingState('loadingMessage', null)
+        // Also clear any Game Over overlay on new game
+        useTrainingStore.getState().setShowingGameOver(false)
+        useTrainingStore.getState().setGameCompletionData(null)
       } else if (data.type === 'game_completed') {
         console.log('Received game completion:', data)
         // Handle game completion and show game over screen
