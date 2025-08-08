@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Activity, Brain, GamepadIcon, Archive, Palette } from 'lucide-react'
+import { Activity, Brain, GamepadIcon, Archive, Palette, Sliders } from 'lucide-react'
 
 import TrainingDashboard from './components/TrainingDashboard'
 import GameBoard from './components/GameBoard'
@@ -90,7 +90,7 @@ const App: React.FC = () => {
   }
 
   const tabs = [
-    { id: 'controls', label: 'Controls', icon: GamepadIcon },
+    { id: 'controls', label: 'Controls', icon: Sliders },
     { id: 'game', label: 'Game', icon: GamepadIcon },
     { id: 'dashboard', label: 'Metrics', icon: Activity },
     { id: 'checkpoints', label: 'Checkpoints', icon: Archive },

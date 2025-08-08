@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { motion } from 'framer-motion'
+import React, { useMemo, useRef, useState, useDeferredValue } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { 
   Archive, 
   Play, 
@@ -25,41 +25,13 @@ import {
   SortAsc,
   SortDesc
 } from 'lucide-react'
-import { useTrainingStore } from '../stores/trainingStore'
 import { useDeviceDetection } from '../utils/deviceDetection'
-import config from '../utils/config'
+import ConfirmDialog from './ConfirmDialog'
+import { useCheckpoints, Checkpoint } from '../hooks/useCheckpoints'
 
-interface Checkpoint {
-  id: string
-  nickname: string
-  episode: number
-  created_at: string
-  training_duration: number
-  model_config: {
-    model_size: string
-    learning_rate: number
-    n_experts: number
-    n_layers: number
-    d_model: number
-    n_heads: number
-  }
-  performance_metrics: {
-    best_score: number
-    avg_score: number
-    final_loss: number
-    training_speed: number
-  }
-  file_size: number
-  tags: string[]
-}
-
-interface CheckpointStats {
-  total_checkpoints: number
-  total_size: number
-  best_score: number
-  latest_episode: number
-  total_training_time: number
-}
+type SortBy = 'date' | 'score' | 'episode' | 'size'
+type SortOrder = 'asc' | 'desc'
+type FilterBy = 'all' | 'recent' | 'high-score' | 'large'
 
 interface CheckpointManagerProps {
   onNavigateToTab?: (tab: string) => void
@@ -67,10 +39,25 @@ interface CheckpointManagerProps {
 
 const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }) => {
   // ===== STATE MANAGEMENT =====
-  const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([])
-  const [stats, setStats] = useState<CheckpointStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const shouldReduceMotion = useReducedMotion()
+  const {
+    checkpoints,
+    stats,
+    loading,
+    error,
+    checkpointInterval,
+    longRunMode,
+    configLoading,
+    setLongRunMode,
+    setCheckpointInterval,
+    saveCheckpointConfig,
+    refresh,
+    updateNickname,
+    deleteCheckpoint,
+    loadCheckpointForTraining,
+    startPlayback,
+    setError,
+  } = useCheckpoints({ onNavigateToTab })
   
   // ===== DEVICE DETECTION =====
   const { displayMode } = useDeviceDetection()
@@ -78,143 +65,40 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   
   // ===== UI STATE =====
   const [searchTerm, setSearchTerm] = useState('')
+  const deferredSearch = useDeferredValue(searchTerm)
   const [editingNickname, setEditingNickname] = useState<string | null>(null)
   const [newNickname, setNewNickname] = useState('')
   const [expandedCheckpoint, setExpandedCheckpoint] = useState<string | null>(null)
   
   // ===== FILTER & SORT STATE =====
-  const [sortBy, setSortBy] = useState<'date' | 'score' | 'episode' | 'size'>('date')
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
-  const [filterBy, setFilterBy] = useState<'all' | 'recent' | 'high-score' | 'large'>('all')
+  const [sortBy, setSortBy] = useState<SortBy>('date')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [filterBy, setFilterBy] = useState<FilterBy>('all')
   
   // ===== CONFIGURATION STATE =====
-  const [checkpointInterval, setCheckpointInterval] = useState(50)
   const [checkpointIntervalInput, setCheckpointIntervalInput] = useState('50')
   const [checkpointIntervalError, setCheckpointIntervalError] = useState<string | null>(null)
-  const [longRunMode, setLongRunMode] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
-  const [configLoading, setConfigLoading] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   
   // ===== REFS =====
   const editingInputRef = useRef<HTMLInputElement>(null)
 
-  // Cleanup loading states on component unmount
-  useEffect(() => {
-    return () => {
-      useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
-      useTrainingStore.getState().setLoadingState('loadingMessage', null)
-    }
-  }, [])
+  // Cleanup handled in store/hook
 
   // Focus management for mobile keyboard
-  useEffect(() => {
+  React.useEffect(() => {
     if (editingNickname && editingInputRef.current) {
-      const timer = setTimeout(() => {
-        if (editingInputRef.current) {
-          editingInputRef.current.focus()
-          editingInputRef.current.select()
-          editingInputRef.current.click()
-        }
-      }, 100)
-      return () => clearTimeout(timer)
+      editingInputRef.current.focus()
+      editingInputRef.current.select()
     }
   }, [editingNickname])
 
-  // Load checkpoints and stats
-  const loadCheckpoints = async (silent: boolean = false) => {
-    try {
-      if (!silent) setLoading(true)
-      
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 15000)
-      
-      try {
-        const [checkpointsRes, statsRes] = await Promise.all([
-          fetch(`${config.api.baseUrl}/checkpoints`, { signal: controller.signal }),
-          fetch(`${config.api.baseUrl}/checkpoints/stats`, { signal: controller.signal })
-        ])
-        
-        clearTimeout(timeoutId)
-        
-        if (!checkpointsRes.ok) {
-          console.error('Failed to load checkpoints:', checkpointsRes.status)
-        }
-        if (!statsRes.ok) {
-          console.error('Failed to load stats:', statsRes.status)
-        }
-        
-        const checkpointsData = checkpointsRes.ok ? await checkpointsRes.json() : []
-        const statsData = statsRes.ok ? await statsRes.json() : null
-        
-        setCheckpoints(checkpointsData)
-        setStats(statsData)
-        setError(null)
-      } catch (fetchErr) {
-        clearTimeout(timeoutId)
-        
-        if (fetchErr instanceof Error && fetchErr.name === 'AbortError') {
-          console.warn('Request timed out, using cached data if available')
-          if (silent && checkpoints.length > 0) {
-            return
-          }
-          throw new Error('Request timed out - please check your connection')
-        }
-        throw fetchErr
-      }
-    } catch (err) {
-      console.error('Error loading checkpoints:', err)
-      
-      if (silent && checkpoints.length > 0) {
-        console.warn('Silent refresh failed, keeping existing data')
-        return
-      }
-      
-      setError(err instanceof Error ? err.message : 'Unknown error')
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Polling removed; handled by centralized hook and WebSocket
 
-  useEffect(() => {
-    loadCheckpoints()
-    
-    const playbackInterval = setInterval(async () => {
-      try {
-        const res = await fetch(`${config.api.baseUrl}/checkpoints/playback/status`)
-        if (res.ok) {
-          // Status updates handled via WebSocket
-        }
-      } catch (err) {
-        // Ignore polling errors
-      }
-    }, 1000)
-
-    const checkpointInterval = setInterval(() => {
-      loadCheckpoints(true)
-    }, 10000)
-    
-    loadCheckpointConfig()
-    
-    return () => {
-      clearInterval(playbackInterval)
-      clearInterval(checkpointInterval)
-    }
-  }, [])
-
-  // Load checkpoint configuration
-  const loadCheckpointConfig = async () => {
-    try {
-      const res = await fetch(`${config.api.baseUrl}/training/checkpoint/config`)
-      if (res.ok) {
-        const config = await res.json()
-        setCheckpointInterval(config.interval)
-        setCheckpointIntervalInput(config.interval.toString())
-        setLongRunMode(config.long_run_mode)
-      }
-    } catch (err) {
-      console.error('Error loading checkpoint config:', err)
-    }
-  }
+  React.useEffect(() => {
+    setCheckpointIntervalInput(String(checkpointInterval))
+  }, [checkpointInterval])
 
   // Validate checkpoint interval
   const validateCheckpointInterval = (value: string): number | null => {
@@ -248,7 +132,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   }
 
   // Save checkpoint configuration
-  const saveCheckpointConfig = async () => {
+  const saveCheckpointConfigLocal = async () => {
     // Validate before saving
     const validatedValue = validateCheckpointInterval(checkpointIntervalInput)
     if (validatedValue === null) {
@@ -257,35 +141,43 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     }
 
     try {
-      setConfigLoading(true)
-      const res = await fetch(`${config.api.baseUrl}/training/checkpoint/config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          interval: validatedValue,
-          long_run_mode: longRunMode
-        })
-      })
-      
-      if (!res.ok) {
-        throw new Error('Failed to save checkpoint configuration')
-      }
-      
-      setCheckpointInterval(validatedValue)
+      await saveCheckpointConfig(validatedValue, longRunMode)
       setShowConfigPanel(false)
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save checkpoint configuration')
+    } catch (_) {}
+  }
+
+  // Handlers
+  const handleUpdateNickname = async (checkpointId: string, nickname: string) => {
+    const trimmed = nickname.trim()
+    if (!trimmed) {
+      setError('Nickname cannot be empty')
+      return
+    }
+    try {
+      await updateNickname(checkpointId, trimmed)
+      setEditingNickname(null)
+      setNewNickname('')
+    } catch (_) {
+      // Error already handled by hook
+    }
+  }
+
+  const confirmAndDelete = async (checkpointId: string) => {
+    try {
+      await deleteCheckpoint(checkpointId)
     } finally {
-      setConfigLoading(false)
+      setConfirmDeleteId(null)
     }
   }
 
   // Enhanced filtering and sorting
+  const FILESIZE_LARGE_THRESHOLD = 10 * 1024 * 1024 // 10MB
   const filteredAndSortedCheckpoints = useMemo(() => {
     let filtered = checkpoints.filter(cp => {
-      const matchesSearch = cp.nickname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           cp.id.toLowerCase().includes(searchTerm.toLowerCase())
+      const name = (cp.nickname || '').toLowerCase()
+      const id = (cp.id || '').toLowerCase()
+      const term = deferredSearch.toLowerCase()
+      const matchesSearch = name.includes(term) || id.includes(term)
       
       if (!matchesSearch) return false
       
@@ -295,9 +187,9 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
           const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
           return new Date(cp.created_at) > oneDayAgo
         case 'high-score':
-          return cp.performance_metrics.best_score > 1000
+          return (cp.performance_metrics?.best_score ?? 0) > TREND_HIGH_SCORE
         case 'large':
-          return cp.file_size > 10 * 1024 * 1024 // > 10MB
+          return cp.file_size > FILESIZE_LARGE_THRESHOLD
         default:
           return true
       }
@@ -305,7 +197,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     
     // Sort checkpoints
     filtered.sort((a, b) => {
-      let aValue: any, bValue: any
+      let aValue: number = 0, bValue: number = 0
       
       switch (sortBy) {
         case 'date':
@@ -313,8 +205,8 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
           bValue = new Date(b.created_at).getTime()
           break
         case 'score':
-          aValue = a.performance_metrics.best_score
-          bValue = b.performance_metrics.best_score
+          aValue = a.performance_metrics?.best_score ?? 0
+          bValue = b.performance_metrics?.best_score ?? 0
           break
         case 'episode':
           aValue = a.episode
@@ -332,7 +224,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     })
     
     return filtered
-  }, [checkpoints, searchTerm, filterBy, sortBy, sortOrder])
+  }, [checkpoints, deferredSearch, filterBy, sortBy, sortOrder])
 
   // ===== UTILITY FUNCTIONS =====
   
@@ -369,21 +261,24 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   /**
    * Get appropriate trend icon based on score performance
    */
+  const TREND_HIGH_SCORE = 1000
+  const TREND_MEDIUM_SCORE = 500
   const getScoreTrendIcon = (score: number) => {
-    if (score > 1000) return <TrendingUp className="w-4 h-4 text-green-400" />
-    if (score > 500) return <BarChart3 className="w-4 h-4 text-yellow-400" />
-    return <TrendingDown className="w-4 h-4 text-red-400" />
+    if (score > TREND_HIGH_SCORE) return <TrendingUp className="w-4 h-4 text-ui-state-success" />
+    if (score > TREND_MEDIUM_SCORE) return <BarChart3 className="w-4 h-4 text-ui-state-warning" />
+    return <TrendingDown className="w-4 h-4 text-ui-state-danger" />
   }
 
   /**
    * Get text color for model size indicator
    */
-  const getModelSizeColor = (size: string) => {
+  const getModelSizeColor = (size?: string) => {
+    if (!size) return 'text-ui-text-secondary'
     switch (size.toLowerCase()) {
-      case 'lightning': return 'text-blue-400'
-      case 'base': return 'text-green-400'
-      case 'expert': return 'text-purple-400'
-      default: return 'text-gray-400'
+      case 'lightning': return 'text-ui-brand-primary'
+      case 'base': return 'text-ui-state-success'
+      case 'expert': return 'text-ui-state-info'
+      default: return 'text-ui-text-secondary'
     }
   }
 
@@ -392,140 +287,36 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   /**
    * Update checkpoint nickname via API
    */
-  const updateNickname = async (checkpointId: string, nickname: string) => {
-    try {
-      const res = await fetch(`${config.api.baseUrl}/checkpoints/${checkpointId}/nickname`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nickname })
-      })
-      
-      if (!res.ok) {
-        throw new Error('Failed to update nickname')
-      }
-      
-      setCheckpoints(prev => prev.map(cp => 
-        cp.id === checkpointId ? { ...cp, nickname } : cp
-      ))
-      
-      setEditingNickname(null)
-      setNewNickname('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update nickname')
-    }
-  }
+  // moved to hook
 
-  const deleteCheckpoint = async (checkpointId: string) => {
-    if (!confirm('Are you sure you want to delete this checkpoint?')) {
-      return
-    }
-    
-    try {
-      const res = await fetch(`${config.api.baseUrl}/checkpoints/${checkpointId}`, {
-        method: 'DELETE'
-      })
-      
-      if (!res.ok) {
-        throw new Error('Failed to delete checkpoint')
-      }
-      
-      setCheckpoints(prev => prev.filter(cp => cp.id !== checkpointId))
-      loadCheckpoints()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete checkpoint')
-    }
-  }
+  // moved to hook
 
-  const loadCheckpointForTraining = async (checkpointId: string) => {
-    try {
-      setLoading(true)
-      
-      useTrainingStore.getState().setCheckpointLoadingState({
-        isCheckpointLoading: true,
-        checkpointId: checkpointId,
-        loadingMessage: 'Starting checkpoint load...',
-        loadingProgress: 0
-      })
-      
-      const res = await fetch(`${config.api.baseUrl}/checkpoints/${checkpointId}/load`, {
-        method: 'POST'
-      })
-      
-      if (!res.ok) {
-        throw new Error('Failed to load checkpoint')
-      }
-      
-      await res.json()
-      console.log(`Checkpoint load initiated for ${checkpointId}`)
-      onNavigateToTab?.('dashboard')
-      
-    } catch (err) {
-      useTrainingStore.getState().setCheckpointLoadingError(
-        err instanceof Error ? err.message : 'Failed to load checkpoint'
-      )
-      setError(err instanceof Error ? err.message : 'Failed to load checkpoint')
-    } finally {
-      setLoading(false)
-    }
-  }
+  // moved to hook
 
-  const startPlayback = async (checkpointId: string) => {
-    try {
-      const loadingSteps = [
-        'Loading checkpoint metadata...',
-        'Validating checkpoint integrity...',
-        'Initializing playback environment...',
-        'Starting game simulation...',
-        'Waiting for first game data...'
-      ]
-      
-      useTrainingStore.getState().startLoadingOperation('playback', loadingSteps)
-      onNavigateToTab?.('game')
-      
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
-      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(20, loadingSteps[1]), 500)
-      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(40, loadingSteps[2]), 1000)
-      setTimeout(() => useTrainingStore.getState().updateLoadingProgress(60, loadingSteps[3]), 1500)
-      
-      const res = await fetch(`${config.api.baseUrl}/checkpoints/${checkpointId}/playback/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      
-      if (!res.ok) {
-        useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
-        useTrainingStore.getState().setLoadingState('loadingMessage', null)
-        const errorMessage = res.status === 404 
-          ? 'Checkpoint not found. It may have been deleted or the backend is not running.'
-          : res.status === 500
-          ? 'Server error occurred. Please check if the backend is running and try again.'
-          : res.status === 503
-          ? 'Service temporarily unavailable. Please wait a moment and try again.'
-          : `Failed to start playback: ${res.status} ${res.statusText}`
-        throw new Error(errorMessage)
-      }
-      
-      useTrainingStore.getState().updateLoadingProgress(80, loadingSteps[4], 5)
-      console.log('Playback API call successful. Waiting for WebSocket data...')
-      
-    } catch (err) {
-      useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
-      useTrainingStore.getState().setLoadingState('loadingMessage', null)
-      
-      const errorMessage = err instanceof Error ? err.message : 'Failed to start playback'
-      setError(errorMessage)
-      console.error('Playback start error:', err)
-    }
-  }
+  // moved to hook
 
   // Loading state
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="flex items-center space-x-3">
-          <RefreshCw className="w-5 h-5 animate-spin text-blue-400" />
-          <span className="text-gray-400">Loading checkpoints...</span>
+      <div className="safe-area h-full flex flex-col gap-2 pb-6 px-4">
+        <div className="card-glass p-4 rounded-2xl">
+          <div className="grid grid-cols-4 gap-3 animate-pulse">
+            {[0,1,2,3].map(i => (
+              <div key={i} className="h-10 rounded bg-token-surface-70" />
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="card-glass rounded-2xl p-4 animate-pulse">
+              <div className="h-4 w-1/3 rounded bg-token-surface-70 mb-3" />
+              <div className="grid grid-cols-3 gap-2">
+                <div className="h-3 rounded bg-token-surface-70" />
+                <div className="h-3 rounded bg-token-surface-70" />
+                <div className="h-3 rounded bg-token-surface-70" />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     )
@@ -536,9 +327,10 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       {/* Error Display */}
       {error && (
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card-glass p-4 rounded-2xl border border-red-500/30 bg-red-500/5 flex-shrink-0"
+          initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.95 }}
+          animate={shouldReduceMotion ? {} : { opacity: 1, scale: 1 }}
+          className="card-glass p-4 rounded-2xl border border-ui-state-danger/30 bg-ui-state-danger/5 flex-shrink-0"
+          aria-live="polite"
         >
           <div className="flex items-center space-x-3">
             <X className="w-5 h-5 text-ui-state-danger flex-shrink-0" />
@@ -585,8 +377,8 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       {/* Search and Controls */}
       <motion.div
         className="card-glass p-4 rounded-2xl flex-shrink-0"
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={shouldReduceMotion ? false : { opacity: 0, y: -10 }}
+        animate={shouldReduceMotion ? {} : { opacity: 1, y: 0 }}
       >
         {/* Search Bar */}
         <div className="relative mb-4">
@@ -603,6 +395,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             autoCapitalize="off"
             spellCheck="false"
             style={{ fontSize: '16px' }}
+            aria-label="Search checkpoints"
           />
         </div>
 
@@ -610,18 +403,18 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         <div className="flex flex-wrap items-center gap-2 mb-4">
           {/* Filter Buttons */}
           <div className="flex space-x-1">
-            {[
-              { key: 'all', label: 'All' },
-              { key: 'recent', label: 'Recent' },
-              { key: 'high-score', label: 'High Score' }
-            ].map(({ key, label }) => (
+              {([
+                { key: 'all', label: 'All' },
+                { key: 'recent', label: 'Recent' },
+                { key: 'high-score', label: 'High Score' }
+              ] as { key: FilterBy, label: string }[]).map(({ key, label }) => (
               <button
                 key={key}
-                onClick={() => setFilterBy(key as any)}
+                  onClick={() => setFilterBy(key)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                   filterBy === key 
-                    ? 'bg-blue-500 text-white' 
-                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    ? 'bg-ui-brand-primary text-white' 
+                    : 'bg-ui-surface-elevated text-ui-text-secondary hover:bg-ui-surface-elevated/80'
                 }`}
               >
                 {label}
@@ -633,8 +426,8 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
           <div className="flex items-center space-x-1 ml-auto">
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="bg-gray-700 text-white rounded-lg px-2 py-1.5 text-xs border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              onChange={(e) => setSortBy(e.target.value as SortBy)}
+              className="bg-ui-surface-elevated text-ui-text-primary rounded-lg px-2 py-1.5 text-xs border border-ui-border-muted focus:outline-none focus:ring-1 focus:ring-ui-focus"
             >
               <option value="date">Date</option>
               <option value="score">Score</option>
@@ -643,7 +436,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             </select>
             <button
               onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
-              className="p-2 bg-gray-700 text-gray-400 rounded-lg hover:bg-gray-600 transition-colors"
+              className="p-2 bg-ui-surface-elevated text-ui-text-secondary rounded-lg hover:bg-ui-surface-elevated/80 transition-colors"
               aria-label={`Sort ${sortOrder === 'desc' ? 'ascending' : 'descending'}`}
             >
               {sortOrder === 'desc' ? <SortDesc className="w-3 h-3" /> : <SortAsc className="w-3 h-3" />}
@@ -654,7 +447,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         {/* Action Buttons */}
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => loadCheckpoints()}
+            onClick={() => refresh()}
             className="flex items-center space-x-2 px-3 py-1.5 bg-ui-surface-elevated text-ui-text-secondary rounded-lg hover:bg-gray-700/50 transition-colors text-sm"
           >
             <RefreshCw className="w-4 h-4" />
@@ -672,9 +465,9 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         {/* Configuration Panel */}
         {showConfigPanel && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
+            initial={shouldReduceMotion ? false : { opacity: 0, height: 0 }}
+            animate={shouldReduceMotion ? {} : { opacity: 1, height: 'auto' }}
+            exit={shouldReduceMotion ? {} : { opacity: 0, height: 0 }}
             className="mt-4 pt-4 border-t border-ui-border-muted"
           >
             <h3 className="text-sm font-semibold text-white mb-3 flex items-center">
@@ -741,7 +534,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
               
               <div className="flex space-x-2 pt-2">
                 <button
-                  onClick={saveCheckpointConfig}
+                  onClick={saveCheckpointConfigLocal}
                   disabled={configLoading}
                   className="flex-1 flex items-center justify-center space-x-2 bg-ui-brand-primary text-white rounded-xl py-2 text-sm font-medium disabled:opacity-50 hover:brightness-110 transition-colors"
                 >
@@ -766,13 +559,14 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       </motion.div>
 
       {/* Checkpoints List */}
-      <div className="flex-1 overflow-y-auto space-y-2">
+      <div role="list" className="flex-1 overflow-y-auto space-y-2">
         {filteredAndSortedCheckpoints.map((checkpoint: Checkpoint, index: number) => (
           <motion.div
             key={checkpoint.id}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: index * 0.05 }}
+            role="listitem"
+            initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.95 }}
+            animate={shouldReduceMotion ? {} : { opacity: 1, scale: 1 }}
+            transition={shouldReduceMotion ? undefined : { delay: Math.min(index * 0.03, 0.12) }}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             className="card-glass rounded-2xl p-4"
@@ -787,8 +581,16 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                       type="text"
                       value={newNickname}
                       onChange={(e) => setNewNickname(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleUpdateNickname(checkpoint.id, newNickname)
+                        }
+                        if (e.key === 'Escape') {
+                          setEditingNickname(null)
+                          setNewNickname('')
+                        }
+                      }}
                       className="flex-1 bg-gray-700 text-white rounded-lg px-3 py-1.5 text-sm"
-                      autoFocus
                       inputMode="text"
                       autoComplete="off"
                       autoCorrect="off"
@@ -797,7 +599,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                       style={{ fontSize: '16px' }}
                     />
                     <button
-                      onClick={() => updateNickname(checkpoint.id, newNickname)}
+                      onClick={() => handleUpdateNickname(checkpoint.id, newNickname)}
                       className="text-green-400 hover:text-green-300 p-2 rounded-lg hover:bg-green-500/20 transition-colors"
                       aria-label="Save nickname"
                     >
@@ -866,6 +668,8 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                     )
                   }}
                   className="text-ui-text-secondary hover:text-ui-text-primary p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
+                  aria-expanded={expandedCheckpoint === checkpoint.id}
+                  aria-controls={`cp-details-${checkpoint.id}`}
                   aria-label={expandedCheckpoint === checkpoint.id ? "Collapse details" : "Expand details"}
                 >
                   {expandedCheckpoint === checkpoint.id ? 
@@ -893,7 +697,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                 <span>Resume</span>
               </button>
               <button
-                onClick={() => deleteCheckpoint(checkpoint.id)}
+                onClick={() => setConfirmDeleteId(checkpoint.id)}
                 className="flex items-center justify-center bg-ui-state-danger/20 text-ui-state-danger rounded-xl py-2.5 px-3 text-sm font-medium hover:bg-ui-state-danger/30 transition-colors"
                 aria-label="Delete checkpoint"
               >
@@ -904,9 +708,12 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             {/* Expanded Details */}
             {expandedCheckpoint === checkpoint.id && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
+                id={`cp-details-${checkpoint.id}`}
+                role="region"
+                aria-label="Checkpoint details"
+                initial={shouldReduceMotion ? false : { opacity: 0, height: 0 }}
+                animate={shouldReduceMotion ? {} : { opacity: 1, height: 'auto' }}
+                exit={shouldReduceMotion ? {} : { opacity: 0, height: 0 }}
                 className="mt-3 pt-3 border-t border-ui-border-muted"
               >
                 <div className="grid grid-cols-2 gap-4 text-xs">
@@ -978,8 +785,8 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         {filteredAndSortedCheckpoints.length === 0 && (
           <motion.div
             className="text-center py-12"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            initial={shouldReduceMotion ? false : { opacity: 0 }}
+            animate={shouldReduceMotion ? {} : { opacity: 1 }}
           >
             <Archive className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <p className="text-ui-text-secondary mb-2">No checkpoints found</p>
@@ -994,6 +801,18 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
           </motion.div>
         )}
       </div>
+
+      {/* Confirm Delete Dialog */}
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        title="Delete checkpoint?"
+        description="This action cannot be undone. The checkpoint file will be permanently removed."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        confirmVariant="danger"
+        onConfirm={() => confirmAndDelete(confirmDeleteId!)}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </div>
   )
 }

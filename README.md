@@ -8,7 +8,12 @@
 
 ### Current status (grounded in code)
 - Backend serves training control endpoints, checkpoint management, and WebSocket streaming from `backend/main.py` using `TrainingManager`.
-- Frontend provides four tabs: Training, Game, Checkpoints, Model Studio, implemented in `frontend/src` with Zustand stores and WebSocket hydration.
+- Frontend tabs (mobile‑first PWA) are implemented in `frontend/src` with Zustand stores and a centralized WebSocket client:
+  - `Controls` (`components/ControlsDashboard.tsx`) — start/pause/resume/stop/reset training, model size selection (icon updated to Sliders in `App.tsx`).
+  - `Game` (`components/GameBoard.tsx`) — live board with attention overlays and playback controls.
+  - `Metrics` (`components/TrainingDashboard.tsx`) — training charts and KPIs (formerly “Training” tab label; now shown as Metrics).
+  - `Checkpoints` (`components/CheckpointManager.tsx`) — list/stats, search/sort/filter, rename, delete (with confirmation dialog), resume training, and playback; includes autosave interval + long‑run configuration.
+  - `Model Studio` (`components/ModelStudioTab.tsx`) — canvas, validation, and stubs for compile/train.
 - Checkpoint playback is implemented server‑side (`CheckpointPlayback`) with live step streaming over WebSocket and polling fallback.
 - PWA is configured via `vite-plugin-pwa` and service worker caching rules; mobile meta tags are present in `index.html`.
 - Launcher (`launcher.py`) starts backend, frontend, and (optionally) a Cloudflare Tunnel; includes a landscape desktop GUI (CustomTkinter) and a modern console UI. First‑run creates `launcher.config.json`; precedence is CLI > JSON > internal defaults.
@@ -29,12 +34,19 @@
 ---
 
 ### Key features
-- Real‑time training dashboard with loss/score charts, action distribution, expert usage, and derived KPIs streamed every episode via WebSocket with batching and rate limiting.
+- Real‑time training dashboard (Metrics) with loss/score charts, action distribution, expert usage, and derived KPIs streamed every episode via WebSocket with batching and rate limiting.
 - Interactive game viewer with attention overlays and live action probabilities; checkpoint playback with pause/resume/stop and speed control.
-- Checkpoint manager: list, stats, nickname edit, delete, resume‑training, and playback; interval/long‑run configuration endpoints.
+- Controls tab: start/pause/resume/stop/reset training and model size selection with tokenized, touch‑friendly UI (icon updated to Sliders).
+- Checkpoint manager: list, stats, search/sort/filter, nickname edit, delete (gated with confirmation dialog), resume‑training, and playback; autosave interval + long‑run configuration.
 - Mobile‑first PWA: touch‑friendly controls, double‑tap chart expansion, offline caching for static assets; adaptive networking for mobile/Safari.
 - Model Studio (Week 1 scope shipped): drag‑and‑drop canvas (react‑konva), grid snapping, connections and validation API; compile/train stubs wired to backend routes.
 - Desktop launcher: console UI with non‑scrolling animated status; optional desktop GUI with landscape layout, bold service indicators, single master progress bar, large QR, copyable URL; optional Cloudflare Tunnel. Robust dependency detection across Poetry/Node/npm.
+
+Design system & UX (recent updates)
+- Tokenized colors and roles across the app per `STYLE_GUIDE.md` (no ad‑hoc hues).
+- Skeletons for loading (lists/cards) instead of blocking spinners.
+- Reduced‑motion support via `prefers-reduced-motion` for transitions.
+- Accessibility: proper roles on lists/regions, `aria-live` for errors, `aria-expanded`/`aria-controls` on expandable rows, and keyboard support for inline edits.
 
 ---
 
@@ -45,9 +57,10 @@
   - Checkpoints: list/metadata, manual/interval saves, load/resume, playback (live stream + polling fallback)
   - Model Studio: design CRUD, validation, codegen stub, compile/train routes (`app/api/design_router.py`)
 - Frontend: React + Zustand in `frontend/src`
-  - Tabs: `TrainingDashboard`, `GameBoard`, `CheckpointManager`, `ModelStudioTab`
-  - WebSocket client with adaptive reconnect and polling fallback (`utils/websocket.ts`)
-  - PWA via Vite plugin; mobile meta + safe‑area and overscroll handling
+  - Tabs: `ControlsDashboard`, `GameBoard`, `TrainingDashboard` (Metrics), `CheckpointManager`, `ModelStudioTab` (managed in `App.tsx`).
+  - Centralized WebSocket client with adaptive reconnect and polling fallback (`utils/websocket.ts`).
+  - Checkpoints data layer extracted to `hooks/useCheckpoints.ts` (fetching, config, mutations); destructive actions use `components/ConfirmDialog.tsx`.
+  - PWA via Vite plugin; mobile meta + safe‑area and overscroll handling.
 - Launcher: `launcher.py` orchestrates services and (optionally) Cloudflare Tunnel; GUI is optional.
 
 ---
@@ -86,11 +99,10 @@ python launcher.py --config path/to/custom.config.json  # use custom JSON config
 
 ---
 
-### Usage guide
-- **Training**
-  1) Open the Training tab and select model size (tiny/small/medium/large)
-  2) Start training; WebSocket metrics populate charts and KPIs
-  3) Pause/Resume/Stop; create a manual checkpoint anytime
+- **Controls**
+  1) Open the Controls tab and select model size (tiny/small/medium/large)
+  2) Start training; WebSocket metrics populate the Metrics tab
+  3) Pause/Resume/Stop/Reset; create a manual checkpoint anytime
 - **Game**
   - View live board, attention overlay, action probabilities; during playback, use pause/resume/stop & speed control
 - **Checkpoints**
@@ -98,6 +110,8 @@ python launcher.py --config path/to/custom.config.json  # use custom JSON config
   - Configure autosave interval and long‑run behavior
 - **Model Studio**
   - Week‑1 canvas: drag blocks, connect edges, validation endpoint, compile/train stubs
+ - **Metrics**
+   - Charts and KPIs for training; double‑tap to expand charts; respects reduced motion.
 
 **Mobile experience**
 - PWA meta + service worker, safe‑area padding, overscroll prevention, compact spacing, large touch targets
