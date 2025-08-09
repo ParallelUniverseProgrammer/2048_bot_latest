@@ -64,7 +64,13 @@ const App: React.FC = () => {
   useEffect(() => {
     const syncTrainingStatus = async () => {
       try {
-        const response = await fetch(`${config.api.baseUrl}/training/status`)
+        const response = await fetch(`${config.api.baseUrl}/training/status?t=${Date.now()}` , {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        })
         if (response.ok) {
           const status = await response.json()
           console.log('Initial training status sync:', status)

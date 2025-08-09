@@ -182,6 +182,8 @@ export interface TrainingState {
   lastTrainingTimestamp: number | null   // When the last data was received
   // NEW: Waiting for first data flag
   isWaitingForFirstData: boolean
+  // NEW: Last message sequence received (for resume)
+  lastMessageSeq: number
   // Actions
   setConnected: (connected: boolean) => void
   setConnectionError: (error: string | null) => void
@@ -272,6 +274,8 @@ export const useTrainingStore = create<TrainingState>()(
       lastTrainingTimestamp: null,
       // NEW: Waiting for first data
       isWaitingForFirstData: false,
+      // NEW: Resume sequence
+      lastMessageSeq: 0,
       
       // Actions
       setConnected: (connected) => set({ isConnected: connected }),
@@ -335,7 +339,8 @@ export const useTrainingStore = create<TrainingState>()(
             loadingMessage: null
           },
           // NEW: Mark that we've received the first data
-          isWaitingForFirstData: false
+          isWaitingForFirstData: false,
+          lastMessageSeq: typeof (data as any).seq === 'number' ? (data as any).seq : state.lastMessageSeq
         })
       },
 
@@ -940,21 +945,15 @@ export const useTrainingStore = create<TrainingState>()(
     {
       name: 'training-store',
       partialize: (state) => ({
-        // Persist only important state across page refreshes
-        isTraining: state.isTraining,
-        isPaused: state.isPaused,
-        currentEpisode: state.currentEpisode,
-        totalEpisodes: state.totalEpisodes,
+        // Persist only stable preferences and compact snapshots
         modelSize: state.modelSize,
         isPlayingCheckpoint: state.isPlayingCheckpoint,
         lastPolicyLoss: state.lastPolicyLoss,
         lastValueLoss: state.lastValueLoss,
-        // NEW: Persist current training data directly
-        trainingData: state.trainingData,
-        // NEW: Persist last training data for reconnection
+        // Persist a compact snapshot for fast UI hydration (not authoritative)
         lastTrainingData: state.lastTrainingData,
         lastTrainingTimestamp: state.lastTrainingTimestamp,
-        isWaitingForFirstData: state.isWaitingForFirstData,
+        lastMessageSeq: state.lastMessageSeq,
         // Persist recent history (last 100 points)
         lossHistory: {
           episodes: state.lossHistory.episodes.slice(-100),
@@ -965,17 +964,28 @@ export const useTrainingStore = create<TrainingState>()(
           values: state.scoreHistory.values.slice(-100)
         }
       }),
-      // NEW: Add onRehydrateStorage to restore trainingData from lastTrainingData if needed
+      // Restore snapshot with TTL; never assert control flags from storage
       onRehydrateStorage: () => (state) => {
         if (state) {
-          // If trainingData is null but we have lastTrainingData, restore it
+          const ttlMs = 10 * 60 * 1000 // 10 minutes
+          const now = Date.now()
+          const ts = state.lastTrainingTimestamp || 0
+          const isFresh = ts > 0 && now - ts <= ttlMs
+
+          if (!isFresh) {
+            // Drop stale snapshot
+            state.lastTrainingData = null as any
+            state.lastTrainingTimestamp = null as any
+            // Ensure we do not carry over an episode from stale data
+            return
+          }
+
+          // If we have a recent snapshot and no current data, use it for UI only
           if (!state.trainingData && state.lastTrainingData) {
             state.trainingData = state.lastTrainingData
-          }
-          
-          // If we have training data but no episode info, set it from the data
-          if (state.trainingData && state.currentEpisode === 0) {
-            state.currentEpisode = state.trainingData.episode
+            if (state.currentEpisode === 0 && state.trainingData.episode) {
+              state.currentEpisode = state.trainingData.episode
+            }
           }
         }
       },

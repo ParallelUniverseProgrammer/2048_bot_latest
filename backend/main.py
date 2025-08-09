@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
@@ -250,7 +250,56 @@ async def update_model_config(config: TrainingConfig):
 @app.get("/training/status")
 async def get_training_status():
     _update_training_status()
-    return training_status
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(training_status.dict())
+    # Prevent any caching of dynamic status
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+# ---------------------------- Server-Sent Events -----------------------------
+@app.get("/events")
+async def sse_events():
+    """Lightweight SSE stream for clients that cannot maintain WebSockets.
+
+    Emits: training_status_update and heartbeat events periodically.
+    """
+    async def event_generator():
+        try:
+            while True:
+                # Push authoritative status snapshot periodically
+                _update_training_status()
+                snapshot = {
+                    "type": "training_status_update",
+                    "is_training": training_status.is_training,
+                    "is_paused": training_status.is_paused,
+                    "current_episode": training_status.current_episode,
+                    "total_episodes": training_status.total_episodes,
+                    "initializing": training_status.initializing,
+                    "ts": time.time(),
+                }
+                yield f"data: {json.dumps(snapshot)}\n\n"
+
+                # Lightweight heartbeat to keep the stream alive
+                hb = {"type": "heartbeat", "ts": time.time()}
+                yield f"data: {json.dumps(hb)}\n\n"
+
+                await asyncio.sleep(2.0)
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            print(f"SSE generator error: {e}")
+            return
+
+    headers = {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Pragma": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
 
 @app.get("/mobile-test")
 async def mobile_test():
@@ -958,11 +1007,49 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"WebSocket connection failed: {e}")
         return
     
+    # Immediately push authoritative status snapshot to client
+    try:
+        _update_training_status()
+        await websocket.send_text(json.dumps({
+            "type": "training_status_update",
+            "is_training": training_status.is_training,
+            "is_paused": training_status.is_paused,
+            "current_episode": training_status.current_episode,
+            "total_episodes": training_status.total_episodes,
+            "initializing": training_status.initializing,
+            "seq": int(time.time() * 1000),
+        }))
+    except Exception as e:
+        print(f"Failed to send initial status snapshot: {e}")
+
     # Get connection info for adaptive behavior
     conn_info = websocket_manager.get_connection_info(websocket)
     adaptive_timeout = conn_info.get_adaptive_timeout() if conn_info else 1.0
     
     try:
+        # Parse resume parameters from query for lightweight replay
+        try:
+            query_params = websocket.url.query if hasattr(websocket, 'url') else ''
+            client_last_seq = 0
+            if isinstance(query_params, str):
+                # naive parse
+                for kv in query_params.split('&'):
+                    if kv.startswith('last_seq='):
+                        try:
+                            client_last_seq = int(kv.split('=', 1)[1])
+                        except Exception:
+                            client_last_seq = 0
+                        break
+            if client_last_seq > 0:
+                missed = websocket_manager.get_recent_messages(client_last_seq)
+                for m in missed:
+                    try:
+                        await websocket.send_text(json.dumps(m))
+                    except Exception:
+                        break
+        except Exception as e:
+            print(f"Resume parsing/sending failed: {e}")
+
         while True:
             # Keep connection alive and handle any incoming messages
             try:

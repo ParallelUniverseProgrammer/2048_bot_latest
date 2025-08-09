@@ -199,6 +199,9 @@ class WebSocketManager:
         
         # Initialize batch processor task as None - will be started later
         self.batch_processor_task = None
+
+        # Recent message buffer (seq, json_str) for lightweight resume
+        self.recent_messages: Deque[tuple[int, str]] = deque(maxlen=200)
     
     def start_batch_processor(self):
         """Start the batch processor task - call this after the event loop is running"""
@@ -405,12 +408,27 @@ class WebSocketManager:
             # Add to batches for processing
             for conn in list(self.active_connections):
                 if conn.health.should_send():
+                    # Attach a simple sequence for resume support
+                    if 'seq' not in message:
+                        message['seq'] = int(time.time() * 1000)
+                    # Record into recent message buffer
+                    try:
+                        self.recent_messages.append((int(message['seq']), json.dumps(message)))
+                    except Exception:
+                        pass
                     should_send_now = conn.message_batch.add_message(message)
                     if should_send_now:
                         await self._send_batch(conn)
         else:
             # Send immediately (high priority or small number of connections)
+            if 'seq' not in message:
+                message['seq'] = int(time.time() * 1000)
             message_str = json.dumps(message)
+            # Record into recent message buffer
+            try:
+                self.recent_messages.append((int(message['seq']), message_str))
+            except Exception:
+                pass
             
             # Sort connections by health score (send to healthy connections first)
             sorted_connections = sorted(
@@ -451,6 +469,20 @@ class WebSocketManager:
             )
         
         self.performance_stats['successful_broadcasts'] += 1
+
+    def get_recent_messages(self, since_seq: int) -> List[Dict[str, Any]]:
+        """Return messages with seq greater than since_seq, as parsed dicts."""
+        results: List[Dict[str, Any]] = []
+        try:
+            for seq, msg_str in self.recent_messages:
+                if seq > since_seq:
+                    try:
+                        results.append(json.loads(msg_str))
+                    except Exception:
+                        continue
+        finally:
+            pass
+        return results
     
     async def _process_queued_messages(self):
         """Process queued messages from rate limiter"""

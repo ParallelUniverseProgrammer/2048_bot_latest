@@ -757,7 +757,8 @@ class GUIWindow:
         container = ctk.CTkFrame(right, fg_color="#0f172a", corner_radius=12)
         container.grid(row=1, column=0, padx=12, pady=6, sticky="nsew")
         container.grid_columnconfigure(0, weight=1)
-        target_size = 380
+        target_size = 360
+        self.qr_target_size = target_size
         self.qr_placeholder_frame = ctk.CTkFrame(container, fg_color="#0b0f14", corner_radius=12, width=target_size, height=target_size)
         self.qr_placeholder_frame.grid(row=0, column=0)
         self.qr_placeholder_frame.grid_propagate(False)
@@ -801,61 +802,105 @@ class GUIWindow:
                 self.logger.error(f"Fallback geometry setting also failed: {e2}")
     
     def _create_placeholder_qr(self, size: int = 180):
-        """Create a more realistic, heavily blurred placeholder QR code."""
+        """Create a crisp, QR-like placeholder preview that matches final sizing.
+
+        This uses the QRCode library to generate a real module matrix with
+        placeholder content, then renders modules manually with an exact
+        module grid so the preview looks like an authentic QR at the
+        requested pixel size without blur.
+        """
         self.logger.info("Creating placeholder QR code...")
         try:
-            from PIL import Image, ImageDraw, ImageFilter
-            
-            # Create base image and draw context
-            img = Image.new('RGB', (size, size), color='white')
+            from PIL import Image, ImageDraw
+            import qrcode
+
+            # Build a tiny, real QR matrix with placeholder content
+            qr = qrcode.QRCode(
+                version=None,  # let library pick minimal version
+                error_correction=qrcode.constants.ERROR_CORRECT_M,
+                box_size=1,  # we will control pixel size manually
+                border=2,    # match final preview border thickness
+            )
+            qr.add_data("2048 AI – Loading preview…")
+            qr.make(fit=True)
+
+            matrix = qr.get_matrix()  # True/False 2D list without quiet-zone beyond border
+            modules_no_border = len(matrix)
+            border_modules = 2
+            total_modules = modules_no_border + border_modules * 2
+
+            # Choose module pixel size to fill as much of `size` as possible without scaling blur
+            module_px = max(1, size // total_modules)
+            draw_px = module_px * total_modules
+
+            # Create white canvas sized to the exact drawn grid
+            img = Image.new("RGB", (draw_px, draw_px), color="white")
             draw = ImageDraw.Draw(img)
 
-            # Parameters for a more QR-like grid
-            module = max(6, size // 42)        # approximate module size
-            gap = 1                             # small gap between modules
-            grid = (size // module)
+            # Top-left pixel offset where actual matrix starts (after border)
+            offset = border_modules * module_px
 
-            # Procedural pattern for modules to mimic QR density
-            for y in range(0, grid):
-                for x in range(0, grid):
-                    # Skip finder areas; fill rest with a pseudo-random but deterministic pattern
-                    in_tl = (x < 7 and y < 7)
-                    in_tr = (x > grid - 8 and y < 7)
-                    in_bl = (x < 7 and y > grid - 8)
-                    if in_tl or in_tr or in_bl:
+            # Render modules crisply as solid squares
+            for y in range(modules_no_border):
+                row = matrix[y]
+                for x in range(modules_no_border):
+                    if row[x]:
+                        x0 = offset + x * module_px
+                        y0 = offset + y * module_px
+                        x1 = x0 + module_px
+                        y1 = y0 + module_px
+                        draw.rectangle([x0, y0, x1, y1], fill="black")
+
+            # Corrupt a central block of modules to ensure QR is not scannable
+            # Choose a 9x9 block centered in the matrix (avoids finder patterns)
+            block = 9
+            cy = modules_no_border // 2
+            cx = modules_no_border // 2
+            half = block // 2
+            for yy in range(cy - half, cy + half + 1):
+                if yy < 0 or yy >= modules_no_border:
+                    continue
+                for xx in range(cx - half, cx + half + 1):
+                    if xx < 0 or xx >= modules_no_border:
                         continue
-                    # Pattern based on hash-like function
-                    v = (x * 37 + y * 91 + (x ^ y) * 17) % 9
-                    if v in (0, 3, 5):
-                        x0 = x * module
-                        y0 = y * module
-                        draw.rectangle([x0, y0, x0 + module - gap, y0 + module - gap], fill='black')
+                    # Invert module visually
+                    x0 = offset + xx * module_px
+                    y0 = offset + yy * module_px
+                    x1 = x0 + module_px
+                    y1 = y0 + module_px
+                    # If original was dark, paint white; else paint black
+                    fill = "white" if matrix[yy][xx] else "black"
+                    draw.rectangle([x0, y0, x1, y1], fill=fill)
 
-            # Draw finder patterns with rings
-            def finder(cx: int, cy: int):
-                s3 = module * 7
-                s2 = module * 5
-                s1 = module * 3
-                draw.rectangle([cx, cy, cx + s3, cy + s3], fill='black')
-                draw.rectangle([cx + module, cy + module, cx + s2, cy + s2], fill='white')
-                draw.rectangle([cx + 2 * module, cy + 2 * module, cx + s1, cy + s1], fill='black')
+            # Draw obvious red diagonal stripes to indicate invalid preview
+            stripe_w = max(2, module_px * 2)
+            # Top-left to bottom-right
+            for i in range(-stripe_w//2, stripe_w//2 + 1):
+                draw.line([(0, i), (draw_px, draw_px + i)], fill=(239, 68, 68), width=stripe_w)
+            # Top-right to bottom-left
+            for i in range(-stripe_w//2, stripe_w//2 + 1):
+                draw.line([(draw_px, i), (0, draw_px + i)], fill=(239, 68, 68), width=stripe_w)
 
-            finder(0, 0)
-            finder(size - module * 7, 0)
-            finder(0, size - module * 7)
+            # If the exact draw size differs from requested `size`, resize with NEAREST for crisp edges
+            if draw_px != size:
+                try:
+                    img = img.resize((size, size), Image.NEAREST)
+                except Exception:
+                    img = img.resize((size, size))
 
-            # Heavy blur to make it obviously a preview
-            img = img.filter(ImageFilter.GaussianBlur(radius=max(4, size // 80)))
-            img = img.filter(ImageFilter.UnsharpMask(radius=2, percent=80, threshold=3))
-            
-            # Convert to CTkImage (larger size)
+            # Convert to CTkImage
             qr_photo = ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
             
             # Show the placeholder immediately
             self.qr_placeholder_frame.pack_forget()
             self.qr_image_label.configure(image=qr_photo, text="")
             self.qr_image_label.image = qr_photo  # Keep reference
-            self.qr_image_label.pack(pady=(0, 6))
+            # Use grid to match the final QR placement exactly
+            try:
+                self.qr_image_label.grid(row=0, column=0)
+            except Exception:
+                # Fallback if grid fails for any reason
+                self.qr_image_label.pack()
             
             # Force update to ensure it's visible
             self.window.update()
@@ -1082,8 +1127,8 @@ class GUIWindow:
                 else:
                     pil_image = qr_image.convert('RGB')
                 
-                # Scale to target size for the UI
-                target = 400
+                # Scale to target size for the UI (match preview size exactly)
+                target = getattr(self, 'qr_target_size', 360)
                 try:
                     from PIL import Image
                     pil_image = pil_image.resize((target, target), Image.NEAREST)

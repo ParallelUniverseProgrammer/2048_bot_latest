@@ -17,6 +17,7 @@ export const useWebSocket = () => {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<number | null>(null)
   const pollingIntervalRef = useRef<number | null>(null)
+  const sseRef = useRef<EventSource | null>(null)
   const maxReconnectAttempts = getMaxReconnectAttempts()
   const reconnectDelay = getConnectionRetryDelay()
   const reconnectingRef = useRef(false) // NEW: race-condition guard for reconnect attempts
@@ -70,59 +71,208 @@ export const useWebSocket = () => {
     }
   }, [lastSuccessfulConnection, consecutiveFailures])
 
-  // Enhanced reconnection with exponential backoff and circuit breaker
-  const reconnect = useCallback(async () => {
-    if (reconnectingRef.current || reconnectAttempts >= maxReconnectAttempts) {
-      return
-    }
-    
-    // Implement circuit breaker pattern
+  // Centralized reconnect scheduler (idempotent)
+  const scheduleReconnect = useCallback(() => {
+    if (reconnectingRef.current) return
+    if (reconnectAttempts >= maxReconnectAttempts) return
+    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current)
+
     if (connectionHealth === 'critical' && !isInRecoveryMode) {
-      console.log('Connection health is critical, entering recovery mode')
       setIsInRecoveryMode(true)
-      
-      // Wait longer before attempting recovery
-      setTimeout(() => {
+      reconnectTimeoutRef.current = setTimeout(() => {
         setIsInRecoveryMode(false)
         setConsecutiveFailures(0)
         setReconnectAttempts(0)
-      }, 30000) // 30 second recovery period
-      
+        reconnectTimeoutRef.current = null
+        connect()
+      }, 30000)
       return
     }
-    
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-    }
-    
-    // More aggressive backoff for mobile devices
+
     const baseDelay = isMobile() ? getConnectionRetryDelay() * 1.5 : getConnectionRetryDelay()
     const backoff = Math.min(baseDelay * Math.pow(2, reconnectAttempts), 30000)
-    console.log(`Reconnecting in ${backoff}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`)
-    
-    reconnectTimeoutRef.current = setTimeout(async () => {
-      try {
-        setReconnectAttempts(prev => prev + 1)
-        await connect()
-      } catch (error) {
-        console.error('Reconnection failed:', error)
-        setConsecutiveFailures(prev => prev + 1)
-        
-        // For mobile devices, try polling fallback sooner
-        if (isMobile() && reconnectAttempts >= Math.max(1, maxReconnectAttempts - 2)) {
-          console.log('Mobile device: switching to polling fallback early')
-          setConnectionError('Connection issues on mobile - switching to polling...')
-          startPollingFallback()
-        } else if (reconnectAttempts < maxReconnectAttempts) {
-          setTimeout(() => reconnect(), 1000) // Try again with exponential backoff
+    reconnectTimeoutRef.current = setTimeout(() => {
+      reconnectTimeoutRef.current = null
+      setReconnectAttempts(prev => prev + 1)
+      connect()
+    }, backoff)
+  }, [reconnectAttempts, maxReconnectAttempts, connectionHealth, isInRecoveryMode])
+
+  // Enhanced message processing with health tracking
+  const processMessageData = useCallback((data: any) => {
+    try {
+      console.log('Received WebSocket message:', data.type)
+
+      if (data.type === 'training_update') {
+        console.log('Received training update:', data)
+        useTrainingStore.getState().updateTrainingData(data)
+        const currentState = useTrainingStore.getState()
+        if (currentState.loadingStates.isTrainingStarting) {
+          useTrainingStore.getState().completeLoadingOperation()
+        }
+      } else if (data.type === 'checkpoint_playback') {
+        console.log('Received checkpoint playback data:', data)
+        useTrainingStore.getState().updateCheckpointPlaybackData(data)
+        const currentState = useTrainingStore.getState()
+        if (currentState.loadingStates.isPlaybackStarting || currentState.loadingStates.isNewGameStarting) {
+          useTrainingStore.getState().completeLoadingOperation()
+        }
+      } else if (data.type === 'training_status_update') {
+        console.log('Received training status update:', data)
+        useTrainingStore.getState().setTrainingStatus(data.is_training, data.is_paused)
+        if (data.current_episode !== undefined) {
+          useTrainingStore.getState().setEpisode(data.current_episode)
+        }
+      } else if (data.type === 'training_reset') {
+        console.log('Received training reset:', data)
+        useTrainingStore.getState().setTrainingStatus(false, false)
+        useTrainingStore.getState().setEpisode(0)
+      } else if (data.type === 'training_start') {
+        console.log('Received training start:', data)
+        useTrainingStore.getState().setTrainingStatus(true, false)
+        useTrainingStore.getState().setShowingGameOver(false)
+        useTrainingStore.getState().setGameCompletionData(null)
+        useTrainingStore.getState().setLoadingState('isTrainingStarting', false)
+        useTrainingStore.getState().setLoadingState('loadingMessage', null)
+        if (data.model_config && data.model_config.model_size) {
+          const size = data.model_config.model_size as 'lightning' | 'base' | 'expert'
+          if (size === 'lightning' || size === 'base' || size === 'expert') {
+            useTrainingStore.getState().setModelSize(size)
+          }
+        }
+      } else if (data.type === 'training_complete') {
+        console.log('Received training complete:', data)
+        useTrainingStore.getState().setTrainingStatus(false, false)
+        useTrainingStore.getState().setLoadingState('isTrainingStarting', false)
+        useTrainingStore.getState().setLoadingState('loadingMessage', null)
+      } else if (data.type === 'connection_status') {
+        console.log('Received connection status:', data)
+        useTrainingStore.getState().setConnected(data.connected)
+        if (data.error) {
+          useTrainingStore.getState().setConnectionError(data.error)
         } else {
-          console.log('Max reconnection attempts reached, switching to polling fallback')
-          setConnectionError('Connection lost after multiple attempts. Switching to polling...')
-          startPollingFallback()
+          useTrainingStore.getState().setConnectionError(null)
+        }
+        if (data.connected) {
+          const state = useTrainingStore.getState()
+          if (state.lastTrainingData && state.isTraining) {
+            console.log('Restoring training data on reconnection:', state.lastTrainingData)
+            useTrainingStore.getState().updateTrainingData(state.lastTrainingData)
+          }
+        }
+      } else if (data.type === 'playback_status') {
+        console.log('Playback status:', data.message)
+        if (data.status === 'starting') {
+          const currentLoadingStates = useTrainingStore.getState().loadingStates
+          if (!currentLoadingStates.isPlaybackStarting) {
+            useTrainingStore.getState().setLoadingState('isPlaybackStarting', true)
+            useTrainingStore.getState().setLoadingState('loadingMessage', 'Loading checkpoint model...')
+          }
+        } else if (data.status === 'stopped') {
+          useTrainingStore.getState().setPlayingCheckpoint(false)
+          useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
+          useTrainingStore.getState().setLoadingState('loadingMessage', null)
+        }
+      } else if (data.type === 'new_game_started') {
+        useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
+        useTrainingStore.getState().setLoadingState('loadingMessage', null)
+        useTrainingStore.getState().setShowingGameOver(false)
+        useTrainingStore.getState().setGameCompletionData(null)
+      } else if (data.type === 'game_completed') {
+        console.log('Received game completion:', data)
+        useTrainingStore.getState().setGameCompletionData({
+          final_score: data.final_score,
+          total_steps: data.total_steps,
+          max_tile: data.max_tile,
+          final_board_state: [],
+          checkpoint_id: data.checkpoint_id,
+          game_number: data.game_number
+        })
+        useTrainingStore.getState().setShowingGameOver(true)
+      } else if (data.type === 'new_episode_started') {
+        console.log('Received new episode started:', data)
+        if (data.episode !== undefined) {
+          useTrainingStore.getState().setEpisode(data.episode)
+        }
+      } else if (data.type === 'checkpoint_loading_status') {
+        console.log('Received checkpoint loading status:', data)
+        const { checkpoint_id, status, message } = data
+        if (status === 'loading') {
+          useTrainingStore.getState().setCheckpointLoadingState({
+            isCheckpointLoading: true,
+            checkpointId: checkpoint_id,
+            loadingMessage: message || 'Loading checkpoint...',
+            loadingProgress: 10
+          })
+        } else if (status === 'config_loaded') {
+          useTrainingStore.getState().updateCheckpointLoadingProgress(30, message || 'Checkpoint data loaded, initializing model...')
+        } else if (status === 'trainer_created') {
+          useTrainingStore.getState().updateCheckpointLoadingProgress(50, message || 'Model initialized, loading checkpoint weights...')
+        } else if (status === 'weights_loaded') {
+          useTrainingStore.getState().updateCheckpointLoadingProgress(70, message || 'Checkpoint weights loaded, preparing training environment...')
+        } else if (status === 'starting_training') {
+          useTrainingStore.getState().updateCheckpointLoadingProgress(90, message || 'Starting training session...')
+        } else if (status === 'complete') {
+          useTrainingStore.getState().completeCheckpointLoading(message || 'Checkpoint loaded successfully')
+        } else if (status === 'error') {
+          useTrainingStore.getState().setCheckpointLoadingError(message || 'Failed to load checkpoint')
+        }
+      } else if (data.type === 'checkpoint_created') {
+        console.log('Received checkpoint created:', data)
+      } else if (data.type === 'evaluation_metrics') {
+        console.log('Received evaluation metrics:', data)
+        try {
+          useTrainingStore.getState().updateEvaluationMetrics({ metrics: data.metrics || {} })
+        } catch (e) {
+          console.warn('Failed to update evaluation metrics in store:', e)
+        }
+      } else {
+        console.log('Unknown message type:', data.type)
+      }
+    } catch (error) {
+      console.error('Error processing WebSocket message:', error)
+    }
+  }, [])
+
+  // SSE fallback – preferred over plain polling when available
+  const startSSEFallback = useCallback(() => {
+    if (sseRef.current) {
+      try { sseRef.current.close() } catch {}
+      sseRef.current = null
+    }
+    try {
+      const sseUrl = `${config.api.baseUrl}/events?t=${Date.now()}`
+      const es = new EventSource(sseUrl, { withCredentials: false })
+      sseRef.current = es
+      setConnectionError('Using SSE fallback due to connection issues...')
+
+      es.onmessage = (evt) => {
+        try {
+          const data = JSON.parse(evt.data)
+          // Reuse message pipeline
+          if (data.type === 'training_status_update') {
+            useTrainingStore.getState().setTrainingStatus(data.is_training, data.is_paused)
+            if (data.current_episode !== undefined) {
+              useTrainingStore.getState().setEpisode(Number(data.current_episode) || 0)
+            }
+          }
+          processMessageData(data)
+        } catch (e) {
+          console.warn('SSE parse error:', e)
         }
       }
-    }, backoff)
-  }, [reconnectAttempts, connectionHealth, isInRecoveryMode, maxReconnectAttempts])
+
+      es.onerror = () => {
+        // Fallback to HTTP polling if SSE also fails
+        try { es.close() } catch {}
+        sseRef.current = null
+        startPollingFallback()
+      }
+    } catch (e) {
+      console.warn('Failed to start SSE fallback, using polling:', e)
+      startPollingFallback()
+    }
+  }, [processMessageData])
 
   // Enhanced polling fallback with better error handling
   const startPollingFallback = useCallback(async () => {
@@ -179,13 +329,13 @@ export const useWebSocket = () => {
               console.log('Polling stable, attempting WebSocket upgrade')
               setTimeout(() => {
                 if (pollingConsecutiveFailures === 0) {
-                  console.log('Upgrading from polling to WebSocket')
+                  console.log('Upgrading from fallback to WebSocket')
                   clearInterval(pollingIntervalRef.current!)
                   pollingIntervalRef.current = null
                   setReconnectAttempts(0)
                   connect()
                 }
-              }, 10000) // Wait 10 seconds before upgrade
+              }, 10000)
             }
           } else {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`)
@@ -221,158 +371,6 @@ export const useWebSocket = () => {
     pollingIntervalRef.current = createPollingInterval(currentPollingInterval)
      }, [networkQualityRef, connectionHealth, updateTrainingData])
 
-  // Enhanced message processing with health tracking
-  const processMessage = useCallback((event: MessageEvent) => {
-    try {
-      const data = JSON.parse(event.data)
-      console.log('Received WebSocket message:', data.type)
-
-      if (data.type === 'training_update') {
-        console.log('Received training update:', data)
-        useTrainingStore.getState().updateTrainingData(data)
-        
-        // Clear training loading states when first data arrives
-        const currentState = useTrainingStore.getState()
-        if (currentState.loadingStates.isTrainingStarting) {
-          useTrainingStore.getState().completeLoadingOperation()
-        }
-      } else if (data.type === 'checkpoint_playback') {
-        console.log('Received checkpoint playback data:', data)
-        useTrainingStore.getState().updateCheckpointPlaybackData(data)
-        
-        // Clear playback/new game loading states when first data arrives
-        const currentState = useTrainingStore.getState()
-        if (currentState.loadingStates.isPlaybackStarting || currentState.loadingStates.isNewGameStarting) {
-          useTrainingStore.getState().completeLoadingOperation()
-        }
-      } else if (data.type === 'training_status_update') {
-        console.log('Received training status update:', data)
-        useTrainingStore.getState().setTrainingStatus(data.is_training, data.is_paused)
-        if (data.current_episode !== undefined) {
-          useTrainingStore.getState().setEpisode(data.current_episode)
-        }
-      } else if (data.type === 'training_reset') {
-        console.log('Received training reset:', data)
-        useTrainingStore.getState().setTrainingStatus(false, false)
-        useTrainingStore.getState().setEpisode(0)
-      } else if (data.type === 'training_start') {
-        console.log('Received training start:', data)
-        useTrainingStore.getState().setTrainingStatus(true, false)
-        // Ensure any Game Over overlay is cleared when training starts
-        useTrainingStore.getState().setShowingGameOver(false)
-        useTrainingStore.getState().setGameCompletionData(null)
-        // Clear any loading states
-        useTrainingStore.getState().setLoadingState('isTrainingStarting', false)
-        useTrainingStore.getState().setLoadingState('loadingMessage', null)
-        // If backend includes model_config, optionally update UI model profile
-        if (data.model_config && data.model_config.model_size) {
-          const size = data.model_config.model_size as 'lightning' | 'base' | 'expert'
-          if (size === 'lightning' || size === 'base' || size === 'expert') {
-            useTrainingStore.getState().setModelSize(size)
-          }
-        }
-      } else if (data.type === 'training_complete') {
-        console.log('Received training complete:', data)
-        useTrainingStore.getState().setTrainingStatus(false, false)
-        useTrainingStore.getState().setLoadingState('isTrainingStarting', false)
-        useTrainingStore.getState().setLoadingState('loadingMessage', null)
-      } else if (data.type === 'connection_status') {
-        console.log('Received connection status:', data)
-        useTrainingStore.getState().setConnected(data.connected)
-        if (data.error) {
-          useTrainingStore.getState().setConnectionError(data.error)
-        } else {
-          useTrainingStore.getState().setConnectionError(null)
-        }
-        
-        // NEW: Restore training data on reconnection if we have persisted data
-        if (data.connected) {
-          const state = useTrainingStore.getState()
-          if (state.lastTrainingData && state.isTraining) {
-            // Restore the last training data we had before disconnection
-            console.log('Restoring training data on reconnection:', state.lastTrainingData)
-            useTrainingStore.getState().updateTrainingData(state.lastTrainingData)
-          }
-        }
-      } else if (data.type === 'playback_status') {
-        console.log('Playback status:', data.message)
-        // Handle playback loading states
-        if (data.status === 'starting') {
-          const currentLoadingStates = useTrainingStore.getState().loadingStates
-          if (!currentLoadingStates.isPlaybackStarting) {
-            useTrainingStore.getState().setLoadingState('isPlaybackStarting', true)
-            useTrainingStore.getState().setLoadingState('loadingMessage', 'Loading checkpoint model...')
-          }
-        } else if (data.status === 'stopped') {
-          useTrainingStore.getState().setPlayingCheckpoint(false)
-          useTrainingStore.getState().setLoadingState('isPlaybackStarting', false)
-          useTrainingStore.getState().setLoadingState('loadingMessage', null)
-        }
-      } else if (data.type === 'new_game_started') {
-        useTrainingStore.getState().setLoadingState('isNewGameStarting', false)
-        useTrainingStore.getState().setLoadingState('loadingMessage', null)
-        // Also clear any Game Over overlay on new game
-        useTrainingStore.getState().setShowingGameOver(false)
-        useTrainingStore.getState().setGameCompletionData(null)
-      } else if (data.type === 'game_completed') {
-        console.log('Received game completion:', data)
-        // Handle game completion and show game over screen
-        useTrainingStore.getState().setGameCompletionData({
-          final_score: data.final_score,
-          total_steps: data.total_steps,
-          max_tile: data.max_tile,
-          final_board_state: [], // Will be populated from last step data
-          checkpoint_id: data.checkpoint_id,
-          game_number: data.game_number
-        })
-        useTrainingStore.getState().setShowingGameOver(true)
-      } else if (data.type === 'new_episode_started') {
-        console.log('Received new episode started:', data)
-        if (data.episode !== undefined) {
-          useTrainingStore.getState().setEpisode(data.episode)
-        }
-      } else if (data.type === 'checkpoint_loading_status') {
-        console.log('Received checkpoint loading status:', data)
-        const { checkpoint_id, status, message } = data
-        
-        // Handle checkpoint loading status updates
-        if (status === 'loading') {
-          useTrainingStore.getState().setCheckpointLoadingState({
-            isCheckpointLoading: true,
-            checkpointId: checkpoint_id,
-            loadingMessage: message || 'Loading checkpoint...',
-            loadingProgress: 10
-          })
-        } else if (status === 'config_loaded') {
-          useTrainingStore.getState().updateCheckpointLoadingProgress(30, message || 'Checkpoint data loaded, initializing model...')
-        } else if (status === 'trainer_created') {
-          useTrainingStore.getState().updateCheckpointLoadingProgress(50, message || 'Model initialized, loading checkpoint weights...')
-        } else if (status === 'weights_loaded') {
-          useTrainingStore.getState().updateCheckpointLoadingProgress(70, message || 'Checkpoint weights loaded, preparing training environment...')
-        } else if (status === 'starting_training') {
-          useTrainingStore.getState().updateCheckpointLoadingProgress(90, message || 'Starting training session...')
-        } else if (status === 'complete') {
-          useTrainingStore.getState().completeCheckpointLoading(message || 'Checkpoint loaded successfully')
-        } else if (status === 'error') {
-          useTrainingStore.getState().setCheckpointLoadingError(message || 'Failed to load checkpoint')
-        }
-      } else if (data.type === 'checkpoint_created') {
-        console.log('Received checkpoint created:', data)
-        // Handle new checkpoint creation
-      } else if (data.type === 'evaluation_metrics') {
-        console.log('Received evaluation metrics:', data)
-        try {
-          useTrainingStore.getState().updateEvaluationMetrics({ metrics: data.metrics || {} })
-        } catch (e) {
-          console.warn('Failed to update evaluation metrics in store:', e)
-        }
-      } else {
-        console.log('Unknown message type:', data.type)
-      }
-    } catch (error) {
-      console.error('Error processing WebSocket message:', error)
-    }
-  }, [])
 
   // Network quality detection
   const detectAndUpdateNetworkQuality = async () => {
@@ -468,7 +466,10 @@ export const useWebSocket = () => {
     }
 
     try {
-      const websocketUrl = getMobileOptimizedWebSocketURL(config.websocket.url)
+      // Include last_seq for lightweight resume
+      const lastSeq = useTrainingStore.getState().lastMessageSeq || 0
+      const baseUrl = getMobileOptimizedWebSocketURL(config.websocket.url)
+      const websocketUrl = lastSeq > 0 ? `${baseUrl}?last_seq=${lastSeq}` : baseUrl
       console.log('Connecting to WebSocket:', websocketUrl)
       
       const ws = new WebSocket(websocketUrl)
@@ -527,14 +528,14 @@ export const useWebSocket = () => {
           pollingIntervalRef.current = null
         }
 
-        // Sync training status with backend to avoid stale localStorage state
-        fetch(`${config.api.baseUrl}/training/status`)
+        // We now expect the server to push a snapshot immediately after connect;
+        // keep the HTTP sync as a safety net with no-store headers.
+        fetch(`${config.api.baseUrl}/training/status?t=${Date.now()}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-store, no-cache', 'Pragma': 'no-cache' } })
           .then((res) => res.json())
           .then((status) => {
             console.log('Syncing training status with backend:', status)
-            // Update the training store with the actual backend status
             useTrainingStore.getState().setTrainingStatus(status.is_training, status.is_paused)
-            useTrainingStore.getState().setEpisode(status.current_episode)
+            useTrainingStore.getState().setEpisode(Number(status.current_episode) || 0)
           })
           .catch((error) => {
             console.warn('Failed to sync training status:', error)
@@ -556,56 +557,40 @@ export const useWebSocket = () => {
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data)
           updateConnectionStats(event.data.length)
-          
+          const parsed = JSON.parse(event.data)
+
           // Handle ping/pong for latency measurement
-          if (data.type === 'pong' && data.timestamp) {
-            const latency = Date.now() - data.timestamp
+          if (parsed.type === 'pong' && parsed.timestamp) {
+            const latency = Date.now() - parsed.timestamp
             connectionStatsRef.current.latency = latency
             console.log(`WebSocket latency: ${latency}ms`)
             return
           }
-          
+
           // Handle message batches
-          if (data.type === 'message_batch') {
-            // Process each message in the batch
-            for (const message of data.messages) {
-              processMessage(message)
+          if (parsed.type === 'message_batch' && Array.isArray(parsed.messages)) {
+            for (const message of parsed.messages) {
+              processMessageData(message)
             }
             return
           }
-          
-          // Handle playback heartbeat
-          if (data.type === 'playback_heartbeat') {
+
+          // Normalize heartbeats
+          if (parsed.type === 'playback_heartbeat' || parsed.type === 'heartbeat') {
             playbackHealthRef.current.lastHeartbeat = Date.now()
-            playbackHealthRef.current.consecutiveFailures = data.consecutive_failures || 0
-            playbackHealthRef.current.isHealthy = data.is_healthy !== false
+            playbackHealthRef.current.consecutiveFailures = parsed.consecutive_failures || 0
+            playbackHealthRef.current.isHealthy = parsed.is_healthy !== false
             playbackHealthRef.current.lastHealthCheck = Date.now()
-            
-            console.log(`Playback heartbeat: healthy=${data.is_healthy}, failures=${data.consecutive_failures}`)
-            
-            // If playback is unhealthy, show warning
-            if (!data.is_healthy) {
-              console.warn('Playback system is unhealthy, may need restart')
-            }
             return
           }
-          
-          processMessage(event)
+
+          processMessageData(parsed)
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error)
+          console.error('Error processing WebSocket message:', error)
+          setConsecutiveFailures(prev => prev + 1)
         }
       }
-              
-        ws.onmessage = (event) => {
-          try {
-            processMessage(event)
-          } catch (error) {
-            console.error('Error processing WebSocket message:', error)
-            setConsecutiveFailures(prev => prev + 1)
-          }
-        }
         
         ws.onclose = (event) => {
         console.log('WebSocket disconnected:', event.reason)
@@ -632,28 +617,14 @@ export const useWebSocket = () => {
         if (reconnectTimeoutRef.current || reconnectAttempts >= maxReconnectAttempts) {
           return
         }
-
-        if (reconnectAttempts < maxReconnectAttempts) {
-          setReconnectAttempts(prev => prev + 1)
-          setConnectionError(`Connection lost. Reconnecting... (${reconnectAttempts + 1}/${maxReconnectAttempts})`)
-          
-          // Adaptive backoff based on network quality
-          const backoff = Math.min(
-            reconnectDelay * Math.pow(2, reconnectAttempts), 
-            30000
-          )
-          
-          reconnectTimeoutRef.current = setTimeout(() => {
-            reconnectTimeoutRef.current = null
-            reconnectingRef.current = false // allow new attempt
-            connect()
-          }, backoff)
-        } else {
+        setConnectionError(`Connection lost. Reconnecting... (${reconnectAttempts + 1}/${maxReconnectAttempts})`)
+        scheduleReconnect()
+        if (reconnectAttempts >= maxReconnectAttempts - 1) {
           // After all retries failed, try polling fallback on mobile
           if (isMobileSafari() || isMobile()) {
-            console.log('All WebSocket retries failed, switching to polling fallback')
-            setConnectionError('WebSocket failed, switching to polling mode...')
-            startPollingFallback()
+            console.log('All WebSocket retries failed, switching to SSE fallback')
+            setConnectionError('WebSocket failed, switching to SSE mode...')
+            startSSEFallback()
           } else {
             setConnectionError('Connection lost. Please refresh the page.')
           }
@@ -673,11 +644,11 @@ export const useWebSocket = () => {
             : 'Mobile connection issue - trying fallback...'
           setConnectionError(errorMessage)
           
-          // Try polling fallback after a shorter delay for mobile
+          // Try SSE fallback after a shorter delay for mobile
           setTimeout(() => {
             if (!isConnected) {
-              console.log('Attempting polling fallback for mobile device')
-              startPollingFallback()
+              console.log('Attempting SSE fallback for mobile device')
+              startSSEFallback()
             }
           }, 500) // Even shorter delay for mobile
         } else {
@@ -731,9 +702,9 @@ export const useWebSocket = () => {
       // Attempt to reconnect after a short delay
       setTimeout(() => {
         if (!isConnected) {
-          connect()
+          scheduleReconnect()
         }
-      }, 1000)
+      }, 300)
     }
     
     // Add event listeners for network state changes
@@ -748,9 +719,9 @@ export const useWebSocket = () => {
           console.log('Page became visible and we are online - attempting reconnect')
           setTimeout(() => {
             if (!isConnected) {
-              connect()
+              scheduleReconnect()
             }
-          }, 500)
+          }, 300)
         }
       } else {
         // Page became hidden, conserve resources
@@ -770,7 +741,7 @@ export const useWebSocket = () => {
 
   return {
     isConnected,
-    reconnect: connect,
+    reconnect: () => scheduleReconnect(),
     disconnect,
   }
 }

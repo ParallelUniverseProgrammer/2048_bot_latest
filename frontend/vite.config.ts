@@ -40,6 +40,15 @@ export default defineConfig({
         cacheId: '2048-bot-tunnel-v1',
         runtimeCaching: [
           {
+            // Always bypass cache for dynamic status endpoints
+            urlPattern: /\/training\/status(\?.*)?$/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /\/checkpoints\/playback\/status(\?.*)?$/i,
+            handler: 'NetworkOnly',
+          },
+          {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
             options: {
