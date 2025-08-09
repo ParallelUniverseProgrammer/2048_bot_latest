@@ -287,6 +287,7 @@ const App: React.FC = () => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.6, delay: 0.4 }}
+        style={{ minHeight: 0 }}
       >
         <AnimatePresence mode="wait">
           <motion.div
@@ -295,7 +296,7 @@ const App: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
-            className="h-full"
+            className="h-full min-h-0"
           >
                 {activeTab === 'dashboard' && <TrainingDashboard />}
                 {activeTab === 'controls' && <ControlsDashboard />}

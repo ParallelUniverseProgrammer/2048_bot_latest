@@ -35,11 +35,11 @@
   box-sizing: border-box;
 }
 
-/* Prevent touch scrolling on mobile */
+/* Allow vertical scrolling gestures while keeping overscroll tame */
 html, body {
-  -webkit-overflow-scrolling: auto; /* Disable momentum scrolling */
-  overscroll-behavior: none; /* Prevent overscroll effects */
-  touch-action: none; /* Disable touch gestures that could cause scrolling */
+  -webkit-overflow-scrolling: touch; /* Enable smooth scrolling on iOS */
+  overscroll-behavior: contain; /* Contain overscroll to the element */
+  touch-action: pan-y; /* Allow vertical panning (scrolling) */
 }
 
 /* Lock scrolling on all app containers */
@@ -51,7 +51,6 @@ html, body {
 
 html {
   scroll-behavior: smooth;
-  overflow: hidden; /* Lock all scrolling */
   height: 100%;
 }
 
@@ -65,8 +64,8 @@ body {
   background-color: var(--ui-surface-base);
   background: var(--dark-gradient);
   color: #f1f5f9;
-  overflow: hidden; /* Lock all scrolling */
-  position: fixed; /* Prevent any scroll behavior */
+  overflow: hidden; /* Prevent document scroll; use inner scroll regions */
+  position: fixed; /* Keep app viewport fixed for PWA */
   width: 100%;
   height: 100%;
 }
@@ -79,8 +78,8 @@ body {
 }
 .page-content {
   flex: 1 1 auto;
-  min-height: 0; /* allow inner scroll regions */
-  overflow: hidden;
+  min-height: 0; /* allow inner scroll regions to size properly */
+  overflow: hidden; /* delegate scrolling to inner regions (e.g., lists) */
 }
 
 /* Scrollbar styles */

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useDeferredValue } from 'react'
+import React, { useMemo, useRef, useState, useDeferredValue, useEffect } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { 
   Archive, 
@@ -23,9 +23,12 @@ import {
   Cpu,
   Database,
   SortAsc,
-  SortDesc
+  SortDesc,
+  CheckSquare,
+  Square,
+  Filter,
+  Tag
 } from 'lucide-react'
-import { useDeviceDetection } from '../utils/deviceDetection'
 import ConfirmDialog from './ConfirmDialog'
 import { useCheckpoints, Checkpoint } from '../hooks/useCheckpoints'
 
@@ -60,8 +63,6 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   } = useCheckpoints({ onNavigateToTab })
   
   // ===== DEVICE DETECTION =====
-  const { displayMode } = useDeviceDetection()
-  const isMobile = displayMode === 'mobile'
   
   // ===== UI STATE =====
   const [searchTerm, setSearchTerm] = useState('')
@@ -69,11 +70,20 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   const [editingNickname, setEditingNickname] = useState<string | null>(null)
   const [newNickname, setNewNickname] = useState('')
   const [expandedCheckpoint, setExpandedCheckpoint] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   
   // ===== FILTER & SORT STATE =====
   const [sortBy, setSortBy] = useState<SortBy>('date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [filterBy, setFilterBy] = useState<FilterBy>('all')
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [filterModelSizes, setFilterModelSizes] = useState<string[]>([])
+  const [filterScoreMin, setFilterScoreMin] = useState<string>('')
+  const [filterEpisodeMin, setFilterEpisodeMin] = useState<string>('')
+  const [filterEpisodeMax, setFilterEpisodeMax] = useState<string>('')
+  const [filterDateRange, setFilterDateRange] = useState<'all' | '24h' | '7d' | '30d'>('all')
+  const [filterTagsInclude, setFilterTagsInclude] = useState<string>('')
+  const [filterSizeMinMB, setFilterSizeMinMB] = useState<string>('')
   
   // ===== CONFIGURATION STATE =====
   const [checkpointIntervalInput, setCheckpointIntervalInput] = useState('50')
@@ -99,6 +109,61 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   React.useEffect(() => {
     setCheckpointIntervalInput(String(checkpointInterval))
   }, [checkpointInterval])
+
+  // Persist UI state (search/sort/filters) to localStorage for caching on client
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('checkpointManager.prefs')
+      if (saved) {
+        const prefs = JSON.parse(saved)
+        if (typeof prefs.searchTerm === 'string') setSearchTerm(prefs.searchTerm)
+        if (prefs.sortBy) setSortBy(prefs.sortBy)
+        if (prefs.sortOrder) setSortOrder(prefs.sortOrder)
+        if (prefs.filterBy) setFilterBy(prefs.filterBy)
+        if (Array.isArray(prefs.filterModelSizes)) setFilterModelSizes(prefs.filterModelSizes)
+        if (typeof prefs.filterScoreMin === 'string') setFilterScoreMin(prefs.filterScoreMin)
+        if (typeof prefs.filterEpisodeMin === 'string') setFilterEpisodeMin(prefs.filterEpisodeMin)
+        if (typeof prefs.filterEpisodeMax === 'string') setFilterEpisodeMax(prefs.filterEpisodeMax)
+        if (prefs.filterDateRange) setFilterDateRange(prefs.filterDateRange)
+        if (typeof prefs.filterTagsInclude === 'string') setFilterTagsInclude(prefs.filterTagsInclude)
+        if (typeof prefs.filterSizeMinMB === 'string') setFilterSizeMinMB(prefs.filterSizeMinMB)
+        if (typeof prefs.showAdvancedFilters === 'boolean') setShowAdvancedFilters(prefs.showAdvancedFilters)
+      }
+    } catch (_) {}
+  }, [])
+
+  useEffect(() => {
+    try {
+      const prefs = {
+        searchTerm,
+        sortBy,
+        sortOrder,
+        filterBy,
+        filterModelSizes,
+        filterScoreMin,
+        filterEpisodeMin,
+        filterEpisodeMax,
+        filterDateRange,
+        filterTagsInclude,
+        filterSizeMinMB,
+        showAdvancedFilters,
+      }
+      localStorage.setItem('checkpointManager.prefs', JSON.stringify(prefs))
+    } catch (_) {}
+  }, [
+    searchTerm,
+    sortBy,
+    sortOrder,
+    filterBy,
+    filterModelSizes,
+    filterScoreMin,
+    filterEpisodeMin,
+    filterEpisodeMax,
+    filterDateRange,
+    filterTagsInclude,
+    filterSizeMinMB,
+    showAdvancedFilters,
+  ])
 
   // Validate checkpoint interval
   const validateCheckpointInterval = (value: string): number | null => {
@@ -181,18 +246,70 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
       
       if (!matchesSearch) return false
       
-      // Apply additional filters
+      // Quick filters
       switch (filterBy) {
-        case 'recent':
+        case 'recent': {
           const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
-          return new Date(cp.created_at) > oneDayAgo
-        case 'high-score':
-          return (cp.performance_metrics?.best_score ?? 0) > TREND_HIGH_SCORE
-        case 'large':
-          return cp.file_size > FILESIZE_LARGE_THRESHOLD
-        default:
-          return true
+          if (!(new Date(cp.created_at) > oneDayAgo)) return false
+          break
+        }
+        case 'high-score': {
+          if (!((cp.performance_metrics?.best_score ?? 0) > TREND_HIGH_SCORE)) return false
+          break
+        }
+        case 'large': {
+          if (!(cp.file_size > FILESIZE_LARGE_THRESHOLD)) return false
+          break
+        }
+        default: break
       }
+
+      // Advanced filters
+      if (filterModelSizes.length > 0) {
+        const size = (cp.model_config?.model_size || '').toString().toLowerCase()
+        if (!filterModelSizes.includes(size)) return false
+      }
+      if (filterScoreMin.trim()) {
+        const min = Number(filterScoreMin)
+        if (!isNaN(min) && (cp.performance_metrics?.best_score ?? 0) < min) return false
+      }
+      if (filterEpisodeMin.trim()) {
+        const minE = Number(filterEpisodeMin)
+        if (!isNaN(minE) && cp.episode < minE) return false
+      }
+      if (filterEpisodeMax.trim()) {
+        const maxE = Number(filterEpisodeMax)
+        if (!isNaN(maxE) && cp.episode > maxE) return false
+      }
+      if (filterDateRange !== 'all') {
+        const created = new Date(cp.created_at).getTime()
+        const now = Date.now()
+        const within = (range: '24h' | '7d' | '30d') => {
+          const map: Record<'24h' | '7d' | '30d', number> = {
+            '24h': 24 * 60 * 60 * 1000,
+            '7d': 7 * 24 * 60 * 60 * 1000,
+            '30d': 30 * 24 * 60 * 60 * 1000,
+          }
+          return now - created <= map[range]
+        }
+        if (!within(filterDateRange)) return false
+      }
+      if (filterTagsInclude.trim()) {
+        const includeTags = filterTagsInclude
+          .split(',')
+          .map(t => t.trim().toLowerCase())
+          .filter(Boolean)
+        if (includeTags.length) {
+          const cpTags = (cp.tags || []).map(t => t.toLowerCase())
+          const hasAll = includeTags.every(tag => cpTags.includes(tag))
+          if (!hasAll) return false
+        }
+      }
+      if (filterSizeMinMB.trim()) {
+        const minMB = Number(filterSizeMinMB)
+        if (!isNaN(minMB) && cp.file_size < minMB * 1024 * 1024) return false
+      }
+      return true
     })
     
     // Sort checkpoints
@@ -224,7 +341,20 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
     })
     
     return filtered
-  }, [checkpoints, deferredSearch, filterBy, sortBy, sortOrder])
+  }, [
+    checkpoints,
+    deferredSearch,
+    filterBy,
+    sortBy,
+    sortOrder,
+    filterModelSizes,
+    filterScoreMin,
+    filterEpisodeMin,
+    filterEpisodeMax,
+    filterDateRange,
+    filterTagsInclude,
+    filterSizeMinMB,
+  ])
 
   // ===== UTILITY FUNCTIONS =====
   
@@ -283,7 +413,47 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   }
 
   // ===== ACTION FUNCTIONS =====
-  
+  const toggleSelected = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const clearSelection = () => setSelectedIds(new Set())
+  const selectAllVisible = () => setSelectedIds(new Set(filteredAndSortedCheckpoints.map(cp => cp.id)))
+
+  const bulkDelete = async () => {
+    const ids = Array.from(selectedIds)
+    for (const id of ids) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await deleteCheckpoint(id)
+      } catch (_) {}
+    }
+    clearSelection()
+  }
+
+  const startPlaybackLatestSelected = async () => {
+    if (selectedIds.size === 0) return
+    const latest = [...selectedIds]
+      .map(id => checkpoints.find(c => c.id === id))
+      .filter(Boolean)
+      .sort((a, b) => (b!.episode - a!.episode))[0]
+    if (latest) await startPlayback((latest as Checkpoint).id)
+  }
+
+  const resumeTrainingLatestSelected = async () => {
+    if (selectedIds.size === 0) return
+    const latest = [...selectedIds]
+      .map(id => checkpoints.find(c => c.id === id))
+      .filter(Boolean)
+      .sort((a, b) => (b!.episode - a!.episode))[0]
+    if (latest) await loadCheckpointForTraining((latest as Checkpoint).id)
+  }
+
   /**
    * Update checkpoint nickname via API
    */
@@ -298,7 +468,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   // Loading state
   if (loading) {
     return (
-      <div className="safe-area h-full flex flex-col gap-2 pb-6 px-4">
+      <div className="safe-area h-full min-h-0 grid grid-rows-[auto_auto_1fr] gap-2 pb-6 px-4 overflow-hidden">
         <div className="card-glass p-4 rounded-2xl">
           <div className="grid grid-cols-4 gap-3 animate-pulse">
             {[0,1,2,3].map(i => (
@@ -323,7 +493,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
   }
 
   return (
-    <div className="safe-area h-full flex flex-col gap-2 pb-6 px-4">
+    <div className="safe-area h-full min-h-0 flex flex-col gap-2 pb-6 px-4 overflow-hidden">
       {/* Error Display */}
       {error && (
         <motion.div
@@ -346,42 +516,22 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         </motion.div>
       )}
 
-      {/* Stats Overview */}
+      {/* Compact Summary Bar */}
       {stats && (
-        <motion.div
-          className="card-glass p-4 rounded-2xl flex-shrink-0"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-4'} gap-3`}>
-            <div className="text-center">
-              <div className="text-lg font-bold text-ui-brand-primary numeric">{stats.total_checkpoints}</div>
-              <div className="text-xs text-ui-text-secondary">Checkpoints</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-ui-state-success numeric">{stats.best_score.toLocaleString()}</div>
-              <div className="text-xs text-ui-text-secondary">Best Score</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-ui-state-info numeric">{formatFileSize(stats.total_size)}</div>
-              <div className="text-xs text-ui-text-secondary">Total Size</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-ui-state-warning numeric">{formatDuration(stats.total_training_time)}</div>
-              <div className="text-xs text-ui-text-secondary">Training Time</div>
-            </div>
+        <div className="card-glass p-2 rounded-2xl flex-shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2 py-1 rounded-lg bg-ui-surface-elevated text-xs text-ui-text-secondary">Total: <span className="text-ui-text-primary font-semibold numeric">{stats.total_checkpoints}</span></span>
+            <span className="px-2 py-1 rounded-lg bg-ui-surface-elevated text-xs text-ui-text-secondary">Best: <span className="text-ui-state-success font-semibold numeric">{stats.best_score.toLocaleString()}</span></span>
+            <span className="px-2 py-1 rounded-lg bg-ui-surface-elevated text-xs text-ui-text-secondary">Size: <span className="text-ui-state-info font-semibold numeric">{formatFileSize(stats.total_size)}</span></span>
+            <span className="px-2 py-1 rounded-lg bg-ui-surface-elevated text-xs text-ui-text-secondary">Time: <span className="text-ui-state-warning font-semibold numeric">{formatDuration(stats.total_training_time)}</span></span>
           </div>
-        </motion.div>
+        </div>
       )}
 
       {/* Search and Controls */}
-      <motion.div
-        className="card-glass p-4 rounded-2xl flex-shrink-0"
-        initial={shouldReduceMotion ? false : { opacity: 0, y: -10 }}
-        animate={shouldReduceMotion ? {} : { opacity: 1, y: 0 }}
-      >
+      <div className="card-glass p-3 rounded-2xl flex-shrink-0">
         {/* Search Bar */}
-        <div className="relative mb-4">
+        <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-ui-text-secondary" />
           <input
             type="text"
@@ -400,7 +550,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
         </div>
 
         {/* Filter and Sort Controls */}
-        <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-3">
           {/* Filter Buttons */}
           <div className="flex space-x-1">
               {([
@@ -441,8 +591,57 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             >
               {sortOrder === 'desc' ? <SortDesc className="w-3 h-3" /> : <SortAsc className="w-3 h-3" />}
             </button>
+            <button
+              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              className="p-2 bg-ui-surface-elevated text-ui-text-secondary rounded-lg hover:bg-ui-surface-elevated/80 transition-colors"
+            >
+              <Filter className="w-3 h-3" />
+            </button>
           </div>
         </div>
+
+        {showAdvancedFilters && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-ui-text-secondary">Model</span>
+              {['lightning','base','expert','tiny','small','medium','large'].map(ms => (
+                <button
+                  key={ms}
+                  onClick={() => setFilterModelSizes(prev => prev.includes(ms) ? prev.filter(x => x!==ms) : [...prev, ms])}
+                  className={`px-2 py-1 rounded-lg text-xs ${filterModelSizes.includes(ms) ? 'bg-ui-brand-primary text-white' : 'bg-ui-surface-elevated text-ui-text-secondary'}`}
+                >{ms}</button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-ui-text-secondary">Score ≥</span>
+              <input value={filterScoreMin} onChange={(e)=>setFilterScoreMin(e.target.value)} inputMode="numeric" className="w-24 px-2 py-1 rounded-lg bg-ui-surface-elevated text-xs border border-ui-border-muted" />
+              <span className="text-xs text-ui-text-secondary">Size ≥ MB</span>
+              <input value={filterSizeMinMB} onChange={(e)=>setFilterSizeMinMB(e.target.value)} inputMode="numeric" className="w-20 px-2 py-1 rounded-lg bg-ui-surface-elevated text-xs border border-ui-border-muted" />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-ui-text-secondary">Episode</span>
+              <input placeholder="min" value={filterEpisodeMin} onChange={(e)=>setFilterEpisodeMin(e.target.value)} inputMode="numeric" className="w-20 px-2 py-1 rounded-lg bg-ui-surface-elevated text-xs border border-ui-border-muted" />
+              <span className="text-xs text-ui-text-secondary">to</span>
+              <input placeholder="max" value={filterEpisodeMax} onChange={(e)=>setFilterEpisodeMax(e.target.value)} inputMode="numeric" className="w-20 px-2 py-1 rounded-lg bg-ui-surface-elevated text-xs border border-ui-border-muted" />
+              <select value={filterDateRange} onChange={(e)=>setFilterDateRange(e.target.value as any)} className="ml-auto bg-ui-surface-elevated text-ui-text-primary rounded-lg px-2 py-1 text-xs border border-ui-border-muted">
+                <option value="all">All time</option>
+                <option value="24h">Last 24h</option>
+                <option value="7d">Last 7d</option>
+                <option value="30d">Last 30d</option>
+              </select>
+            </div>
+            <div className="md:col-span-3 flex items-center gap-2">
+              <Tag className="w-3 h-3 text-ui-text-secondary" />
+              <input
+                placeholder="Include tags (comma-separated)"
+                value={filterTagsInclude}
+                onChange={(e)=>setFilterTagsInclude(e.target.value)}
+                className="flex-1 px-3 py-1.5 bg-ui-surface-elevated text-ui-text-primary rounded-lg text-xs border border-ui-border-muted"
+              />
+              <button onClick={()=>{setFilterModelSizes([]);setFilterScoreMin('');setFilterEpisodeMin('');setFilterEpisodeMax('');setFilterDateRange('all');setFilterTagsInclude('');setFilterSizeMinMB('')}} className="px-3 py-1.5 rounded-lg text-xs bg-ui-surface-elevated text-ui-text-secondary hover:bg-ui-surface-elevated/80">Reset</button>
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex items-center space-x-2">
@@ -556,10 +755,33 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             </div>
           </motion.div>
         )}
-      </motion.div>
+      </div>
 
-      {/* Checkpoints List */}
-      <div role="list" className="flex-1 overflow-y-auto space-y-2">
+      {/* Floating Bulk Selection Actions */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-5 right-5 z-40 pointer-events-none">
+          <div className="relative group">
+            {/* Compact pill */}
+            <div className="card-glass rounded-full px-3 py-2 flex items-center gap-2 shadow-lg pointer-events-auto">
+              <span className="text-xs text-ui-text-secondary">{selectedIds.size}</span>
+              <span className="text-xs text-ui-text-secondary">selected</span>
+            </div>
+            {/* Hover/Focus actions panel */}
+            <div className="invisible opacity-0 translate-y-2 group-hover:visible group-hover:opacity-100 group-hover:translate-y-0 focus-within:visible focus-within:opacity-100 focus-within:translate-y-0 transition-all duration-150 absolute bottom-12 right-0 pointer-events-auto">
+              <div className="card-glass rounded-xl px-3 py-2 flex items-center gap-2">
+                <button onClick={selectAllVisible} className="px-2 py-1.5 rounded-lg bg-ui-surface-elevated text-ui-text-secondary text-xs hover:bg-ui-surface-elevated/80">Select all</button>
+                <button onClick={clearSelection} className="px-2 py-1.5 rounded-lg bg-ui-surface-elevated text-ui-text-secondary text-xs hover:bg-ui-surface-elevated/80">Clear</button>
+                <button onClick={startPlaybackLatestSelected} className="px-2 py-1.5 rounded-lg bg-ui-state-success/20 text-ui-state-success text-xs hover:bg-ui-state-success/30">Watch</button>
+                <button onClick={resumeTrainingLatestSelected} className="px-2 py-1.5 rounded-lg bg-ui-brand-primary/20 text-ui-brand-primary text-xs hover:bg-ui-brand-primary/30">Resume</button>
+                <button onClick={bulkDelete} className="px-2 py-1.5 rounded-lg bg-ui-state-danger/20 text-ui-state-danger text-xs hover:bg-ui-state-danger/30">Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Checkpoints List (dedicated vertical scroll) */}
+      <div role="list" className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-2" style={{ WebkitOverflowScrolling: 'touch' }}>
         {filteredAndSortedCheckpoints.map((checkpoint: Checkpoint, index: number) => (
           <motion.div
             key={checkpoint.id}
@@ -569,11 +791,19 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
             transition={shouldReduceMotion ? undefined : { delay: Math.min(index * 0.03, 0.12) }}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="card-glass rounded-2xl p-4"
+            className="card-glass rounded-2xl p-4 overflow-hidden"
           >
             {/* Header */}
             <div className="flex items-start justify-between mb-3">
-              <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 mr-2">
+                <button
+                  onClick={() => toggleSelected(checkpoint.id)}
+                  className={`p-2 rounded-lg flex-shrink-0 ${selectedIds.has(checkpoint.id) ? 'bg-ui-brand-primary/20 text-ui-brand-primary' : 'bg-ui-surface-elevated text-ui-text-secondary hover:bg-ui-surface-elevated/80'}`}
+                  aria-label={selectedIds.has(checkpoint.id) ? 'Deselect' : 'Select'}
+                >
+                  {selectedIds.has(checkpoint.id) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                </button>
+                <div className="flex-1 min-w-0">
                 {editingNickname === checkpoint.id ? (
                   <div className="flex items-center space-x-2">
                     <input
@@ -654,6 +884,7 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                   </div>
                 </div>
               </div>
+              {/* close left container */}
               
               <div className="flex items-center space-x-2 ml-2">
                 {getScoreTrendIcon(checkpoint.performance_metrics.best_score)}
@@ -678,8 +909,8 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                   }
                 </button>
               </div>
+              </div>
             </div>
-
             {/* Action Buttons */}
             <div className="flex space-x-2">
               <button
@@ -763,6 +994,30 @@ const CheckpointManager: React.FC<CheckpointManagerProps> = ({ onNavigateToTab }
                         <span>Duration:</span>
                         <span className="text-ui-text-primary font-medium numeric">{formatDuration(checkpoint.training_duration)}</span>
                       </div>
+                      {(checkpoint as any).performance_metrics?.score_trend !== undefined && (
+                        <div className="flex justify-between">
+                          <span>Score Trend:</span>
+                          <span className="text-ui-text-primary font-medium numeric">{Number((checkpoint as any).performance_metrics.score_trend).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(checkpoint as any).performance_metrics?.loss_trend !== undefined && (
+                        <div className="flex justify-between">
+                          <span>Loss Trend:</span>
+                          <span className="text-ui-text-primary font-medium numeric">{Number((checkpoint as any).performance_metrics.loss_trend).toFixed(3)}</span>
+                        </div>
+                      )}
+                      {typeof (checkpoint as any).performance_metrics?.training_efficiency === 'object' && (
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span>Consistency:</span>
+                            <span className="text-ui-text-primary font-medium numeric">{Number(((checkpoint as any).performance_metrics.training_efficiency?.score_consistency) ?? 0).toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Stability:</span>
+                            <span className="text-ui-text-primary font-medium numeric">{Number(((checkpoint as any).performance_metrics.training_efficiency?.loss_stability) ?? 0).toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
