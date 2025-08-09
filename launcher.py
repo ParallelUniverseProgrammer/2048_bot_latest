@@ -638,23 +638,12 @@ class Logger:
 
 
 class GUIWindow:
-    """Compact desktop GUI window optimized for stability and efficiency"""
+    """Deprecated: legacy GUI removed. Kept as a stub to avoid import/name errors during refactor."""
     
     def __init__(self, logger: Logger):
         self.logger = logger
-        self.window = None
-        self.progress_bar = None
-        self.status_label = None
-        self.step_label = None
-        self.error_label = None
-        self.url_entry = None
-        self.copy_button = None
-        self.system_tray = None
-        self.current_progress = 0.0
-        self.target_progress = 0.0
-        # Theme (PC context, minimal, dark)
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
+        # Immediately raise to indicate the legacy GUI should not be used
+        raise RuntimeError("GUIWindow is deprecated; use LauncherDashboard instead")
         
         # Window
         self.window = ctk.CTk()
@@ -2133,11 +2122,13 @@ class Launcher:
         self.gui_mode = gui
         self.gui_window = None
         if self.gui_mode:
-            self.gui_window = GUIWindow(self.logger)
+            from launcher_dashboard import LauncherDashboard
+            self.gui_window = LauncherDashboard(self.logger)
             # Set up callbacks
             self.gui_window.on_stop_requested = self._stop_services
             self.gui_window.on_restart_requested = self._restart_services
             self.gui_window.on_closing = self._cleanup_gui
+            self.gui_window.on_process_action = self._handle_process_action
         
         # Background operations state
         self.background_operations = {
@@ -2372,6 +2363,96 @@ class Launcher:
                 self.gui_window.show_error("Restart functionality not yet implemented")
         except Exception as e:
             self.logger.error(f"Error restarting services: {e}")
+
+    def _handle_process_action(self, name: str, action: str):
+        """Handle terminate/kill/restart actions from the dashboard."""
+        try:
+            proc: Optional[subprocess.Popen] = self.process_manager.processes.get(name)
+            if not proc:
+                self.logger.error(f"Process action: unknown process '{name}'")
+                return
+            pid = proc.pid
+            if not psutil.pid_exists(pid):
+                self.logger.warning(f"Process action: PID {pid} for '{name}' not found")
+                return
+            p = psutil.Process(pid)
+            if action == 'terminate':
+                self.logger.info(f"Terminating process '{name}' (PID {pid})")
+                p.terminate()
+                try:
+                    p.wait(timeout=5)
+                except psutil.TimeoutExpired:
+                    self.logger.warning(f"Terminate timeout for '{name}', killing")
+                    p.kill()
+            elif action == 'kill':
+                self.logger.info(f"Killing process '{name}' (PID {pid})")
+                p.kill()
+            elif action == 'restart':
+                self.logger.info(f"Restarting process '{name}' (PID {pid})")
+                # Capture command/cwd/env to restart
+                try:
+                    cmdline = p.cmdline()
+                    cwd = p.cwd()
+                    env = os.environ.copy()
+                except Exception:
+                    # Fallback to stored data if needed
+                    cmdline = None
+                    cwd = None
+                # Stop current process
+                try:
+                    p.terminate()
+                    p.wait(timeout=5)
+                except Exception:
+                    try:
+                        p.kill()
+                    except Exception:
+                        pass
+                # Recreate process if we can infer how
+                restarted = False
+                try:
+                    if cmdline and cwd:
+                        new_p = subprocess.Popen(cmdline, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        self.process_manager.add_process(name, new_p)
+                        restarted = True
+                        self.logger.info(f"Process '{name}' restarted with same command")
+                except Exception as e:
+                    self.logger.error(f"Failed to restart '{name}' with captured cmd: {e}")
+                if not restarted:
+                    # Use known launchers for Backend/Frontend
+                    if name.lower() == 'backend':
+                        backend_env = os.environ.copy()
+                        cors_origins = [
+                            f"http://localhost:{self.frontend_port}",
+                            f"http://127.0.0.1:{self.frontend_port}",
+                            f"http://{self.host_ip}:{self.frontend_port}"
+                        ]
+                        if not self.lan_only:
+                            cors_origins.extend(["https://*.trycloudflare.com", "https://*.cfargotunnel.com"])
+                        backend_env["CORS_ORIGINS"] = ",".join(cors_origins)
+                        backend_cmd = [
+                            "poetry", "run", "uvicorn", "main:app",
+                            "--host", "0.0.0.0",
+                            "--port", str(self.backend_port),
+                            "--reload"
+                        ]
+                        new_p = subprocess.Popen(backend_cmd, cwd="backend", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=backend_env, shell=False)
+                        self.process_manager.add_process("Backend", new_p)
+                        self.logger.info("Backend restarted")
+                    elif name.lower() == 'frontend':
+                        npm_executable = self._which_any(["npm.cmd", "npm.exe", "npm"]) if platform.system() == "Windows" else "npm"
+                        frontend_env = os.environ.copy()
+                        frontend_env["VITE_BACKEND_URL"] = self.tunnel_url if self.tunnel_url else f"http://{self.host_ip}:{self.backend_port}"
+                        frontend_env["VITE_BACKEND_PORT"] = str(self.backend_port)
+                        frontend_cmd = [npm_executable, "run", "preview", "--", "--host", "0.0.0.0", "--port", str(self.frontend_port)]
+                        new_p = subprocess.Popen(frontend_cmd, cwd="frontend", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=frontend_env, shell=False)
+                        self.process_manager.add_process("Frontend", new_p)
+                        self.logger.info("Frontend restarted")
+                    else:
+                        self.logger.warning(f"Restart not supported for '{name}' without captured command")
+            else:
+                self.logger.error(f"Unknown process action: {action}")
+        except Exception as e:
+            self.logger.error(f"Process action error: {e}")
     
     def _cleanup_gui(self):
         """Cleanup when GUI window is closed"""
@@ -3441,6 +3522,14 @@ export default defineConfig({{
                 tunnel_status = "Running" if self.tunnel_url else "Not started"
                 
                 self._update_gui_status(backend_status, frontend_status, tunnel_status)
+                # Enrich dashboard (if available) with table + logs
+                try:
+                    if hasattr(self.gui_window, "update_process_status"):
+                        self.gui_window.update_process_status(status)
+                    if hasattr(self.gui_window, "append_process_logs"):
+                        self.gui_window.append_process_logs(status)
+                except Exception as sub_e:
+                    self.logger.debug(f"Dashboard enrichment error: {sub_e}")
                 
                 time.sleep(2)  # Update every 2 seconds
             except Exception as e:
