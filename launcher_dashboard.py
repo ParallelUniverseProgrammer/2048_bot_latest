@@ -88,7 +88,7 @@ class LauncherDashboard:
         self.window = ctk.CTk()
         self.window.title("2048 Bot — Launcher Dashboard")
         self.window.geometry("1100x720")
-        self.window.minsize(980, 620)
+        self.window.minsize(900, 560)
         # Allow resize
         self.window.resizable(True, True)
 
@@ -119,9 +119,15 @@ class LauncherDashboard:
         self._prefs_path = Path("launcher_ui_prefs.json")
         self._prefs = {}
         self._prefs_snapshot = {}
+        # UI state
+        self._sort_state: Dict[str, bool] = {}
+        self._debounce_job = None
+        self._auto_scroll_logs = tk.BooleanVar(value=True)
+        self._pause_logs = tk.BooleanVar(value=False)
 
         # Grid layout: header, body (paned), logs, footer
-        self.window.grid_rowconfigure(1, weight=1)
+        # Allocate more space to the body (processes + QR) than logs
+        self.window.grid_rowconfigure(1, weight=2)
         self.window.grid_rowconfigure(2, weight=1)
         self.window.grid_rowconfigure(3, weight=0)
         self.window.grid_columnconfigure(0, weight=1)
@@ -146,7 +152,7 @@ class LauncherDashboard:
 
         # Title and status chips
         title_row = ctk.CTkFrame(header, fg_color="transparent")
-        title_row.grid(row=0, column=0, sticky="ew", padx=12, pady=(6, 10))
+        title_row.grid(row=0, column=0, sticky="ew", padx=12, pady=(6, 8))
         title_row.grid_columnconfigure(0, weight=1)
 
         title = ctk.CTkLabel(title_row, text="2048 Bot Launcher Dashboard", font=ctk.CTkFont(size=20, weight="bold"))
@@ -162,7 +168,7 @@ class LauncherDashboard:
 
         # Status chips
         chips = ctk.CTkFrame(header)
-        chips.grid(row=1, column=0, sticky="ew", pady=(12, 10), padx=12)
+        chips.grid(row=1, column=0, sticky="ew", pady=(8, 8), padx=12)
         for i in range(6):
             chips.grid_columnconfigure(i, weight=1)
 
@@ -175,13 +181,13 @@ class LauncherDashboard:
 
         # Progress + error line
         prog_row = ctk.CTkFrame(header, fg_color="transparent")
-        prog_row.grid(row=2, column=0, sticky="ew", pady=(16, 8), padx=12)
+        prog_row.grid(row=2, column=0, sticky="ew", pady=(12, 8), padx=12)
         prog_row.grid_columnconfigure(1, weight=1)
 
         self.lbl_step = ctk.CTkLabel(prog_row, text="Initializing…", font=ctk.CTkFont(size=13, weight="bold"))
         self.lbl_step.grid(row=0, column=0, padx=(0, 14))
         # Smooth progress widget (replaces glitchy default)
-        self.progress = _SmoothProgress(prog_row, height=16)
+        self.progress = _SmoothProgress(prog_row, height=14)
         self.progress.grid(row=0, column=1, sticky="ew", padx=(0, 6))
 
         self.lbl_error = ctk.CTkLabel(header, text="", text_color="#f87171", font=ctk.CTkFont(size=12))
@@ -209,16 +215,18 @@ class LauncherDashboard:
         # Paned body for resizable split
         body = tk.PanedWindow(self.window, orient='horizontal', sashwidth=6, bg='#0b1220', bd=0, relief='flat')
         body.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 6))
+        self._body_paned = body
 
         # Processes panel
         proc_panel = ctk.CTkFrame(body)
-        proc_panel.grid_rowconfigure(1, weight=1)
+        # Table should be wide and short
+        proc_panel.grid_rowconfigure(1, weight=0)
         proc_panel.grid_columnconfigure(0, weight=1)
-        body.add(proc_panel, minsize=420, stretch='always')
+        body.add(proc_panel, minsize=380, stretch='always')
 
         # Processes header with action bar
         header_row = ctk.CTkFrame(proc_panel, fg_color="transparent")
-        header_row.grid(row=0, column=0, sticky="ew", padx=14, pady=(16, 10))
+        header_row.grid(row=0, column=0, sticky="ew", padx=14, pady=(10, 8))
         header_row.grid_columnconfigure(0, weight=1)
         header = ctk.CTkLabel(header_row, text="Processes", font=ctk.CTkFont(size=14, weight="bold"))
         header.grid(row=0, column=0, sticky="w", padx=6)
@@ -228,7 +236,7 @@ class LauncherDashboard:
         self.proc_filter_var.trace_add('write', lambda *_: self._apply_process_filter())
         # Compact actions
         actions_bar = ctk.CTkFrame(proc_panel, fg_color="transparent")
-        actions_bar.grid(row=2, column=0, sticky="ew", padx=14, pady=(2, 12))
+        actions_bar.grid(row=2, column=0, sticky="ew", padx=14, pady=(2, 10))
         actions_bar.grid_columnconfigure(0, weight=1)
         btn_term = ctk.CTkButton(actions_bar, text="Terminate", width=90, command=lambda: self._proc_action('terminate'))
         btn_kill = ctk.CTkButton(actions_bar, text="Kill", width=70, fg_color="#ef4444", hover_color="#dc2626", command=lambda: self._proc_action('kill'))
@@ -257,7 +265,8 @@ class LauncherDashboard:
         style.map("Dark.Treeview.Heading", background=[('active', '#0f172a')], relief=[('active', 'flat')])
 
         columns = ("name", "pid", "state", "cpu", "mem", "uptime", "port", "last_error")
-        self.proc_tree = ttk.Treeview(proc_panel, columns=columns, show="headings", height=12, style="Dark.Treeview")
+        # Fewer visible rows to keep the table short; it is typically ~2 rows
+        self.proc_tree = ttk.Treeview(proc_panel, columns=columns, show="headings", height=6, style="Dark.Treeview")
         headings = {
             "name": "Name",
             "pid": "PID",
@@ -289,8 +298,25 @@ class LauncherDashboard:
         self.proc_tree.tag_configure('odd', background='#0c182b')
         self.proc_tree.tag_configure('even', background='#0b1220')
 
+        # Context menu for processes
+        self._proc_menu = tk.Menu(self.proc_tree, tearoff=0)
+        try:
+            self._proc_menu.add_command(label="View Only Logs", command=self._proc_view_only_logs)
+            self._proc_menu.add_separator()
+            self._proc_menu.add_command(label="Terminate", command=lambda: self._proc_action('terminate'))
+            self._proc_menu.add_command(label="Kill", command=lambda: self._proc_action('kill'))
+            self._proc_menu.add_command(label="Restart", command=lambda: self._proc_action('restart'))
+            self._proc_menu.add_separator()
+            self._proc_menu.add_command(label="Copy Row", command=lambda: self._copy_proc_row())
+            self._proc_menu.add_command(label="Copy PID", command=lambda: self._copy_proc_pid())
+            self.proc_tree.bind("<Button-3>", self._show_proc_menu)
+            self.proc_tree.bind("<Double-1>", lambda e: self._proc_view_only_logs())
+        except Exception:
+            pass
+
         # Health / Network / QR panel (right)
         right_panel = ctk.CTkFrame(body)
+        # QR should take as much vertical space as feasible
         right_panel.grid_rowconfigure(0, weight=1)
         right_panel.grid_columnconfigure(0, weight=1)
         body.add(right_panel, minsize=460, stretch='always')
@@ -298,11 +324,8 @@ class LauncherDashboard:
         self.tabview = ctk.CTkTabview(right_panel, segmented_button_selected_color="#2563eb", segmented_button_unselected_color="#111827")
         self.tabview.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=(0, 14))
         tab_overview = self.tabview.add("Overview")
-        tab_qr = self.tabview.add("QR")
         tab_overview.grid_rowconfigure(1, weight=1)
         tab_overview.grid_columnconfigure(0, weight=1)
-        tab_qr.grid_rowconfigure(0, weight=1)
-        tab_qr.grid_columnconfigure(0, weight=1)
 
         sec_row = ctk.CTkFrame(tab_overview, fg_color="transparent")
         sec_row.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 10))
@@ -314,7 +337,7 @@ class LauncherDashboard:
 
         # Health exact values with actions
         health_box = ctk.CTkFrame(tab_overview)
-        health_box.grid(row=1, column=0, sticky="nsew", padx=16, pady=(4, 8))
+        health_box.grid(row=1, column=0, sticky="nsew", padx=16, pady=(2, 6))
         for i in range(2):
             health_box.grid_rowconfigure(i, weight=1)
         health_box.grid_columnconfigure(1, weight=1)
@@ -329,9 +352,17 @@ class LauncherDashboard:
         self.lbl_frontend_health = ctk.CTkLabel(health_box, text="Status: Unknown | Latency: — | Last: —", anchor="w")
         self.lbl_frontend_health.grid(row=1, column=1, sticky="ew", padx=12, pady=(6, 12))
 
+        # Enhance URL labels
+        try:
+            self._set_tooltip(self.lbl_backend_url, "Click to copy URL")
+            self._set_tooltip(self.lbl_frontend_url, "Click to copy URL")
+            self._bind_click_to_copy_urls()
+        except Exception:
+            pass
+
         # Latency sparklines
         spark_row = ctk.CTkFrame(tab_overview, fg_color="transparent")
-        spark_row.grid(row=2, column=0, sticky="ew", padx=16, pady=(6, 12))
+        spark_row.grid(row=2, column=0, sticky="ew", padx=16, pady=(4, 10))
         spark_row.grid_columnconfigure(0, weight=1)
         spark_row.grid_columnconfigure(1, weight=1)
         self.backend_spark = tk.Canvas(spark_row, height=40, bg="#0f172a", highlightthickness=0)
@@ -342,58 +373,80 @@ class LauncherDashboard:
 
         # Action buttons
         actions = ctk.CTkFrame(tab_overview, fg_color="transparent")
-        actions.grid(row=3, column=0, sticky="ew", padx=16, pady=(4, 14))
+        actions.grid(row=3, column=0, sticky="ew", padx=16, pady=(2, 12))
         actions.grid_columnconfigure(0, weight=1)
         actions.grid_columnconfigure(1, weight=1)
+        actions.grid_columnconfigure(2, weight=1)
         self.btn_open_frontend = ctk.CTkButton(actions, text="Open Frontend", command=self._open_frontend)
         self.btn_open_frontend.grid(row=0, column=0, sticky="ew", padx=(0, 10), pady=2)
         self.btn_open_docs = ctk.CTkButton(actions, text="Open API Docs", command=self._open_docs)
-        self.btn_open_docs.grid(row=0, column=1, sticky="ew", padx=(0, 0), pady=2)
+        self.btn_open_docs.grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=2)
+        self.btn_show_qr = ctk.CTkButton(actions, text="Show QR Code", command=self._open_qr_overlay)
+        self.btn_show_qr.grid(row=0, column=2, sticky="ew", padx=(0, 0), pady=2)
         # QR tab content (Canvas-based, fills area, keeps perfect square)
-        qr_box = ctk.CTkFrame(tab_qr)
-        qr_box.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
-        qr_box.grid_rowconfigure(0, weight=1)
-        qr_box.grid_columnconfigure(0, weight=1)
-        self.qr_canvas = tk.Canvas(qr_box, bg="#0f172a", highlightthickness=0)
-        self.qr_canvas.grid(row=0, column=0, sticky="nsew")
         self._qr_url: Optional[str] = None
-        self._qr_photo = None
-        # Redraw QR on any resize
-        self.qr_canvas.bind("<Configure>", lambda e: self._render_qr_to_canvas())
+        self._qr_overlay = None
+        self._qr_overlay_canvas = None
+        self._qr_overlay_photo = None
+        # Remember tab changes
+        try:
+            self.tabview._segmented_button.configure(command=self._on_tab_changed)
+        except Exception:
+            pass
 
     def _build_logs(self):
         logs_panel = ctk.CTkFrame(self.window)
-        logs_panel.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 16))
+        logs_panel.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 12))
         logs_panel.grid_rowconfigure(1, weight=1)
         logs_panel.grid_columnconfigure(0, weight=1)
 
         header = ctk.CTkFrame(logs_panel, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 10))
+        header.grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 8))
         header.grid_columnconfigure(0, weight=1)
 
         lbl = ctk.CTkLabel(header, text="Logs", font=ctk.CTkFont(size=14, weight="bold"))
         lbl.grid(row=0, column=0, sticky="w", padx=(2, 8))
 
-        # Filters
+        # Filters and controls
         self.log_level_var = tk.StringVar(value="ALL")
         self.process_filter_var = tk.StringVar(value="ALL")
         level_menu = ctk.CTkOptionMenu(header, values=["ALL", "INFO", "WARNING", "ERROR", "DEBUG"], variable=self.log_level_var)
         level_menu.grid(row=0, column=1, padx=(8, 8))
         self.log_search_var = tk.StringVar()
         self.log_search = ctk.CTkEntry(header, placeholder_text="Filter text (regex)", textvariable=self.log_search_var, width=240)
-        self.log_search.grid(row=0, column=2, padx=(8, 2))
+        self.log_search.grid(row=0, column=2, padx=(8, 8))
+
+        # Pause / Auto-scroll toggles
+        try:
+            chk_pause = ctk.CTkCheckBox(header, text="Pause", variable=self._pause_logs)
+            chk_pause.grid(row=0, column=3, padx=(8, 4))
+            chk_autoscroll = ctk.CTkCheckBox(header, text="Auto-scroll", variable=self._auto_scroll_logs)
+            chk_autoscroll.grid(row=0, column=4, padx=(4, 8))
+        except Exception:
+            pass
+
+        # Log actions
+        try:
+            btn_clear = ctk.CTkButton(header, text="Clear", width=70, command=self._clear_logs)
+            btn_clear.grid(row=0, column=5, padx=(4, 4))
+            btn_export = ctk.CTkButton(header, text="Export", width=80, command=self._export_logs)
+            btn_export.grid(row=0, column=6, padx=(4, 2))
+        except Exception:
+            pass
 
         # Text box
-        self.log_text = ctk.CTkTextbox(logs_panel, wrap="none", height=220)
+        self.log_text = ctk.CTkTextbox(logs_panel, wrap="none", height=160)
         self.log_text.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 8))
         self.log_text.configure(state="disabled")
         # Log buffer for export
         self._log_buffer: list[str] = []
 
-        # Bind resize to keep QR scaled and remember last tab
+        # Keyboard shortcuts
         try:
-            self.qr_container.bind("<Configure>", lambda e: self._resize_qr_if_present())
-            self.tabview._segmented_button.configure(command=self._on_tab_changed)
+            self.window.bind_all('<Control-f>', lambda e: self.log_search.focus_set())
+            self.window.bind_all('<Control-l>', lambda e: self._clear_logs())
+            self.window.bind_all('<Control-e>', lambda e: self._export_logs())
+            self.window.bind_all('<Control-s>', lambda e: self._save_health_snapshot())
         except Exception:
             pass
         # Footer bar (status hint)
@@ -658,9 +711,13 @@ class LauncherDashboard:
             self.lbl_frontend_url.configure(text=f"Frontend: {frontend_url}")
             self._health_targets["backend"] = backend_url
             self._health_targets["frontend"] = frontend_url
-            # Store URL and trigger canvas render
+            # Store URL and update overlay if visible
             self._qr_url = frontend_url
-            self._render_qr_to_canvas()
+            try:
+                if self._qr_overlay is not None:
+                    self._render_qr_overlay()
+            except Exception:
+                pass
         except Exception as e:
             self.logger.error(f"show_access_info failed: {e}")
 
@@ -758,7 +815,7 @@ class LauncherDashboard:
     def _debounced_capture(self):
         try:
             if hasattr(self, '_debounce_job') and self._debounce_job:
-                self.after_cancel(self._debounce_job)
+                self.window.after_cancel(self._debounce_job)
         except Exception:
             pass
         try:
@@ -798,48 +855,114 @@ class LauncherDashboard:
         except Exception:
             pass
 
-    # ---------- QR Canvas rendering ----------
-    def _render_qr_to_canvas(self):
+    # ---------- QR Overlay rendering ----------
+    def _open_qr_overlay(self):
         try:
             if not (self._qr_url and qrcode and Image is not None and ImageTk is not None):
-                # Show placeholder text if nothing to render
-                self.qr_canvas.delete("all")
-                w = max(0, int(self.qr_canvas.winfo_width()))
-                h = max(0, int(self.qr_canvas.winfo_height()))
-                self.qr_canvas.create_text(w//2, h//2, text="QR will appear when ready", fill="#9ca3af")
+                self._append_log("Launcher", "WARNING", "QR unavailable: missing URL or QR/image libs")
                 return
-            cw = max(100, int(self.qr_canvas.winfo_width()))
-            ch = max(100, int(self.qr_canvas.winfo_height()))
-            size = max(120, min(cw, ch) - 32)
-            # Generate crisp QR
+            if self._qr_overlay is not None:
+                try:
+                    self._qr_overlay.lift()
+                    return
+                except Exception:
+                    self._qr_overlay = None
+            # Create overlay window sized to main window
+            top = ctk.CTkToplevel(self.window)
+            top.overrideredirect(True)
+            try:
+                top.attributes("-topmost", True)
+                top.attributes("-alpha", 0.96)
+            except Exception:
+                pass
+            # Place over the main window
+            x = self.window.winfo_rootx()
+            y = self.window.winfo_rooty()
+            w = self.window.winfo_width()
+            h = self.window.winfo_height()
+            if w <= 1 or h <= 1:
+                self.window.update_idletasks()
+                w = self.window.winfo_width()
+                h = self.window.winfo_height()
+            top.geometry(f"{max(300,w)}x{max(200,h)}+{x}+{y}")
+            # Background frame capturing clicks
+            bg = ctk.CTkFrame(top, fg_color="#0b1220")
+            bg.pack(fill="both", expand=True)
+            # Content panel centered
+            panel = ctk.CTkFrame(bg, corner_radius=12)
+            panel.place(relx=0.5, rely=0.5, anchor="center")
+            # Canvas for QR
+            cvs = tk.Canvas(panel, bg="#0f172a", highlightthickness=0)
+            cvs.grid(row=0, column=0, padx=16, pady=16)
+            # Close button (little x)
+            btn_close = ctk.CTkButton(panel, text="×", width=28, command=self._close_qr_overlay)
+            btn_close.grid(row=0, column=1, padx=(0, 10), pady=10, sticky="ne")
+            # Save refs
+            self._qr_overlay = top
+            self._qr_overlay_canvas = cvs
+            # Close when clicking outside the panel (on background)
+            def on_bg_click(event):
+                try:
+                    # If click widget is background (not inside panel), close
+                    if event.widget == bg:
+                        self._close_qr_overlay()
+                except Exception:
+                    pass
+            bg.bind("<Button-1>", on_bg_click)
+            # Redraw on resize
+            top.bind("<Configure>", lambda e: self._render_qr_overlay())
+            panel.bind("<Configure>", lambda e: self._render_qr_overlay())
+            cvs.bind("<Configure>", lambda e: self._render_qr_overlay())
+            # Initial render and modal grab
+            self._render_qr_overlay()
+            try:
+                top.grab_set()
+            except Exception:
+                pass
+        except Exception as e:
+            self.logger.error(f"Open QR overlay failed: {e}")
+
+    def _close_qr_overlay(self):
+        try:
+            if self._qr_overlay is not None:
+                try:
+                    self._qr_overlay.grab_release()
+                except Exception:
+                    pass
+                self._qr_overlay.destroy()
+        finally:
+            self._qr_overlay = None
+            self._qr_overlay_canvas = None
+            self._qr_overlay_photo = None
+
+    def _render_qr_overlay(self):
+        try:
+            if not (self._qr_overlay_canvas and self._qr_url and qrcode and Image is not None and ImageTk is not None):
+                return
+            cw = max(100, int(self._qr_overlay_canvas.winfo_width()))
+            ch = max(100, int(self._qr_overlay_canvas.winfo_height()))
+            # Determine a big square inside canvas
+            size = max(220, min(cw, ch) - 32)
             qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=1, border=2)
             qr.add_data(self._qr_url)
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white")
             img = img.resize((size, size), Image.NEAREST)
-            # Center on canvas
-            self.qr_canvas.delete("all")
+            self._qr_overlay_canvas.delete("all")
             photo = ImageTk.PhotoImage(img)
-            self._qr_photo = photo  # hold reference
+            self._qr_overlay_photo = photo
             x = cw // 2
             y = ch // 2
             # Background plate
-            self.qr_canvas.create_rectangle(x - size//2 - 12, y - size//2 - 12, x + size//2 + 12, y + size//2 + 12, fill="#0b1220", outline="")
-            self.qr_canvas.create_image(x, y, image=photo)
-        except Exception:
-            # Fallback to label text
-            try:
-                self.qr_canvas.delete("all")
-                w = max(0, int(self.qr_canvas.winfo_width()))
-                h = max(0, int(self.qr_canvas.winfo_height()))
-                self.qr_canvas.create_text(w//2, h//2, text="QR unavailable", fill="#9ca3af")
-            except Exception:
-                pass
+            self._qr_overlay_canvas.create_rectangle(x - size//2 - 12, y - size//2 - 12, x + size//2 + 12, y + size//2 + 12, fill="#0b1220", outline="")
+            self._qr_overlay_canvas.create_image(x, y, image=photo)
+        except Exception as e:
+            self.logger.error(f"Render QR overlay failed: {e}")
 
     def show_error(self, error: str):
         try:
             self.lbl_error.configure(text=f"Error: {error}")
-            self.progress.configure(progress_color="#ef4444")
+            self.progress.set_color("#ef4444")
             self.window.update_idletasks()
         except Exception as e:
             self.logger.error(f"show_error failed: {e}")
@@ -847,7 +970,7 @@ class LauncherDashboard:
     def hide_error(self):
         try:
             self.lbl_error.configure(text="")
-            self.progress.configure(progress_color="#3b82f6")
+            self.progress.set_color("#3b82f6")
             self.window.update_idletasks()
         except Exception as e:
             self.logger.error(f"hide_error failed: {e}")
@@ -996,19 +1119,20 @@ class LauncherDashboard:
                 except Exception:
                     # invalid regex → show nothing until corrected
                     return
+            self._log_buffer.append(line)
+            if self._pause_logs.get():
+                return
             self.log_text.configure(state="normal")
             self.log_text.insert("end", line)
-            self._log_buffer.append(line)
             try:
-                # Tag last line with color
-                end_index = self.log_text.index('end-1c')
-                start_index = f"{float(end_index.split('.')[0]) - 1}.0"
+                # Tag last inserted line with color
                 tag_name = f"lvl_{level.lower()}"
                 self.log_text.tag_config(tag_name, foreground=color)
-                self.log_text.tag_add(tag_name, start_index, 'end-1c')
+                self.log_text.tag_add(tag_name, 'end-2l linestart', 'end-1l lineend')
             except Exception:
                 pass
-            self.log_text.see("end")
+            if self._auto_scroll_logs.get():
+                self.log_text.see("end")
             self.log_text.configure(state="disabled")
         except Exception as e:
             self.logger.error(f"append_log failed: {e}")
@@ -1030,6 +1154,11 @@ class LauncherDashboard:
 
         t = threading.Thread(target=worker, daemon=True)
         t.start()
+        # Favor a larger right pane (QR) by default when first shown
+        try:
+            self.window.after(100, self._set_initial_pane_split)
+        except Exception:
+            pass
 
     def _poll_health_once(self, key: str):
         url = self._health_targets.get(key)
@@ -1062,12 +1191,24 @@ class LauncherDashboard:
             stats = self._health_stats[key]
             last_str = stats["last"].strftime("%H:%M:%S") if stats["last"] else "—"
             lat_str = f"{stats['latency_ms']:.1f} ms" if stats["latency_ms"] is not None else "—"
+            # Latency color coding
+            color = None
+            try:
+                ms = stats['latency_ms'] or 0
+                if ms <= 200:
+                    color = "#22c55e"  # green
+                elif ms <= 700:
+                    color = "#f59e0b"  # amber
+                else:
+                    color = "#ef4444"  # red
+            except Exception:
+                pass
             if key == "backend":
-                self._update_chip_value(self._chip_backend_latency, lat_str)
+                self._update_chip_value(self._chip_backend_latency, lat_str, color)
                 self.lbl_backend_health.configure(text=f"Status: {stats['status']} | Latency: {lat_str} | Last: {last_str}")
                 self._push_latency_point('backend', stats['latency_ms'])
             else:
-                self._update_chip_value(self._chip_frontend_latency, lat_str)
+                self._update_chip_value(self._chip_frontend_latency, lat_str, color)
                 self.lbl_frontend_health.configure(text=f"Status: {stats['status']} | Latency: {lat_str} | Last: {last_str}")
                 self._push_latency_point('frontend', stats['latency_ms'])
 
@@ -1085,6 +1226,15 @@ class LauncherDashboard:
             finally:
                 self.window.after(16, tick)  # ~60fps
         self.window.after(16, tick)
+
+    def _set_initial_pane_split(self):
+        try:
+            # Allocate ~60% to the right (QR), 40% to the left (table)
+            total = self._body_paned.winfo_width() or 1000
+            left = int(total * 0.4)
+            self._body_paned.sash_place(0, left, 1)
+        except Exception:
+            pass
 
     def _push_latency_point(self, key: str, ms: Optional[float]):
         if ms is None:
@@ -1117,6 +1267,69 @@ class LauncherDashboard:
             for off, col, wdt in ((1, '#0ea5e9', 3), (0, '#38bdf8', 1)):
                 shifted = [(x, y + off) for (x, y) in pts]
                 canvas.create_line(*sum(shifted, ()), fill=col, width=wdt, smooth=True)
+        # Axis overlay
+        try:
+            canvas.create_line(2, h-2, w-2, h-2, fill="#1f2937")
+            canvas.create_line(2, 2, 2, h-2, fill="#1f2937")
+        except Exception:
+            pass
+
+    # ---------- Extra UI actions ----------
+    def _on_tab_changed(self):
+        try:
+            self._store_current_prefs()
+        except Exception:
+            pass
+
+    def _clear_logs(self):
+        try:
+            self.log_text.configure(state="normal")
+            self.log_text.delete('1.0', 'end')
+            self.log_text.configure(state="disabled")
+        except Exception:
+            pass
+
+    def _copy_to_clipboard(self, text: str):
+        try:
+            self.window.clipboard_clear()
+            self.window.clipboard_append(text)
+        except Exception:
+            pass
+
+    def _copy_proc_row(self):
+        try:
+            sel = self.proc_tree.selection()
+            if not sel:
+                return
+            values = self.proc_tree.item(sel[0], 'values')
+            self._copy_to_clipboard("\t".join(str(v) for v in values))
+        except Exception:
+            pass
+
+    def _copy_proc_pid(self):
+        try:
+            sel = self.proc_tree.selection()
+            if not sel:
+                return
+            values = self.proc_tree.item(sel[0], 'values')
+            pid = values[1] if values else ""
+            self._copy_to_clipboard(str(pid))
+        except Exception:
+            pass
+
+    # Click-to-copy URLs
+    def _bind_click_to_copy_urls(self):
+        try:
+            def copy_text_from(label: ctk.CTkLabel):
+                txt = label.cget('text')
+                # Extract URL part after colon
+                url = txt.split(':', 1)[1].strip() if ':' in txt else txt
+                self._copy_to_clipboard(url)
+                self._append_log('Launcher', 'INFO', f"Copied URL to clipboard: {url}")
+            self.lbl_backend_url.bind('<Button-1>', lambda e: copy_text_from(self.lbl_backend_url))
+            self.lbl_frontend_url.bind('<Button-1>', lambda e: copy_text_from(self.lbl_frontend_url))
+        except Exception:
+            pass
 
 
 class _SmoothProgress(ctk.CTkFrame):
