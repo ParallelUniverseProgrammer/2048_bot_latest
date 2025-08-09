@@ -46,6 +46,7 @@ try:
     import customtkinter as ctk
     import tkinter as tk
     from tkinter import ttk
+    from tkinter import font as tkfont
 except Exception as e:  # pragma: no cover
     raise RuntimeError(f"CustomTkinter is required for LauncherDashboard: {e}")
 
@@ -140,28 +141,28 @@ class LauncherDashboard:
     # ---------- UI Build ----------
     def _build_header(self):
         header = ctk.CTkFrame(self.window)
-        header.grid(row=0, column=0, sticky="nsew", padx=16, pady=(16, 10))
+        header.grid(row=0, column=0, sticky="nsew", padx=20, pady=(20, 14))
         header.grid_columnconfigure(0, weight=1)
 
         # Title and status chips
         title_row = ctk.CTkFrame(header, fg_color="transparent")
-        title_row.grid(row=0, column=0, sticky="ew", padx=4, pady=(0, 4))
+        title_row.grid(row=0, column=0, sticky="ew", padx=12, pady=(6, 10))
         title_row.grid_columnconfigure(0, weight=1)
 
         title = ctk.CTkLabel(title_row, text="2048 Bot Launcher Dashboard", font=ctk.CTkFont(size=20, weight="bold"))
-        title.grid(row=0, column=0, sticky="w")
+        title.grid(row=0, column=0, sticky="w", padx=(2, 12))
 
         btn_row = ctk.CTkFrame(title_row, fg_color="transparent")
         btn_row.grid(row=0, column=1, sticky="e")
 
         self.btn_stop = ctk.CTkButton(btn_row, text="Stop All", fg_color="#ef4444", hover_color="#dc2626", command=self._cb_stop)
-        self.btn_stop.grid(row=0, column=0, padx=(0, 10))
+        self.btn_stop.grid(row=0, column=0, padx=(0, 12), pady=2)
         self.btn_restart = ctk.CTkButton(btn_row, text="Restart", command=self._cb_restart)
-        self.btn_restart.grid(row=0, column=1)
+        self.btn_restart.grid(row=0, column=1, padx=(0, 2), pady=2)
 
         # Status chips
         chips = ctk.CTkFrame(header)
-        chips.grid(row=1, column=0, sticky="ew", pady=(10, 2), padx=2)
+        chips.grid(row=1, column=0, sticky="ew", pady=(12, 10), padx=12)
         for i in range(6):
             chips.grid_columnconfigure(i, weight=1)
 
@@ -174,32 +175,40 @@ class LauncherDashboard:
 
         # Progress + error line
         prog_row = ctk.CTkFrame(header, fg_color="transparent")
-        prog_row.grid(row=2, column=0, sticky="ew", pady=(12, 2), padx=2)
+        prog_row.grid(row=2, column=0, sticky="ew", pady=(16, 8), padx=12)
         prog_row.grid_columnconfigure(1, weight=1)
 
         self.lbl_step = ctk.CTkLabel(prog_row, text="Initializing…", font=ctk.CTkFont(size=13, weight="bold"))
-        self.lbl_step.grid(row=0, column=0, padx=(0, 12))
+        self.lbl_step.grid(row=0, column=0, padx=(0, 14))
         # Smooth progress widget (replaces glitchy default)
         self.progress = _SmoothProgress(prog_row, height=16)
-        self.progress.grid(row=0, column=1, sticky="ew")
+        self.progress.grid(row=0, column=1, sticky="ew", padx=(0, 6))
 
         self.lbl_error = ctk.CTkLabel(header, text="", text_color="#f87171", font=ctk.CTkFont(size=12))
-        self.lbl_error.grid(row=3, column=0, sticky="w", pady=(8, 2), padx=2)
+        self.lbl_error.grid(row=3, column=0, sticky="w", pady=(10, 2), padx=12)
 
     def _make_chip(self, parent: ctk.CTkFrame, col: int, label: str, value: str):
-        frame = ctk.CTkFrame(parent, corner_radius=10)
-        frame.grid(row=0, column=col, sticky="ew", padx=6)
-        frame.grid_columnconfigure(1, weight=1)
+        frame = ctk.CTkFrame(parent, corner_radius=12, border_width=1, border_color="#374151", fg_color="#0f172a")
+        frame.grid(row=0, column=col, sticky="ew", padx=8, pady=2)
+        frame.grid_columnconfigure(2, weight=1)
         dot = ctk.CTkLabel(frame, text="●", text_color="#6b7280", font=ctk.CTkFont(size=18, weight="bold"))
-        dot.grid(row=0, column=0, padx=8, pady=8, sticky="w")
-        lbl = ctk.CTkLabel(frame, text=f"{label}: {value}", font=ctk.CTkFont(size=12, weight="bold"))
-        lbl.grid(row=0, column=1, padx=(0, 12), pady=8, sticky="w")
-        return {"dot": dot, "label": lbl, "name": label}
+        dot.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        name_lbl = ctk.CTkLabel(frame, text=label, text_color="#9ca3af", font=ctk.CTkFont(size=11, weight="bold"))
+        name_lbl.grid(row=0, column=1, padx=(0, 8), pady=10, sticky="w")
+        value_lbl = ctk.CTkLabel(frame, text=value, font=ctk.CTkFont(size=12, weight="bold"))
+        value_lbl.grid(row=0, column=2, padx=(0, 12), pady=10, sticky="w")
+        chip = {"frame": frame, "dot": dot, "name_label": name_lbl, "value": value_lbl, "label": value_lbl, "name": label, "full_value_text": value}
+        try:
+            frame.bind("<Configure>", lambda e, ch=chip: self._reflow_chip(ch))
+            value_lbl.bind("<Configure>", lambda e, ch=chip: self._reflow_chip(ch))
+        except Exception:
+            pass
+        return chip
 
     def _build_body(self):
         # Paned body for resizable split
         body = tk.PanedWindow(self.window, orient='horizontal', sashwidth=6, bg='#0b1220', bd=0, relief='flat')
-        body.grid(row=1, column=0, sticky="nsew", padx=16)
+        body.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 6))
 
         # Processes panel
         proc_panel = ctk.CTkFrame(body)
@@ -209,24 +218,24 @@ class LauncherDashboard:
 
         # Processes header with action bar
         header_row = ctk.CTkFrame(proc_panel, fg_color="transparent")
-        header_row.grid(row=0, column=0, sticky="ew", padx=10, pady=(14, 8))
+        header_row.grid(row=0, column=0, sticky="ew", padx=14, pady=(16, 10))
         header_row.grid_columnconfigure(0, weight=1)
         header = ctk.CTkLabel(header_row, text="Processes", font=ctk.CTkFont(size=14, weight="bold"))
-        header.grid(row=0, column=0, sticky="w", padx=4)
+        header.grid(row=0, column=0, sticky="w", padx=6)
         self.proc_filter_var = tk.StringVar()
         self.proc_filter = ctk.CTkEntry(header_row, placeholder_text="Filter processes (regex)", textvariable=self.proc_filter_var, width=220)
-        self.proc_filter.grid(row=0, column=1, sticky="e")
+        self.proc_filter.grid(row=0, column=1, sticky="e", padx=(8, 2))
         self.proc_filter_var.trace_add('write', lambda *_: self._apply_process_filter())
         # Compact actions
         actions_bar = ctk.CTkFrame(proc_panel, fg_color="transparent")
-        actions_bar.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 8))
+        actions_bar.grid(row=2, column=0, sticky="ew", padx=14, pady=(2, 12))
         actions_bar.grid_columnconfigure(0, weight=1)
         btn_term = ctk.CTkButton(actions_bar, text="Terminate", width=90, command=lambda: self._proc_action('terminate'))
         btn_kill = ctk.CTkButton(actions_bar, text="Kill", width=70, fg_color="#ef4444", hover_color="#dc2626", command=lambda: self._proc_action('kill'))
         btn_restart = ctk.CTkButton(actions_bar, text="Restart", width=90, command=lambda: self._proc_action('restart'))
-        btn_term.grid(row=0, column=1, padx=(0, 6))
-        btn_kill.grid(row=0, column=2, padx=(0, 6))
-        btn_restart.grid(row=0, column=3)
+        btn_term.grid(row=0, column=1, padx=(0, 10), pady=2)
+        btn_kill.grid(row=0, column=2, padx=(0, 10), pady=2)
+        btn_restart.grid(row=0, column=3, padx=(0, 2), pady=2)
 
         # Treeview for process table (ttk inside CTk)
         # Force dark theme by using a custom style to avoid white header/areas
@@ -273,8 +282,8 @@ class LauncherDashboard:
 
         vsb = ttk.Scrollbar(proc_panel, orient="vertical", command=self.proc_tree.yview)
         self.proc_tree.configure(yscrollcommand=vsb.set)
-        self.proc_tree.grid(row=1, column=0, sticky="nsew", padx=(10, 0), pady=(0, 10))
-        vsb.grid(row=1, column=1, sticky="ns", pady=(0, 10), padx=(0, 10))
+        self.proc_tree.grid(row=1, column=0, sticky="nsew", padx=(14, 0), pady=(0, 12))
+        vsb.grid(row=1, column=1, sticky="ns", pady=(0, 12), padx=(0, 14))
 
         # Row striping for readability
         self.proc_tree.tag_configure('odd', background='#0c182b')
@@ -287,7 +296,7 @@ class LauncherDashboard:
         body.add(right_panel, minsize=460, stretch='always')
         # Right panel as tabs to prevent QR from crowding health
         self.tabview = ctk.CTkTabview(right_panel, segmented_button_selected_color="#2563eb", segmented_button_unselected_color="#111827")
-        self.tabview.grid(row=0, column=0, sticky="nsew", padx=(10, 0), pady=(0, 12))
+        self.tabview.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=(0, 14))
         tab_overview = self.tabview.add("Overview")
         tab_qr = self.tabview.add("QR")
         tab_overview.grid_rowconfigure(1, weight=1)
@@ -296,53 +305,53 @@ class LauncherDashboard:
         tab_qr.grid_columnconfigure(0, weight=1)
 
         sec_row = ctk.CTkFrame(tab_overview, fg_color="transparent")
-        sec_row.grid(row=0, column=0, sticky="ew", padx=6, pady=(10, 6))
+        sec_row.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 10))
         sec_row.grid_columnconfigure(0, weight=1)
         sec_title = ctk.CTkLabel(sec_row, text="Health & Network", font=ctk.CTkFont(size=14, weight="bold"))
-        sec_title.grid(row=0, column=0, sticky="w", padx=4)
+        sec_title.grid(row=0, column=0, sticky="w", padx=6)
         self.btn_snapshot = ctk.CTkButton(sec_row, text="Save Snapshot", width=120, command=self._save_health_snapshot)
-        self.btn_snapshot.grid(row=0, column=1, sticky="e")
+        self.btn_snapshot.grid(row=0, column=1, sticky="e", padx=(8, 2))
 
         # Health exact values with actions
         health_box = ctk.CTkFrame(tab_overview)
-        health_box.grid(row=1, column=0, sticky="nsew", padx=12)
+        health_box.grid(row=1, column=0, sticky="nsew", padx=16, pady=(4, 8))
         for i in range(2):
             health_box.grid_rowconfigure(i, weight=1)
         health_box.grid_columnconfigure(1, weight=1)
 
         self.lbl_backend_url = ctk.CTkLabel(health_box, text="Backend: —", anchor="w")
-        self.lbl_backend_url.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
+        self.lbl_backend_url.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 2))
         self.lbl_backend_health = ctk.CTkLabel(health_box, text="Status: Unknown | Latency: — | Last: —", anchor="w")
-        self.lbl_backend_health.grid(row=0, column=1, sticky="ew", padx=10, pady=(10, 0))
+        self.lbl_backend_health.grid(row=0, column=1, sticky="ew", padx=12, pady=(12, 2))
 
         self.lbl_frontend_url = ctk.CTkLabel(health_box, text="Frontend: —", anchor="w")
-        self.lbl_frontend_url.grid(row=1, column=0, sticky="ew", padx=10, pady=(6, 10))
+        self.lbl_frontend_url.grid(row=1, column=0, sticky="ew", padx=12, pady=(6, 12))
         self.lbl_frontend_health = ctk.CTkLabel(health_box, text="Status: Unknown | Latency: — | Last: —", anchor="w")
-        self.lbl_frontend_health.grid(row=1, column=1, sticky="ew", padx=10, pady=(6, 10))
+        self.lbl_frontend_health.grid(row=1, column=1, sticky="ew", padx=12, pady=(6, 12))
 
         # Latency sparklines
         spark_row = ctk.CTkFrame(tab_overview, fg_color="transparent")
-        spark_row.grid(row=2, column=0, sticky="ew", padx=12, pady=(2, 10))
+        spark_row.grid(row=2, column=0, sticky="ew", padx=16, pady=(6, 12))
         spark_row.grid_columnconfigure(0, weight=1)
         spark_row.grid_columnconfigure(1, weight=1)
         self.backend_spark = tk.Canvas(spark_row, height=40, bg="#0f172a", highlightthickness=0)
         self.frontend_spark = tk.Canvas(spark_row, height=40, bg="#0f172a", highlightthickness=0)
-        self.backend_spark.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        self.frontend_spark.grid(row=0, column=1, sticky="ew")
+        self.backend_spark.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        self.frontend_spark.grid(row=0, column=1, sticky="ew", padx=(0, 0))
         self._latency_history = {"backend": [], "frontend": []}
 
         # Action buttons
         actions = ctk.CTkFrame(tab_overview, fg_color="transparent")
-        actions.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 12))
+        actions.grid(row=3, column=0, sticky="ew", padx=16, pady=(4, 14))
         actions.grid_columnconfigure(0, weight=1)
         actions.grid_columnconfigure(1, weight=1)
         self.btn_open_frontend = ctk.CTkButton(actions, text="Open Frontend", command=self._open_frontend)
-        self.btn_open_frontend.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.btn_open_frontend.grid(row=0, column=0, sticky="ew", padx=(0, 10), pady=2)
         self.btn_open_docs = ctk.CTkButton(actions, text="Open API Docs", command=self._open_docs)
-        self.btn_open_docs.grid(row=0, column=1, sticky="ew")
+        self.btn_open_docs.grid(row=0, column=1, sticky="ew", padx=(0, 0), pady=2)
         # QR tab content (Canvas-based, fills area, keeps perfect square)
         qr_box = ctk.CTkFrame(tab_qr)
-        qr_box.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        qr_box.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
         qr_box.grid_rowconfigure(0, weight=1)
         qr_box.grid_columnconfigure(0, weight=1)
         self.qr_canvas = tk.Canvas(qr_box, bg="#0f172a", highlightthickness=0)
@@ -354,29 +363,29 @@ class LauncherDashboard:
 
     def _build_logs(self):
         logs_panel = ctk.CTkFrame(self.window)
-        logs_panel.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 10))
+        logs_panel.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 16))
         logs_panel.grid_rowconfigure(1, weight=1)
         logs_panel.grid_columnconfigure(0, weight=1)
 
         header = ctk.CTkFrame(logs_panel, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=4, pady=(8, 6))
+        header.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 10))
         header.grid_columnconfigure(0, weight=1)
 
         lbl = ctk.CTkLabel(header, text="Logs", font=ctk.CTkFont(size=14, weight="bold"))
-        lbl.grid(row=0, column=0, sticky="w")
+        lbl.grid(row=0, column=0, sticky="w", padx=(2, 8))
 
         # Filters
         self.log_level_var = tk.StringVar(value="ALL")
         self.process_filter_var = tk.StringVar(value="ALL")
         level_menu = ctk.CTkOptionMenu(header, values=["ALL", "INFO", "WARNING", "ERROR", "DEBUG"], variable=self.log_level_var)
-        level_menu.grid(row=0, column=1, padx=(0, 6))
+        level_menu.grid(row=0, column=1, padx=(8, 8))
         self.log_search_var = tk.StringVar()
         self.log_search = ctk.CTkEntry(header, placeholder_text="Filter text (regex)", textvariable=self.log_search_var, width=240)
-        self.log_search.grid(row=0, column=2)
+        self.log_search.grid(row=0, column=2, padx=(8, 2))
 
         # Text box
         self.log_text = ctk.CTkTextbox(logs_panel, wrap="none", height=220)
-        self.log_text.grid(row=1, column=0, sticky="nsew")
+        self.log_text.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 8))
         self.log_text.configure(state="disabled")
         # Log buffer for export
         self._log_buffer: list[str] = []
@@ -390,9 +399,9 @@ class LauncherDashboard:
         # Footer bar (status hint)
         try:
             footer = ctk.CTkFrame(self.window, fg_color="transparent")
-            footer.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 12))
+            footer.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 16))
             hint = ctk.CTkLabel(footer, text="Right-click a process for actions • Drag the splitter to resize panels", text_color="#9ca3af")
-            hint.grid(row=0, column=0, sticky="w")
+            hint.grid(row=0, column=0, sticky="w", padx=(2, 2), pady=(4, 2))
         except Exception:
             pass
 
@@ -462,7 +471,11 @@ class LauncherDashboard:
         try:
             self._render_chip(self._chip_backend, backend_status)
             self._render_chip(self._chip_frontend, frontend_status)
-            self._render_chip(self._chip_tunnel, tunnel_status)
+            # Tunnel special cases for clarity
+            ts = (tunnel_status or "").strip()
+            if ts.lower() in ("off", "disabled", "not enabled", "turned off"):
+                ts = "Disabled"
+            self._render_chip(self._chip_tunnel, ts)
         except Exception as e:
             self.logger.error(f"update_status failed: {e}")
 
@@ -842,15 +855,116 @@ class LauncherDashboard:
     # ---------- Internal helpers ----------
     def _render_chip(self, chip: Dict[str, Any], status_text: str):
         text_lower = (status_text or "").lower()
-        color = "#6b7280"  # gray
-        if "running" in text_lower or "ready" in text_lower:
-            color = "#22c55e"  # green
-        elif "starting" in text_lower or "connecting" in text_lower:
-            color = "#f59e0b"  # orange
-        elif "error" in text_lower or "failed" in text_lower or "stopped" in text_lower:
-            color = "#ef4444"  # red
-        chip["dot"].configure(text_color=color)
-        chip["label"].configure(text=f"{chip['name']}: {status_text}")
+        # Defaults (neutral)
+        dot_color = "#6b7280"
+        bg_color = "#0f172a"
+        border_color = "#374151"
+        value_color = "#e5e7eb"
+        name_color = "#9ca3af"
+
+        # Disabled state distinct from stopped/error
+        is_disabled = any(k in text_lower for k in ("disabled", "turned off", "off", "not enabled"))
+        if any(k in text_lower for k in ("running", "ready")):
+            dot_color = "#22c55e"
+            bg_color = "#052e1a"
+            border_color = "#14532d"
+        elif any(k in text_lower for k in ("starting", "connecting", "booting", "initializing")):
+            dot_color = "#f59e0b"
+            bg_color = "#3a2505"
+            border_color = "#92400e"
+        elif is_disabled:
+            dot_color = "#64748b"  # slate
+            bg_color = "#0b1220"
+            border_color = "#334155"
+            name_color = "#94a3b8"
+            value_color = "#cbd5e1"
+            # Normalize text for clarity
+            status_text = "Disabled"
+        elif any(k in text_lower for k in ("error", "failed", "stopped", "crashed")):
+            dot_color = "#ef4444"
+            bg_color = "#3b0a0a"
+            border_color = "#7f1d1d"
+
+        chip["dot"].configure(text_color=dot_color)
+        # Maintain name on left, status/value on right
+        try:
+            chip["frame"].configure(fg_color=bg_color, border_color=border_color)
+        except Exception:
+            pass
+        chip.get("name_label", chip.get("label")).configure(text=chip["name"], text_color=name_color)
+        self._update_chip_value(chip, status_text, value_color)
+
+    def _update_chip_value(self, chip: Dict[str, Any], text: str, text_color: Optional[str] = None):
+        try:
+            chip["full_value_text"] = text
+            if text_color:
+                chip["value"].configure(text_color=text_color)
+            self._reflow_chip(chip)
+        except Exception:
+            try:
+                chip["value"].configure(text=text)
+            except Exception:
+                pass
+
+    def _reflow_chip(self, chip: Dict[str, Any]):
+        try:
+            frame = chip["frame"]
+            name_lbl = chip["name_label"]
+            dot = chip["dot"]
+            value_lbl = chip["value"]
+            # Ensure geometry info is available
+            frame_w = int(frame.winfo_width() or 0)
+            if frame_w <= 1:
+                return
+            left_w = int(dot.winfo_width() or 0) + int(name_lbl.winfo_width() or 0)
+            # Internal paddings and gutters
+            reserved = left_w + 10 + 8 + 12 + 12
+            avail = max(20, frame_w - reserved)
+            full_text = chip.get("full_value_text") or value_lbl.cget("text") or ""
+            was_trunc = self._ellipsize_to_width(value_lbl, full_text, avail)
+            self._set_tooltip(value_lbl, full_text if was_trunc else None)
+        except Exception:
+            pass
+
+    def _ellipsize_to_width(self, label_widget: Any, full_text: str, max_width_px: int) -> bool:
+        try:
+            f = tkfont.Font(root=self.window, font=label_widget.cget("font"))
+        except Exception:
+            # Fallback: set text and hope layout handles it
+            label_widget.configure(text=full_text)
+            return False
+        if f.measure(full_text) <= max_width_px:
+            label_widget.configure(text=full_text)
+            return False
+        ellipsis = "…"
+        low, high = 0, len(full_text)
+        while low < high:
+            mid = (low + high) // 2
+            if f.measure(full_text[:mid] + ellipsis) <= max_width_px:
+                low = mid + 1
+            else:
+                high = mid
+        truncated = (full_text[: max(0, low - 1)] + ellipsis) if low > 0 else ellipsis
+        label_widget.configure(text=truncated)
+        return True
+
+    def _set_tooltip(self, widget: Any, text: Optional[str]):
+        try:
+            if not hasattr(self, "_tooltips"):
+                self._tooltips = {}
+            tip = self._tooltips.get(widget)
+            if text:
+                if tip is None:
+                    tip = _Tooltip(widget, text)
+                    self._tooltips[widget] = tip
+                else:
+                    tip.text = text
+            else:
+                if tip is not None:
+                    tip.hide()
+                self._tooltips.pop(widget, None)
+        except Exception:
+            pass
 
     def _infer_port_from_name(self, name: str) -> str:
         # This displays exact known defaults; the actual bound port is reflected by process info if provided by launcher
@@ -949,11 +1063,11 @@ class LauncherDashboard:
             last_str = stats["last"].strftime("%H:%M:%S") if stats["last"] else "—"
             lat_str = f"{stats['latency_ms']:.1f} ms" if stats["latency_ms"] is not None else "—"
             if key == "backend":
-                self._chip_backend_latency["label"].configure(text=f"API Latency: {lat_str}")
+                self._update_chip_value(self._chip_backend_latency, lat_str)
                 self.lbl_backend_health.configure(text=f"Status: {stats['status']} | Latency: {lat_str} | Last: {last_str}")
                 self._push_latency_point('backend', stats['latency_ms'])
             else:
-                self._chip_frontend_latency["label"].configure(text=f"UI Latency: {lat_str}")
+                self._update_chip_value(self._chip_frontend_latency, lat_str)
                 self.lbl_frontend_health.configure(text=f"Status: {stats['status']} | Latency: {lat_str} | Last: {last_str}")
                 self._push_latency_point('frontend', stats['latency_ms'])
 
@@ -1054,3 +1168,43 @@ class _SmoothProgress(ctk.CTkFrame):
 
 
 
+class _Tooltip:
+    """Simple tooltip that shows on hover. Hidden when no text or on leave."""
+    def __init__(self, widget: Any, text: str):
+        self.widget = widget
+        self.text = text
+        self._tipwin = None
+        try:
+            widget.bind("<Enter>", self._show)
+            widget.bind("<Leave>", self._hide)
+        except Exception:
+            pass
+
+    def _show(self, event=None):
+        if not self.text:
+            return
+        try:
+            if self._tipwin is not None:
+                self.hide()
+            x = self.widget.winfo_rootx() + 10
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+            self._tipwin = tw = tk.Toplevel(self.widget)
+            tw.wm_overrideredirect(True)
+            tw.wm_geometry(f"+{x}+{y}")
+            lbl = tk.Label(tw, text=self.text, justify=tk.LEFT,
+                           background="#111827", foreground="#e5e7eb",
+                           relief=tk.SOLID, borderwidth=1,
+                           font=("TkDefaultFont", 9))
+            lbl.pack(ipadx=6, ipady=4)
+        except Exception:
+            self._tipwin = None
+
+    def _hide(self, event=None):
+        self.hide()
+
+    def hide(self):
+        try:
+            if self._tipwin is not None:
+                self._tipwin.destroy()
+        finally:
+            self._tipwin = None
