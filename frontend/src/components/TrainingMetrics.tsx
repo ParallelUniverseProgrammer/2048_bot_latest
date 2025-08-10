@@ -1,10 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Clock, Target, TrendingUp, Timer, Zap, Scale, Activity, GitBranch, Compass, Flame, Thermometer } from 'lucide-react'
+import { 
+  Clock, Target, TrendingUp, Timer, Zap, Scale, Activity, GitBranch, Compass, Flame, Thermometer,
+  Gauge, Brain, CheckCircle, AlertTriangle
+} from 'lucide-react'
 import { useTrainingStore } from '../stores/trainingStore'
 
 const TrainingMetrics: React.FC = () => {
-  const { isTraining, getCurrentTrainingData } = useTrainingStore()
+  const { 
+    isTraining, 
+    getCurrentTrainingData,
+    lastPolicyLoss,
+    lastValueLoss,
+    lastEvaluation,
+    routerHistory,
+    currentEpisode,
+  } = useTrainingStore()
   const [currentElapsedTime, setCurrentElapsedTime] = useState(0)
   const [progressAnimation, setProgressAnimation] = useState(0)
 
@@ -48,79 +59,84 @@ const TrainingMetrics: React.FC = () => {
     return () => clearInterval(interval)
   }, [isTraining, currentTrainingData?.is_training_active])
 
-  // Helper function to format time duration
-  const formatTime = (seconds: number): string => {
-    if (seconds < 60) {
-      return `${Math.round(seconds)}s`
-    } else if (seconds < 3600) {
-      const minutes = Math.floor(seconds / 60)
-      const remainingSeconds = Math.round(seconds % 60)
+  // Helper function to format time duration (robust)
+  const formatTime = (seconds?: number | null): string => {
+    const s = Number(seconds)
+    if (!Number.isFinite(s) || s <= 0) return '—'
+    if (s < 60) return `${Math.round(s)}s`
+    if (s < 3600) {
+      const minutes = Math.floor(s / 60)
+      const remainingSeconds = Math.round(s % 60)
       return `${minutes}m ${remainingSeconds}s`
-    } else {
-      const hours = Math.floor(seconds / 3600)
-      const minutes = Math.floor((seconds % 3600) / 60)
-      return `${hours}h ${minutes}m`
     }
+    const hours = Math.floor(s / 3600)
+    const minutes = Math.floor((s % 3600) / 60)
+    return `${hours}h ${minutes}m`
   }
 
   // Helper function to format training speed
-  const formatSpeed = (speed: number): string => {
-    if (speed >= 1) {
-      return `${speed.toFixed(1)} eps/min`
-    } else {
-      return `${(speed * 60).toFixed(1)} eps/sec`
-    }
+  const formatSpeed = (speed?: number | null): string => {
+    const v = Number(speed)
+    if (!Number.isFinite(v) || v <= 0) return '—'
+    return `${v.toFixed(1)} ep/min`
   }
 
   // Calculate estimated time to next episode
   const getNextEpisodeEstimate = (): string => {
     if (!currentTrainingData?.next_episode_estimate || currentTrainingData.next_episode_estimate <= 0) {
-      return 'Calculating...'
+      return '—'
     }
     return formatTime(currentTrainingData.next_episode_estimate)
   }
 
-  // Derived dominance metrics from expert usage (fallback if backend fields absent)
-  const dominance = useMemo(() => {
-    const usage = currentTrainingData?.expert_usage as number[] | undefined
-    if (!usage || usage.length === 0) return { hhi: 0, dominance: 0, top1: 0 }
-    const sumSquares = usage.reduce((s, u) => s + u * u, 0)
-    const n = usage.length
+  // Router health based on history (stable dominance/entropy)
+  const routerHealth = useMemo(() => {
+    const last = routerHistory.length > 0 ? routerHistory[routerHistory.length - 1] : undefined
+    if (!last) return { entropy: 0, hhiNorm: 0, top1: 0, activeExperts: 0 }
+    const n = (last.usage?.length || 0) || 1
     const minHhi = 1 / n
-    const normHhi = Math.max(0, Math.min(1, (sumSquares - minHhi) / (1 - minHhi)))
-    const top1 = Math.max(...usage)
-    return { hhi: normHhi, dominance: normHhi, top1 }
-  }, [currentTrainingData?.expert_usage])
+    const hhiNorm = Math.max(0, Math.min(1, (last.hhi - minHhi) / (1 - minHhi)))
+    const top1 = Array.isArray(last.usage) && last.usage.length > 0 ? Math.max(...last.usage) : 0
+    return { entropy: last.entropy || 0, hhiNorm, top1, activeExperts: last.activeExperts || 0 }
+  }, [routerHistory])
 
-  const exploration = (currentTrainingData as any)?.exploration || {}
+  // Robust training loss with fallback to last known values
+  const trainingLoss = useMemo(() => {
+    const lossField = (currentTrainingData?.loss ?? null)
+    if (typeof lossField === 'number' && Number.isFinite(lossField)) return lossField
+    if (typeof lastPolicyLoss === 'number' && typeof lastValueLoss === 'number') {
+      return lastPolicyLoss + lastValueLoss
+    }
+    return null
+  }, [currentTrainingData?.loss, lastPolicyLoss, lastValueLoss])
+
+  // Note: exploration controls removed from this compact metrics view
 
   const metrics = [
     {
-      icon: Zap,
-      label: 'Speed',
-      value: currentTrainingData?.training_speed ? formatSpeed(currentTrainingData.training_speed) : '0.0 eps/min',
-      color: 'text-blue-400',
-      bgColor: 'bg-blue-500/20',
-    },
-    {
       icon: Target,
-      label: 'Avg Game Length',
-      value: currentTrainingData?.avg_game_length ? `${Math.round(currentTrainingData.avg_game_length)} moves` : '0 moves',
+      label: 'Episode',
+      value: currentEpisode > 0 ? `${currentEpisode}` : '—',
       color: 'text-green-400',
       bgColor: 'bg-green-500/20',
     },
     {
-      icon: TrendingUp,
-      label: 'Min/Max Length',
-      value: currentTrainingData?.min_game_length && currentTrainingData?.max_game_length 
-        ? `${currentTrainingData.min_game_length}/${currentTrainingData.max_game_length}` 
-        : '0/0',
+      icon: Gauge,
+      label: 'Speed',
+      value: formatSpeed(currentTrainingData?.training_speed),
       color: 'text-purple-400',
       bgColor: 'bg-purple-500/20',
     },
     {
+      icon: TrendingUp,
+      label: 'Avg Length',
+      value: currentTrainingData?.avg_game_length != null ? `${Math.round(currentTrainingData.avg_game_length)} moves` : '—',
+      color: 'text-blue-400',
+      bgColor: 'bg-blue-500/20',
+    },
+    {
       icon: Clock,
-      label: 'Elapsed Time',
+      label: 'Elapsed',
       value: formatTime(currentElapsedTime),
       color: 'text-orange-400',
       bgColor: 'bg-orange-500/20',
@@ -128,63 +144,95 @@ const TrainingMetrics: React.FC = () => {
     {
       icon: Timer,
       label: 'Next Checkpoint',
-      value: currentTrainingData?.estimated_time_to_checkpoint ? formatTime(currentTrainingData.estimated_time_to_checkpoint) : '0s',
+      value: formatTime(currentTrainingData?.estimated_time_to_checkpoint),
+      color: 'text-cyan-400',
+      bgColor: 'bg-cyan-500/20',
+    },
+    {
+      icon: Zap,
+      label: 'Learning Rate',
+      value: currentTrainingData?.learning_rate != null ? Number(currentTrainingData.learning_rate).toFixed(6) : '—',
+      color: 'text-blue-400',
+      bgColor: 'bg-blue-500/20',
+    },
+    {
+      icon: Brain,
+      label: 'GPU Memory',
+      value: currentTrainingData?.gpu_memory != null ? `${Number(currentTrainingData.gpu_memory).toFixed(1)} GB` : '—',
       color: 'text-cyan-400',
       bgColor: 'bg-cyan-500/20',
     },
     {
       icon: Scale,
       label: 'Load Balance',
-      value: currentTrainingData?.load_balancing_reward != null ? `${currentTrainingData.load_balancing_reward.toFixed(3)}` : '0.000',
+      value: currentTrainingData?.load_balancing_reward != null ? `${currentTrainingData.load_balancing_reward.toFixed(3)}` : '—',
       color: 'text-pink-400',
       bgColor: 'bg-pink-500/20',
     },
-    // NEW: Novelty and exploration glance
     {
       icon: Compass,
       label: 'Novelty',
       value: (() => {
         const td: any = currentTrainingData as any
         const v = td?.avg_novelty ?? td?.novelty_rate ?? td?.novelty_bonus
-        return v != null ? `${(Number(v) * 100).toFixed(0)}%` : 'N/A'
+        return v != null ? `${(Number(v) * 100).toFixed(0)}%` : '—'
       })(),
       color: 'text-indigo-400',
       bgColor: 'bg-indigo-500/20',
     },
     {
-      icon: Thermometer,
-      label: 'Exploration',
-      value: (() => {
-        const t = exploration.temperature
-        const e = exploration.epsilon
-        if (t != null && e != null) return `T ${Number(t).toFixed(2)} • ε ${Number(e).toFixed(2)}`
-        return 'Adaptive'
-      })(),
-      color: 'text-cyan-400',
-      bgColor: 'bg-cyan-500/20',
-    },
-    // NEW: Router dominance glance
-    {
       icon: Flame,
-      label: 'Dominance',
-      value: `${(dominance.dominance * 100).toFixed(0)}%`,
-      color: dominance.dominance > 0.6 ? 'text-red-400' : dominance.dominance > 0.3 ? 'text-yellow-400' : 'text-green-400',
+      label: 'Dominance (HHI)',
+      value: routerHealth.hhiNorm > 0 ? `${(routerHealth.hhiNorm * 100).toFixed(0)}%` : '—',
+      color: routerHealth.hhiNorm > 0.6 ? 'text-red-400' : routerHealth.hhiNorm > 0.3 ? 'text-yellow-400' : 'text-green-400',
       bgColor: 'bg-red-500/20',
     },
-    // NEW: Enhanced expert starvation metrics
     {
       icon: Activity,
       label: 'Starvation Severity',
-      value: currentTrainingData?.avg_starvation_severity ? `${(currentTrainingData.avg_starvation_severity * 100).toFixed(1)}%` : '0.0%',
-      color: currentTrainingData?.avg_starvation_severity ? (currentTrainingData.avg_starvation_severity > 0.5 ? 'text-red-400' : currentTrainingData.avg_starvation_severity > 0.2 ? 'text-yellow-400' : 'text-green-400') : 'text-gray-400',
+      value: currentTrainingData?.avg_starvation_severity != null ? `${(currentTrainingData.avg_starvation_severity * 100).toFixed(1)}%` : '—',
+      color: currentTrainingData?.avg_starvation_severity != null ? (currentTrainingData.avg_starvation_severity > 0.5 ? 'text-red-400' : currentTrainingData.avg_starvation_severity > 0.2 ? 'text-yellow-400' : 'text-green-400') : 'text-gray-400',
       bgColor: 'bg-red-500/20',
     },
     {
       icon: GitBranch,
-      label: 'Recovery Rate',
-      value: currentTrainingData?.expert_recovery_rates ? `${Object.keys(currentTrainingData.expert_recovery_rates).length} experts` : '0 experts',
-      color: currentTrainingData?.expert_recovery_rates && Object.keys(currentTrainingData.expert_recovery_rates).length > 0 ? 'text-green-400' : 'text-gray-400',
+      label: 'Recovering Experts',
+      value: (() => {
+        const er = currentTrainingData?.expert_recovery_rates
+        if (!er) return '—'
+        const recovering = Object.values(er).filter(v => Number(v) > 0).length
+        return recovering > 0 ? `${recovering}` : '—'
+      })(),
+      color: currentTrainingData?.expert_recovery_rates && Object.values(currentTrainingData.expert_recovery_rates).some(v => Number(v) > 0) ? 'text-green-400' : 'text-gray-400',
       bgColor: 'bg-green-500/20',
+    },
+    {
+      icon: TrendingUp,
+      label: 'Training Loss',
+      value: trainingLoss != null ? `${trainingLoss.toFixed(4)}` : '—',
+      color: 'text-red-400',
+      bgColor: 'bg-red-500/20',
+    },
+    {
+      icon: CheckCircle,
+      label: 'Eval Median',
+      value: lastEvaluation ? `${Math.round(lastEvaluation.median_score)}` : '—',
+      color: lastEvaluation ? (lastEvaluation.median_score > 1500 ? 'text-green-400' : lastEvaluation.median_score > 800 ? 'text-yellow-400' : 'text-red-400') : 'text-gray-400',
+      bgColor: 'bg-green-500/10',
+    },
+    {
+      icon: AlertTriangle,
+      label: 'Eval 2048 Solve',
+      value: lastEvaluation ? `${(lastEvaluation.solve_rate_2048 * 100).toFixed(0)}%` : '—',
+      color: lastEvaluation ? (lastEvaluation.solve_rate_2048 >= 0.9 ? 'text-green-400' : lastEvaluation.solve_rate_2048 >= 0.6 ? 'text-yellow-400' : 'text-red-400') : 'text-gray-400',
+      bgColor: 'bg-green-500/10',
+    },
+    {
+      icon: Thermometer,
+      label: 'Router Entropy',
+      value: routerHealth.entropy > 0 ? `${(routerHealth.entropy * 100).toFixed(0)}%` : '—',
+      color: routerHealth.entropy >= 0.7 ? 'text-green-400' : routerHealth.entropy >= 0.5 ? 'text-yellow-400' : 'text-red-400',
+      bgColor: 'bg-cyan-500/20',
     },
   ]
 

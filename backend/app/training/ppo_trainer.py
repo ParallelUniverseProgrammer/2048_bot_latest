@@ -383,6 +383,11 @@ class PPOTrainer:
         
         self.timing_logger.end_operation("trainer_init", "setup", 
                                        f"model_params={self.model.count_parameters():,}, device={self.device}, batch_size={self.batch_size}")
+        # Ensure any external router bias is cleared; rely on on-GPU adaptive mitigation
+        try:
+            self.model.set_router_bias(None)
+        except Exception:
+            pass
     
     def calculate_load_balancing_reward(self) -> float:
         """Calculate intrinsic reward focused on anti-starvation and anti-dominance.
@@ -543,6 +548,8 @@ class PPOTrainer:
         
         return final_reward
     
+    # Router biasing removed – rely on on-GPU adaptive mitigation in MoE
+
     def select_action(self, state: np.ndarray, legal_actions: List[int], env_game) -> Tuple[int, float, float, float]:
         """Select action using current policy with fallback for invalid moves"""
         
@@ -966,6 +973,7 @@ class PPOTrainer:
                     
                     # Forward pass (AMP-enabled)
                     self.timing_logger.start_operation("batch_forward", "training")
+                    # Biasing handled internally by MoE layer on-GPU
                     if self.cuda_autocast_enabled:
                         with torch.autocast(device_type="cuda", dtype=torch.float16):
                             policy_logits, values_ext, values_int = self.model(batch_states)

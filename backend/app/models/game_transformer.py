@@ -146,6 +146,22 @@ class MoELayer(nn.Module):
             Expert(d_model, d_ff, dropout) for _ in range(n_experts)
         ])
 
+        # Optional external bias on router logits to softly suppress overused experts
+        # This is set externally by trainer via GameTransformer.set_router_bias(...)
+        self.router_bias: Optional[torch.Tensor] = None
+
+        # Lightweight, fully on-GPU adaptive anti-dominance controls
+        # Temperature and bias scales are conservative and profile-aware
+        if n_experts <= 4:
+            self.adaptive_temp_scale = 0.35
+            self.adaptive_bias_scale = 0.25
+        elif n_experts <= 6:
+            self.adaptive_temp_scale = 0.45
+            self.adaptive_bias_scale = 0.3
+        else:
+            self.adaptive_temp_scale = 0.55
+            self.adaptive_bias_scale = 0.35
+
         # Tracking expert usage (for UI & debugging)
         self.register_buffer('expert_usage', torch.zeros(n_experts))
         self.usage_decay = 0.99
@@ -165,6 +181,48 @@ class MoELayer(nn.Module):
         router_logits = self.router(x_flat)
         if self.noise_std > 0.0:
             router_logits = router_logits + torch.randn_like(router_logits) * self.noise_std
+
+        # Apply optional external bias/mask (anti-dominance) before softmax
+        if getattr(self, 'router_bias', None) is not None:
+            try:
+                bias = self.router_bias
+                # Shape guard: expect (n_experts,)
+                if bias.dim() != 1 or bias.numel() != self.n_experts:
+                    raise ValueError("router_bias has invalid shape")
+                if bias.device != router_logits.device or bias.dtype != router_logits.dtype:
+                    bias = bias.to(router_logits.device, dtype=router_logits.dtype)
+                router_logits = router_logits + bias
+            except Exception:
+                pass
+
+        # Fully on-GPU adaptive mitigation: when usage is concentrated, gently
+        # increase router temperature and add a small counter-bias away from dominant experts
+        try:
+            usage_vec = self.expert_usage
+            if usage_vec is not None and usage_vec.numel() == self.n_experts:
+                usage_vec = usage_vec.to(router_logits.device, dtype=router_logits.dtype)
+                # Normalized dominance via HHI
+                n = float(self.n_experts)
+                min_hhi = 1.0 / n
+                hhi = (usage_vec * usage_vec).sum()
+                # Prevent NaNs from tiny usage sums
+                norm = (hhi - min_hhi) / max(1e-6, (1.0 - min_hhi))
+                norm = torch.clamp(norm, 0.0, 1.0)
+
+                # 1) Temperature scaling to raise entropy when dominance is high
+                temp = 1.0 + self.adaptive_temp_scale * norm
+                router_logits = router_logits / temp
+
+                # 2) Small per-expert bias opposite to deviation from uniform
+                uniform = router_logits.new_tensor(1.0 / self.n_experts)
+                deviation = usage_vec - uniform
+                # Scale by global logits std for stability across scales
+                global_std = torch.clamp(router_logits.std(), min=router_logits.new_tensor(1e-6))
+                bias_vec = -(self.adaptive_bias_scale * norm) * deviation * (0.5 * global_std)
+                router_logits = router_logits + bias_vec
+        except Exception:
+            # Best-effort only; fall back to regular routing on any issue
+            pass
 
         router_probs = F.softmax(router_logits, dim=-1)
         
@@ -508,10 +566,17 @@ class GameTransformer(nn.Module):
         """Get router entropy (scalar) from last forward."""
         return self.router_entropy
     
-    def count_parameters(self) -> int:
-        """Count total trainable parameters"""
-        return sum(p.numel() for p in self.parameters() if p.requires_grad)
-    
+    def set_router_bias(self, bias: Optional[torch.Tensor]) -> None:
+        """Set a per-expert bias vector applied to router logits in all MoE layers.
+
+        Pass a 1D tensor of length n_experts with negative values to suppress
+        overused experts. Pass None to clear.
+        """
+        for layer in self.layers:
+            if hasattr(layer, 'moe'):
+                # Assign directly; MoE forward will validate shape/dtype
+                layer.moe.router_bias = bias
+
     def get_memory_usage(self) -> float:
         """Get GPU memory usage in GB"""
         if torch.cuda.is_available():
