@@ -49,18 +49,23 @@ class TrainingManager:
             cpu_cores = multiprocessing.cpu_count()
         except Exception:
             cpu_cores = 2
-        # Base on VRAM tiers; envs are light but training shares a single model
-        if available_vram >= 24.0:
-            auto_envs = min(8, max(4, cpu_cores // 2))
-        elif available_vram >= 12.0:
-            auto_envs = min(6, max(3, (cpu_cores + 1) // 2))
-        elif available_vram >= 8.0:
-            auto_envs = min(4, max(3, (cpu_cores + 1) // 3))
+        # Prefer zero CPU envs when CUDA is available; we will use GPU-batched rollouts instead
+        import torch as _torch
+        if _torch.cuda.is_available():
+            self._auto_envs = 0
+            self.envs = []
         else:
-            auto_envs = max(3, min(3, cpu_cores // 2))
-        # Start with at least 3 envs by default, but allow scaling down to 1 later
-        self._auto_envs = max(3, max(n_envs, auto_envs))
-        self.envs: List[Gym2048Env] = [Gym2048Env() for _ in range(self._auto_envs)]
+            # CPU fallback sizing
+            if available_vram >= 24.0:
+                auto_envs = min(8, max(4, cpu_cores // 2))
+            elif available_vram >= 12.0:
+                auto_envs = min(6, max(3, (cpu_cores + 1) // 2))
+            elif available_vram >= 8.0:
+                auto_envs = min(4, max(3, (cpu_cores + 1) // 3))
+            else:
+                auto_envs = max(3, min(3, cpu_cores // 2))
+            self._auto_envs = max(1, max(n_envs, auto_envs))
+            self.envs: List[Gym2048Env] = [Gym2048Env() for _ in range(self._auto_envs)]
         self.timing_logger.end_operation("env_creation", "setup", f"created={len(self.envs)}_environments (auto)")
         
         self._task: Optional[asyncio.Task] = None
@@ -87,7 +92,7 @@ class TrainingManager:
         # MEMORY OPTIMIZATION: Use single shared trainer instead of multiple trainers
         # This significantly reduces GPU memory usage
         self.timing_logger.start_operation("shared_trainer_setup", "setup")
-        self.env_trainers = [self.trainer] * len(self.envs)  # All environments share the same trainer
+        self.env_trainers = [self.trainer] * max(1, len(self.envs))  # Share trainer; placeholder when zero CPU envs
         self.timing_logger.end_operation("shared_trainer_setup", "setup", f"shared_trainer_for={len(self.envs)}_environments")
         
         self.current_config = None
@@ -305,7 +310,7 @@ class TrainingManager:
         
         # MEMORY OPTIMIZATION: Update shared trainer references
         self.timing_logger.start_operation("shared_trainer_update", "config")
-        self.env_trainers = [self.trainer] * len(self.envs)  # Update all references to use new trainer
+        self.env_trainers = [self.trainer] * max(1, len(self.envs))  # Update all references to use new trainer
         self.timing_logger.end_operation("shared_trainer_update", "config", f"updated={len(self.env_trainers)}_references")
         
         self.timing_logger.end_operation("trainer_reinit", "config")
@@ -337,7 +342,7 @@ class TrainingManager:
         
         # CRITICAL FIX: Update shared trainer references to use the new trainer
         self.timing_logger.start_operation("shared_trainer_checkpoint_update", "checkpoint")
-        self.env_trainers = [self.trainer] * len(self.envs)
+        self.env_trainers = [self.trainer] * max(1, len(self.envs))
         self.timing_logger.end_operation("shared_trainer_checkpoint_update", "checkpoint", f"updated={len(self.env_trainers)}_references")
         
         # Load checkpoint weights
@@ -476,7 +481,7 @@ class TrainingManager:
         
         # MEMORY OPTIMIZATION: Update shared trainer references
         self.timing_logger.start_operation("shared_trainer_reset", "control")
-        self.env_trainers = [self.trainer] * len(self.envs)  # Update all references to use new trainer
+        self.env_trainers = [self.trainer] * max(1, len(self.envs))  # Update all references to use new trainer
         self.timing_logger.end_operation("shared_trainer_reset", "control", f"updated={len(self.env_trainers)}_references")
         
         self.timing_logger.end_operation("trainer_fresh_init", "control")
@@ -613,74 +618,132 @@ class TrainingManager:
                     
                     # Train one episode per environment concurrently, then update policy synchronously
                     if self.current_episode < 5:
-                        print(f"Collecting rollouts from {len(self.envs)} environments...")
+                        try:
+                            import torch as _t
+                            if _t.cuda.is_available() and len(self.envs) == 0:
+                                print("Collecting GPU rollouts (batched envs on device)...")
+                            else:
+                                print(f"Collecting rollouts from {len(self.envs)} environments...")
+                        except Exception:
+                            print(f"Collecting rollouts from {len(self.envs)} environments...")
 
                     self.timing_logger.start_operation("collect_rollouts", "training", f"n_envs={len(self.envs)}")
 
-                    # Collect episodes concurrently
+                    # If CUDA available, skip CPU envs and rely solely on GPU-batched rollouts
                     tasks = []
-                    for i, env in enumerate(self.envs):
-                        async def run_env(idx: int, environment: Gym2048Env):
-                            try:
-                                # Hard timeout per env episode to prevent freezes
-                                return await asyncio.wait_for(
-                                    self.env_trainers[idx].train_episode(environment),
-                                    timeout=self._per_env_timeout_sec
-                                )
-                            except asyncio.TimeoutError:
-                                print(f"Environment {idx} episode timed out after {self._per_env_timeout_sec}s")
-                                return {
-                                    'episode': self.current_episode + 1,
-                                    'score': 0,
-                                    'reward': 0.0,
-                                    'length': 0,
-                                    'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
-                                    'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
-                                }
-                            except Exception as err:
-                                print(f"Environment {idx} training failed: {err}")
-                                import traceback
-                                traceback.print_exc()
-                                return {
-                                    'episode': self.current_episode + 1,
-                                    'score': 0,
-                                    'reward': 0.0,
-                                    'length': 0,
-                                    'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
-                                    'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
-                                }
-                        tasks.append(asyncio.create_task(run_env(i, env)))
+                    import torch
+                    cpu_env_count = len(self.envs)
+                    if cpu_env_count > 0 and not torch.cuda.is_available():
+                        for i, env in enumerate(self.envs):
+                            async def run_env(idx: int, environment: Gym2048Env):
+                                try:
+                                    return await asyncio.wait_for(
+                                        self.env_trainers[idx].train_episode(environment),
+                                        timeout=self._per_env_timeout_sec
+                                    )
+                                except asyncio.TimeoutError:
+                                    print(f"Environment {idx} episode timed out after {self._per_env_timeout_sec}s")
+                                    return {
+                                        'episode': self.current_episode + 1,
+                                        'score': 0,
+                                        'reward': 0.0,
+                                        'length': 0,
+                                        'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
+                                        'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
+                                    }
+                                except Exception as err:
+                                    print(f"Environment {idx} training failed: {err}")
+                                    import traceback
+                                    traceback.print_exc()
+                                    return {
+                                        'episode': self.current_episode + 1,
+                                        'score': 0,
+                                        'reward': 0.0,
+                                        'length': 0,
+                                        'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
+                                        'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
+                                    }
+                            tasks.append(asyncio.create_task(run_env(i, env)))
+
+                    # GPU fast-path: trigger batched GPU rollouts (fills device buffer) and GPU episodes for metrics
+                    gpu_future = None
+                    gpu_eps_future = None
+                    try:
+                        if torch.cuda.is_available() and self.trainer:
+                            async def gpu_collect():
+                                try:
+                                    return await asyncio.to_thread(self.trainer.collect_rollouts_gpu, 256, batch_env_size=self.trainer.batch_size)
+                                except Exception as e:
+                                    print(f"GPU rollout collection error: {e}")
+                                    return 0
+                            gpu_future = asyncio.create_task(gpu_collect())
+                            # Collect a small number of GPU episodes for UI every loop start until we have CPU ones
+                            async def gpu_collect_eps():
+                                try:
+                                    return await asyncio.to_thread(self.trainer.collect_episodes_gpu, 8, batch_env_size=self.trainer.batch_size)
+                                except Exception as e:
+                                    print(f"GPU episode collection error: {e}")
+                                    return []
+                            gpu_eps_future = asyncio.create_task(gpu_collect_eps())
+                    except Exception:
+                        gpu_future = None
 
                     episode_results = []
-                    for future in asyncio.as_completed(tasks):
-                        # Guard each future to avoid a single hung env blocking the gather
-                        try:
-                            res = await asyncio.wait_for(future, timeout=self._per_env_timeout_sec + 5)
-                        except asyncio.TimeoutError:
-                            print("Warning: an environment future exceeded timeout; skipping result")
-                            res = {
-                                'episode': self.current_episode + 1,
-                                'score': 0,
-                                'reward': 0.0,
-                                'length': 0,
-                                'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
-                                'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
-                            }
-                        if isinstance(res, Exception):
-                            print(f"Environment task raised exception: {res}")
-                            res = {
-                                'episode': self.current_episode + 1,
-                                'score': 0,
-                                'reward': 0.0,
-                                'length': 0,
-                                'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
-                                'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
-                            }
-                        episode_results.append(res)
+                    if tasks:
+                        for future in asyncio.as_completed(tasks):
+                            try:
+                                res = await asyncio.wait_for(future, timeout=self._per_env_timeout_sec + 5)
+                            except asyncio.TimeoutError:
+                                print("Warning: an environment future exceeded timeout; skipping result")
+                                res = {
+                                    'episode': self.current_episode + 1,
+                                    'score': 0,
+                                    'reward': 0.0,
+                                    'length': 0,
+                                    'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
+                                    'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
+                                }
+                            if isinstance(res, Exception):
+                                print(f"Environment task raised exception: {res}")
+                                res = {
+                                    'episode': self.current_episode + 1,
+                                    'score': 0,
+                                    'reward': 0.0,
+                                    'length': 0,
+                                    'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
+                                    'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
+                                }
+                            episode_results.append(res)
 
-                    self.timing_logger.end_operation("collect_rollouts", "training", f"results={len(episode_results)}")
+                    # Await GPU rollout completion before PPO update so buffer has extra transitions
+                    if gpu_future is not None:
+                        try:
+                            stored = await asyncio.wait_for(gpu_future, timeout=10.0)
+                            if stored:
+                                print(f"GPU rollouts stored: {stored}")
+                        except Exception:
+                            pass
+                    # Await GPU episode summaries for metrics (non-blocking best-effort)
+                    gpu_episode_results: List[Dict[str, Any]] = []
+                    if gpu_eps_future is not None:
+                        try:
+                            gpu_episode_results = await asyncio.wait_for(gpu_eps_future, timeout=2.0)
+                        except Exception:
+                            gpu_episode_results = []
+
+                    total_eps_collected = len(episode_results) + len(gpu_episode_results)
+                    self.timing_logger.end_operation("collect_rollouts", "training", f"results={total_eps_collected}")
                     if self.current_episode < 5:
-                        print(f"Rollout collection completed with {len(episode_results)} episodes")
+                        print(f"Rollout collection completed with {total_eps_collected} episodes (CPU {len(episode_results)}, GPU {len(gpu_episode_results)})")
+
+                    # If no data collected (neither CPU episodes nor GPU rollouts), skip update cycle safely
+                    try:
+                        if (self.trainer._buf_count or 0) < max(1, getattr(self.trainer, 'batch_size', 64)):
+                            # Avoid optimistic episode increments; continue loop and wait for more rollouts
+                            await asyncio.sleep(0.001)
+                            continue
+                    except Exception:
+                        pass
 
                     # PPO update offloaded to background thread to keep event loop responsive
                     self.timing_logger.start_operation("synchronous_update", "training")
@@ -696,7 +759,7 @@ class TrainingManager:
                     finally:
                         self.timing_logger.end_operation("synchronous_update", "training")
 
-                    # --------------------------- Deterministic evaluation ---------------------------
+                    # --------------------------- Deterministic evaluation (GPU-preferred) ---------------------------
                     self._updates_since_last_eval += 1
                     if self._updates_since_last_eval >= self._eval_every_updates and (self.trainer.update_steps >= self._min_updates_before_eval):
                         self._updates_since_last_eval = 0
@@ -707,7 +770,12 @@ class TrainingManager:
                             self.timing_logger.start_operation("evaluation", "eval")
                             async def run_eval_and_broadcast():
                                 try:
-                                    eval_metrics = await asyncio.to_thread(self.trainer.evaluate_policy, num_episodes=self._eval_num_episodes)
+                                    # Prefer GPU evaluation when available
+                                    import torch
+                                    if torch.cuda.is_available():
+                                        eval_metrics = await asyncio.to_thread(self.trainer.evaluate_policy_gpu, episodes=self._eval_num_episodes)
+                                    else:
+                                        eval_metrics = await asyncio.to_thread(self.trainer.evaluate_policy, num_episodes=self._eval_num_episodes)
                                 except Exception as e:
                                     eval_metrics = { 'error': str(e) }
                                 finally:
@@ -748,7 +816,13 @@ class TrainingManager:
                             self._eval_task = asyncio.create_task(run_eval_and_broadcast())
 
                     # Convenience: last result for logging / checkpoint metrics
-                    last_res = episode_results[-1] if episode_results else {}
+                    # Prefer CPU episode result; else GPU episode; else synthesize minimal
+                    if episode_results:
+                        last_res = episode_results[-1]
+                    elif gpu_episode_results:
+                        last_res = gpu_episode_results[-1]
+                    else:
+                        last_res = {'episode': self.current_episode + 1, 'score': 0, 'reward': 0.0, 'length': 0, 'losses': {'policy_loss': None, 'value_loss': None, 'entropy': None}}
                     
                     # Record episode metrics for each environment
                     self.timing_logger.start_operation("metrics_processing", "training")
@@ -856,11 +930,12 @@ class TrainingManager:
                     
                     # FIX: Broadcast metrics after every episode (rate-limited)
                     # Provide immediate feedback while avoiding flooding the event loop
-                    if episode_results and (time.time() - self._last_broadcast_time >= self._broadcast_interval):
+                    if (episode_results or self.trainer.latest_sample_board is not None) and (time.time() - self._last_broadcast_time >= self._broadcast_interval):
                         self.timing_logger.start_operation("metrics_broadcast", "websocket")
                         
-                        # Build metrics for the last environment only (representative sample)
-                        metrics = self._build_metrics(episode_results[-1], self.envs[-1])
+                        # Build metrics for the last environment only if available, otherwise synthesize
+                        env_for_metrics = self.envs[-1] if self.envs else None
+                        metrics = self._build_metrics(last_res, env_for_metrics)
                         
                         # Add animated progress indicator
                         metrics['is_training_active'] = True
@@ -893,8 +968,11 @@ class TrainingManager:
 
                     # Update current episode - increment by number of environments trained
                     if episode_results:
-                        # Each iteration trains one episode per environment, so increment by number of environments
+                        # Increment strictly by CPU envs processed
                         self.current_episode += len(self.envs)
+                    elif gpu_episode_results:
+                        # Increment by number of GPU episodes collected
+                        self.current_episode += len(gpu_episode_results)
                         print(f"Training progress: {self.current_episode}/{self.total_episodes} episodes completed")
                         
                         # Send training status update to frontend (reduced frequency)
@@ -936,14 +1014,14 @@ class TrainingManager:
                             if avg_loop > 1.0 and len(self.envs) > autoscale_min_envs:
                                 new_n = max(autoscale_min_envs, len(self.envs) - 1)
                                 self.envs = self.envs[:new_n]
-                                self.env_trainers = [self.trainer] * len(self.envs)
+                                self.env_trainers = [self.trainer] * max(1, len(self.envs))
                                 print(f"Autoscale: reduced envs to {len(self.envs)} (avg loop {avg_loop:.3f}s)")
                                 autoscale_cooldown_until = time.time() + 30.0
                             # If loop is very fast, cautiously increase envs up to max
                             elif avg_loop < 0.3 and len(self.envs) < autoscale_max_envs:
                                 add_n = 1
                                 self.envs.extend([Gym2048Env() for _ in range(add_n)])
-                                self.env_trainers = [self.trainer] * len(self.envs)
+                                self.env_trainers = [self.trainer] * max(1, len(self.envs))
                                 print(f"Autoscale: increased envs to {len(self.envs)} (avg loop {avg_loop:.3f}s)")
                                 autoscale_cooldown_until = time.time() + 30.0
                     except Exception as _autoscale_err:
@@ -1203,11 +1281,18 @@ class TrainingManager:
         return checkpoint_id
 
     # ------------------------------------------------------------------ Helpers
-    def _build_metrics(self, episode_result: Dict[str, Any], env: Gym2048Env) -> Dict[str, Any]:
+    def _build_metrics(self, episode_result: Dict[str, Any], env: Optional[Gym2048Env]) -> Dict[str, Any]:
         """Map raw data → message consumed by frontend."""
         self.timing_logger.start_operation("build_metrics", "processing")
         
-        board_state = [list(row) for row in env.game.board]
+        # Derive board state from CPU env if present, otherwise from trainer's GPU sample
+        if env is not None:
+            board_state = [list(row) for row in env.game.board]
+        else:
+            try:
+                board_state = self.env_trainers[0].latest_sample_board or [[0]*4 for _ in range(4)]
+            except Exception:
+                board_state = [[0]*4 for _ in range(4)]
         
         # Get trainer metrics (use first trainer as representative)
         self.timing_logger.start_operation("get_trainer_metrics", "processing")

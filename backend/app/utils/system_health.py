@@ -191,7 +191,8 @@ class SystemHealthMonitor:
         """Collect current system metrics"""
         try:
             # CPU and memory
-            cpu_percent = psutil.cpu_percent(interval=0.1)
+            # Lower interval to reduce blocking; callers should rate-limit
+            cpu_percent = psutil.cpu_percent(interval=0.0)
             memory = psutil.virtual_memory()
             
             # GPU metrics
@@ -218,7 +219,8 @@ class SystemHealthMonitor:
                     gpu_used_gb = used_bytes / (1024**3)
                     gpu_free_gb = free_bytes / (1024**3)
                     # Utilization may not be available in torch; keep zero if missing
-                    gpu_utilization = torch.cuda.utilization() if hasattr(torch.cuda, 'utilization') else 0.0
+                    # Utilization may not be available; prefer 0.0 rather than blocking
+                    gpu_utilization = 0.0
                 except Exception as e:
                     logger.debug(f"GPU metrics collection failed: {e}")
             

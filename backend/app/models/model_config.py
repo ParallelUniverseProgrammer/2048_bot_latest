@@ -103,12 +103,15 @@ class DynamicModelConfig:
             return 0.0
         
         try:
-            # Get total and allocated memory
+            # Prefer mem_get_info for accurate free/total
+            if hasattr(torch.cuda, 'mem_get_info'):
+                free_bytes, total_bytes = torch.cuda.mem_get_info(0)
+                return float(free_bytes) / (1024**3)
+            # Fallback: approximate with allocated bytes
             total_memory = torch.cuda.get_device_properties(0).total_memory
             allocated_memory = torch.cuda.memory_allocated(0)
             available_memory = total_memory - allocated_memory
-            
-            return available_memory / (1024**3)  # Convert to GB
+            return available_memory / (1024**3)
         except Exception as e:
             console.print(f"[yellow]Warning: Could not get VRAM info: {e}")
             return 0.0  # Always return a float, never None

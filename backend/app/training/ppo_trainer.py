@@ -20,8 +20,13 @@ import statistics
 
 from app.models import GameTransformer, DynamicModelConfig
 from app.environment.gym_2048_env import Gym2048Env
+from app.environment.gpu_2048_env import GPU2048BatchEnv
 from app.utils.action_selection import select_action_from_logits_with_validation
 from torch.cuda.amp import GradScaler
+try:
+    from torch.amp import GradScaler as AmpGradScaler  # type: ignore
+except Exception:  # pragma: no cover
+    AmpGradScaler = None  # type: ignore
 
 class TimingLogger:
     """Comprehensive timing logger for performance diagnostics"""
@@ -280,30 +285,32 @@ class PPOTrainer:
 
         # Mixed precision configuration with safe fallback
         self.use_amp = torch.cuda.is_available()
-        self.scaler = GradScaler(enabled=self.use_amp)
+        # Prefer new torch.amp API when available to silence deprecation
+        if self.use_amp and AmpGradScaler is not None:
+            try:
+                self.scaler = AmpGradScaler('cuda', enabled=True)
+            except Exception:
+                self.scaler = GradScaler(enabled=True)
+        else:
+            self.scaler = GradScaler(enabled=False)
 
         # Action validation toggle (avoid expensive deep copies by default)
         self.validate_moves = validate_moves
 
         # Novelty-driven exploration settings (intrinsic signal)
-        self._novelty_counts = {}
-        self._novelty_order = deque(maxlen=200_000)
+        # GPU-native Count-Min Sketch replaces CPU dict to minimize RAM/CPU usage
         self.novelty_bonus_coef = 0.1
         self.novelty_min = 0.0
         self.novelty_max = 1.0
         self._stagnation_steps = 0
         self._stagnation_threshold_steps = 10
-        # Precompute novelty lookup for 0..65536 (tile values)
-        try:
-            self._novelty_lookup = np.zeros(65537, dtype=np.uint8)
-            for v in range(1, 65537):
-                # For powers of two typical in 2048: exponent is bit_length - 1
-                self._novelty_lookup[v] = (v.bit_length() - 1)
-        except Exception:
-            # Fallback: small table to at least cover common range
-            self._novelty_lookup = np.zeros(1025, dtype=np.uint8)
-            for v in range(1, 1025):
-                self._novelty_lookup[v] = (v.bit_length() - 1)
+        # Allocate sketch on training device
+        self._novelty_table_size = 4096
+        self._novelty_num_hashes = 4
+        sketch_device = self.device if isinstance(self.device, torch.device) else torch.device("cpu")
+        self._novelty_counts_t = torch.zeros((self._novelty_num_hashes, self._novelty_table_size), dtype=torch.int32, device=sketch_device)
+        self._novelty_hash_seeds_t = torch.tensor([0x9E3779B9, 0x85EBCA6B, 0xC2B2AE35, 0x27D4EB2F], dtype=torch.int64, device=sketch_device)
+        self._novelty_hash_multipliers_t = torch.arange(1, 17, dtype=torch.int64, device=sketch_device)
 
         # Training state
         self.episode_count = 0
@@ -345,6 +352,9 @@ class PPOTrainer:
         self.policy_loss_history = deque(maxlen=1000)
         self.value_loss_history = deque(maxlen=1000)
         self.entropy_history = deque(maxlen=1000)
+
+        # UI sampling: latest board sample for metrics when using GPU rollouts
+        self.latest_sample_board = None
         
         # Experience buffer (separate extrinsic/intrinsic rewards and values) with profile-aware size
         if profile == "lightning":
@@ -379,7 +389,7 @@ class PPOTrainer:
         print(f"  Device: {self.device}")
         print(f"  Batch size: {self.batch_size}")
         print(f"  Buffer size: {self.buffer_size}")
-        print(f"  Policy update frequency: every {self._policy_update_frequency} episodes")
+        print("  Policy updates: manager-driven (buffer-based), no fixed episode frequency")
         
         self.timing_logger.end_operation("trainer_init", "setup", 
                                        f"model_params={self.model.count_parameters():,}, device={self.device}, batch_size={self.batch_size}")
@@ -401,113 +411,77 @@ class PPOTrainer:
         """
         self.timing_logger.start_operation("calculate_lb_reward", "reward")
         
-        # Get current expert usage from the model
+        # Get current expert usage from the model (device tensor)
         expert_usage = self.model.get_expert_usage()
         if expert_usage is None:
             self.timing_logger.end_operation("calculate_lb_reward", "reward", "no_expert_usage")
             return 0.0
-        
-        # Convert to numpy for calculations
-        if hasattr(expert_usage, 'cpu'):
-            usage_np = expert_usage.cpu().numpy()
-        elif hasattr(expert_usage, 'numpy'):
-            usage_np = expert_usage.numpy()
-        else:
-            usage_np = np.array(expert_usage)
-        n_experts = len(usage_np)
-        
-        # Store usage in history for diversity tracking (thread-safe)
-        with self._buffer_lock:  # Reuse existing lock for thread safety
-            self.expert_usage_history.append(np.array(usage_np))
-        
-        # Calculate ideal uniform distribution
-        ideal_usage = 1.0 / n_experts
-        
-        # ENHANCED: Multi-component load balancing reward
-        
-        # 1. Variance penalty (lower variance = better balance)
-        variance = np.var(usage_np)
+        usage_t = expert_usage
+        if usage_t.device != self.device:
+            usage_t = usage_t.to(self.device)
+        n_experts = usage_t.numel()
+        ideal_usage = 1.0 / float(n_experts)
+        # 1) Variance penalty
+        variance = torch.var(usage_t.float())
         max_variance = (1.0 - ideal_usage) ** 2
-        normalized_variance = variance / max_variance if max_variance > 0 else 0.0
-        variance_penalty = normalized_variance * 2.0  # Keep current penalty
-        
-        # 2. ENHANCED: Expert starvation penalty with progressive scaling
-        starvation_penalty = 0.0
-        starved_experts = 0
-        starved_expert_indices = []
-        
-        for i, usage in enumerate(usage_np):
-            if float(usage) < self.lb_critical_threshold:
-                # ENHANCED: Progressive penalty based on how far below threshold
-                penalty_factor = (self.lb_critical_threshold - float(usage)) / self.lb_critical_threshold
-                # Additional penalty for experts that are severely starved
-                if float(usage) < self.lb_critical_threshold * 0.5:
-                    penalty_factor *= 2.0  # Double penalty for severely starved experts
-                
-                starvation_penalty += penalty_factor
-                starved_experts += 1
-                starved_expert_indices.append(i)
-        
-        # ENHANCED: Track starved experts for recovery analysis
-        starved_expert_indices_list = list(starved_expert_indices)
-        for idx in starved_expert_indices_list:
-            if idx not in self.starved_experts_tracker:
-                self.starved_experts_tracker[idx] = 0
-            self.starved_experts_tracker[idx] += 1
-        
-        # Clean up tracker (remove experts that haven't been starved recently)
+        normalized_variance = float((variance / max_variance).clamp(min=0.0).item())
+        variance_penalty = normalized_variance * 2.0
+        # 2) Starvation penalty
+        starvation_mask = (usage_t < self.lb_critical_threshold)
+        below = (self.lb_critical_threshold - usage_t.clamp(max=self.lb_critical_threshold)) / max(self.lb_critical_threshold, 1e-6)
+        severe = (usage_t < (self.lb_critical_threshold * 0.5)).float()
+        penalty_vec = below * (1.0 + severe)
+        starvation_penalty = float(penalty_vec.sum().item())
+        starved_indices = torch.nonzero(starvation_mask, as_tuple=False).view(-1).tolist()
+        for idx in starved_indices:
+            self.starved_experts_tracker[idx] = self.starved_experts_tracker.get(idx, 0) + 1
         for idx in list(self.starved_experts_tracker.keys()):
-            if idx not in starved_expert_indices_list:
-                current_count = int(self.starved_experts_tracker[idx])
-                new_count = max(0, current_count - 1)
-                self.starved_experts_tracker[idx] = new_count
-                if new_count <= 0:
+            if idx not in starved_indices:
+                current = int(self.starved_experts_tracker[idx])
+                current = max(0, current - 1)
+                if current == 0:
                     del self.starved_experts_tracker[idx]
-        
-        # Additional penalty for multiple starved experts
-        if starved_experts > 1:
-            starvation_penalty *= (1.0 + starved_experts * 0.5)
-        
-        # 3. Entropy bonus (higher entropy = better diversity) - no sparsity enforcement
+                else:
+                    self.starved_experts_tracker[idx] = current
+        if len(starved_indices) > 1:
+            starvation_penalty *= (1.0 + len(starved_indices) * 0.5)
+        # 3) Entropy bonus
         epsilon = 1e-8
-        log_usage = np.log(usage_np + epsilon)
-        entropy = float(-np.sum(usage_np.astype(np.float64) * log_usage))
-        max_entropy = float(np.log(n_experts))
-        normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0.0
-        entropy_bonus = normalized_entropy * 1.5  # Keep current bonus
-        
-        # 4. ENHANCED: Diversity tracking penalty with recovery incentives
+        log_usage = torch.log(usage_t.float() + epsilon)
+        entropy = float((-usage_t.float() * log_usage).sum().item())
+        max_entropy = float(np.log(max(1, int(n_experts))))
+        normalized_entropy = (entropy / max_entropy) if max_entropy > 0 else 0.0
+        entropy_bonus = normalized_entropy * 1.5
+        # 4) Diversity history penalty (device EMA to avoid CPU transfers)
         diversity_penalty = 0.0
-        if len(self.expert_usage_history) >= 10:
-            # Calculate diversity over recent history
-            recent_usage = np.array(list(self.expert_usage_history)[-10:])
-            avg_usage = np.mean(recent_usage, axis=0)
-            
-            # ENHANCED: Penalty for experts that are consistently underused
-            for i, avg_usage_val in enumerate(avg_usage):
-                if avg_usage_val < ideal_usage * 0.5:  # Consistently underused
-                    diversity_penalty += (ideal_usage * 0.5 - avg_usage_val) / ideal_usage
-                    
-                    # NEW: Recovery bonus for experts that were starved but are improving
-                    if i in self.starved_experts_tracker and self.starved_experts_tracker[i] > 0:
-                        # If this expert was starved but current usage is improving, reduce penalty
-                        current_usage = usage_np[i]
-                        if current_usage > avg_usage_val * 1.2:  # 20% improvement
-                            diversity_penalty *= 0.8  # Reduce penalty for recovering experts
-        
-        # 5. Dominance penalties (anti-monopoly): penalize over-concentration
-        hhi = float(np.sum(np.square(usage_np)))  # Herfindahl index
-        min_hhi = 1.0 / n_experts
+        try:
+            if not hasattr(self, '_lb_ema_usage_t') or (self._lb_ema_usage_t is None) or (self._lb_ema_usage_t.numel() != n_experts):
+                self._lb_ema_usage_t = usage_t.detach().clone()
+            else:
+                ema_momentum = 0.9
+                self._lb_ema_usage_t = ema_momentum * self._lb_ema_usage_t.to(usage_t.device, dtype=usage_t.dtype) + (1 - ema_momentum) * usage_t.detach()
+            avg_usage_t = self._lb_ema_usage_t
+            underused = (avg_usage_t < (ideal_usage * 0.5))
+            if underused.any():
+                diff = (ideal_usage * 0.5) - avg_usage_t.clamp(max=ideal_usage * 0.5)
+                diversity_penalty = float((diff[underused] / ideal_usage).sum().item())
+                # Recovery bonus when current usage improves over EMA
+                improved = usage_t > (avg_usage_t * 1.2)
+                if (underused & improved).any():
+                    diversity_penalty *= 0.8
+        except Exception:
+            diversity_penalty = 0.0
+        # 5) Dominance penalties
+        hhi = float((usage_t.float() * usage_t.float()).sum().item())
+        min_hhi = 1.0 / float(n_experts)
         norm_hhi = (hhi - min_hhi) / (1.0 - min_hhi) if n_experts > 1 else 0.0
         hhi_penalty = norm_hhi * 0.8
-
-        top1 = float(np.max(usage_np))
+        top1 = float(usage_t.max().item())
         dom_threshold = max(0.5, 1.5 * ideal_usage)
         top1_overflow = max(0.0, (top1 - dom_threshold) / (1.0 - dom_threshold))
-        dominance_penalty = top1_overflow ** 2 * 1.2
-        
-        # 6. Balance quality metric (light touch)
-        balance_quality = 1.0 - np.mean(np.abs(usage_np - ideal_usage)) / ideal_usage
+        dominance_penalty = (top1_overflow ** 2) * 1.2
+        # 6) Balance quality metric
+        balance_quality = 1.0 - float(torch.mean(torch.abs(usage_t - usage_t.new_tensor(ideal_usage))).item()) / ideal_usage
         balance_bonus = balance_quality * 0.1
         
         # ENHANCED: Progressive load balancing scaling
@@ -577,7 +551,8 @@ class PPOTrainer:
             action_probs = F.softmax(masked_logits, dim=-1)
 
             # Store latest action probabilities for visualization
-            self.latest_action_probs = action_probs.detach().cpu().numpy().tolist()
+            # Defer CPU transfer for probabilities until serialization; keep GPU tensors during training
+            self.latest_action_probs = action_probs.detach().to('cpu').numpy().tolist()
         self.timing_logger.end_operation("model_forward", "inference", f"legal_actions={len(legal_actions)}")
 
         # Use fallback mechanism to select action with adaptive exploration (no extra forward)
@@ -720,57 +695,55 @@ class PPOTrainer:
         }
 
     # ---- Novelty utilities ----
-    def _encode_state(self, state: np.ndarray) -> tuple:
-        # Vectorized lookup: map tile values to exponents
-        arr = np.asarray(state, dtype=np.int64).ravel()
-        if self._novelty_lookup.shape[0] > 1025:
-            exps = self._novelty_lookup[arr]
-        else:
-            # Fallback for larger tiles not in small table
-            exps = np.empty_like(arr, dtype=np.uint8)
-            for i, v in enumerate(arr):
-                if 0 <= v < self._novelty_lookup.shape[0]:
-                    exps[i] = self._novelty_lookup[v]
-                elif v > 0:
-                    exps[i] = (int(v).bit_length() - 1)
-                else:
-                    exps[i] = 0
-        return tuple(int(x) for x in exps)
+    @torch.no_grad()
+    def _encode_board_to_exponents_t(self, board: torch.Tensor) -> torch.Tensor:
+        """Encode 4x4 board values to log2 exponents on the given device; returns (16,) int64 tensor."""
+        b = board
+        if b.dim() == 3:
+            b = b[0]
+        b = b.to(self.device)
+        exps = torch.zeros_like(b, dtype=torch.int64, device=self.device)
+        mask = b > 0
+        if mask.any():
+            exps[mask] = torch.log2(b[mask].float()).long()
+        return exps.view(-1).clamp_(0, 16)
 
-    def _hash_state(self, state: np.ndarray) -> tuple:
-        # Use encoded tuple directly as dictionary key (faster than cryptographic hash)
-        return self._encode_state(state)
+    @torch.no_grad()
+    def _novelty_fingerprint_t(self, exps_flat_t: torch.Tensor) -> torch.Tensor:
+        mul = self._novelty_hash_multipliers_t
+        fp = torch.sum(exps_flat_t.to(torch.int64) * mul)
+        return fp & torch.tensor(0x7FFFFFFFFFFFFFFF, dtype=torch.int64, device=self.device)
+
+    @torch.no_grad()
+    def _countmin_query_update(self, board_np: np.ndarray, *, update: bool) -> int:
+        board_t = torch.as_tensor(board_np, device=self.device)
+        exps = self._encode_board_to_exponents_t(board_t)
+        fp = self._novelty_fingerprint_t(exps)
+        seeds = self._novelty_hash_seeds_t
+        idxs = ((fp ^ seeds) % self._novelty_table_size).to(torch.long)
+        counts = self._novelty_counts_t[torch.arange(self._novelty_num_hashes, device=self.device), idxs]
+        min_count = int(counts.min().item())
+        if update:
+            self._novelty_counts_t[torch.arange(self._novelty_num_hashes, device=self.device), idxs] = counts + 1
+        return min_count
 
     def _get_state_novelty(self, state: np.ndarray) -> float:
-        h = self._hash_state(state)
-        c = self._novelty_counts.get(h, 0)
+        c = self._countmin_query_update(state, update=False)
         novelty = 1.0 / float(np.sqrt(1.0 + c))
         return float(np.clip(novelty, self.novelty_min, self.novelty_max))
 
     def _update_state_novelty(self, state: np.ndarray) -> float:
-        h = self._hash_state(state)
-        novelty = self._get_state_novelty(state)
-        if h not in self._novelty_counts:
-            if len(self._novelty_counts) >= self._novelty_order.maxlen:
-                try:
-                    old_key = self._novelty_order.popleft()
-                    if old_key in self._novelty_counts:
-                        del self._novelty_counts[old_key]
-                except Exception:
-                    pass
-            self._novelty_order.append(h)
-            self._novelty_counts[h] = 1
-        else:
-            self._novelty_counts[h] += 1
-        return novelty
+        c = self._countmin_query_update(state, update=True)
+        novelty = 1.0 / float(np.sqrt(1.0 + c))
+        return float(np.clip(novelty, self.novelty_min, self.novelty_max))
 
     def _get_router_dominance_factor(self) -> float:
         expert_usage = self.model.get_expert_usage()
         if expert_usage is None:
             return 0.0
-        usage_np = expert_usage.cpu().numpy() if hasattr(expert_usage, 'cpu') else np.array(expert_usage)
-        n = len(usage_np) if len(usage_np) > 0 else 1
-        hhi = float(np.sum(np.square(usage_np)))
+        usage_t = expert_usage
+        n = max(1, int(usage_t.numel()))
+        hhi = float((usage_t.float() * usage_t.float()).sum().item())
         min_hhi = 1.0 / n
         norm_hhi = (hhi - min_hhi) / (1.0 - min_hhi) if n > 1 else 0.0
         return float(np.clip(norm_hhi, 0.0, 1.0))
@@ -1108,6 +1081,221 @@ class PPOTrainer:
                 'lb_loss': avg_lb_loss,
                 'kl': approx_kl
             }
+
+    # ------------------------------ GPU rollouts ------------------------------
+    @torch.no_grad()
+    def collect_rollouts_gpu(self, n_steps: int = 128, *, batch_env_size: Optional[int] = None) -> int:
+        """Collect rollouts entirely on GPU into the ring buffer.
+
+        Returns number of transitions stored. Uses current `batch_size` as default batch_env_size.
+        """
+        if not (self.device and str(self.device).startswith("cuda")):
+            return 0
+        # Adaptive batch sizing based on free VRAM with safety margin
+        try:
+            free_gb = DynamicModelConfig.get_available_vram()
+        except Exception:
+            free_gb = 0.0
+        # Rough per-env memory estimate (model activations small for 16 tokens; env state negligible). Keep conservative.
+        # Target to use up to ~40% of free VRAM for rollouts.
+        target_envs = int(min(1024, max(32, (free_gb * 0.4) * 512))) if free_gb > 0 else 128
+        env_batch = int(batch_env_size or min(self.batch_size * 2, target_envs))
+        env = GPU2048BatchEnv(env_batch, device=self.device)
+        boards = env.reset()
+        stored = 0
+        step_budget = int(max(1, n_steps))
+        for _ in range(step_budget):
+            # Legal mask and greedy sampling with small temperature
+            legal = env.legal_moves_mask(boards)
+            # Build action logits
+            if self.cuda_autocast_enabled:
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    policy_logits, value_ext_t, value_int_t = self.model(boards.to(torch.float32))
+            else:
+                policy_logits, value_ext_t, value_int_t = self.model(boards.to(torch.float32))
+            # Mask illegal actions and sample
+            action_mask = torch.full((env_batch, 4), -float('inf'), device=self.device)
+            action_mask[legal] = 0.0
+            masked_logits = policy_logits + action_mask
+            probs = torch.softmax(masked_logits, dim=-1)
+            actions = torch.distributions.Categorical(probs=probs).sample()
+            log_probs = torch.distributions.Categorical(probs=probs).log_prob(actions)
+
+            try:
+                next_boards, reward_t, done_t = env.step(actions)
+            except RuntimeError as oom:
+                # OOM safety: shrink batch and retry once
+                if 'out of memory' in str(oom).lower() and env_batch > 32:
+                    torch.cuda.empty_cache()
+                    env_batch = max(32, env_batch // 2)
+                    env = GPU2048BatchEnv(env_batch, device=self.device)
+                    boards = env.reset()
+                    continue
+                raise
+
+            # Store transitions directly into ring buffer tensors (device tensors)
+            # We need per-sample insertion; use current head safely under lock
+            for i in range(env_batch):
+                if stored >= self._buf_capacity:
+                    break
+                with self._buffer_lock:
+                    idx = self._buf_head
+                    self._buf_head = (self._buf_head + 1) % self._buf_capacity
+                    if self._buf_count < self._buf_capacity:
+                        self._buf_count += 1
+                    self._buf_states_t[idx].copy_(boards[i].to(torch.float32))
+                    self._buf_actions_t[idx] = actions[i].to(torch.long)
+                    self._buf_rewards_ext_t[idx] = reward_t[i].to(torch.float32)
+                    # Intrinsic from novelty only when needed; skip here to keep loop tight
+                    self._buf_rewards_int_t[idx] = torch.tensor(0.0, device=self.device)
+                    self._buf_values_ext_t[idx] = value_ext_t[i].view(()).to(torch.float32)
+                    self._buf_values_int_t[idx] = value_int_t[i].view(()).to(torch.float32)
+                    self._buf_log_probs_t[idx] = log_probs[i].to(torch.float32)
+                    self._buf_dones_t[idx] = done_t[i]
+                stored += 1
+                if stored >= self._buf_capacity:
+                    break
+            boards = next_boards
+            # Keep a sample board for UI/metrics (CPU list)
+            try:
+                self.latest_sample_board = boards[0].detach().to('cpu').tolist()
+            except Exception:
+                pass
+        return stored
+
+    @torch.no_grad()
+    def collect_episodes_gpu(self, num_episodes: int = 16, *, batch_env_size: Optional[int] = None, max_steps: int = 5000) -> List[Dict[str, Any]]:
+        """Collect full episodes on GPU, store transitions, and return per-episode summaries.
+
+        Exploration: samples from softmax over legal-masked logits.
+        Intrinsic rewards are omitted to keep the pipeline fully on-GPU with minimal overhead.
+        """
+        results: List[Dict[str, Any]] = []
+        if not (self.device and str(self.device).startswith("cuda")):
+            return results
+        remaining = int(max(1, num_episodes))
+        # Adaptive batch based on VRAM
+        try:
+            free_gb = DynamicModelConfig.get_available_vram() or 0.0
+        except Exception:
+            free_gb = 0.0
+        target_envs = int(min(1024, max(32, (free_gb * 0.4) * 512))) if free_gb > 0 else 128
+        env_batch_default = int(batch_env_size or min(self.batch_size * 2, target_envs))
+
+        while remaining > 0:
+            env_batch = min(env_batch_default, remaining)
+            env = GPU2048BatchEnv(env_batch, device=self.device)
+            boards = env.reset()
+            done = torch.zeros((env_batch,), dtype=torch.bool, device=self.device)
+            steps = torch.zeros((env_batch,), dtype=torch.int32, device=self.device)
+            # Episode loop
+            step_counter = 0
+            while (~done).any() and step_counter < max_steps:
+                step_counter += 1
+                legal = env.legal_moves_mask(boards)
+                # Forward
+                if self.cuda_autocast_enabled:
+                    with torch.autocast(device_type="cuda", dtype=torch.float16):
+                        logits, v_ext, v_int = self.model(boards.to(torch.float32))
+                else:
+                    logits, v_ext, v_int = self.model(boards.to(torch.float32))
+                action_mask = torch.full((env_batch, 4), -float('inf'), device=self.device)
+                action_mask[legal] = 0.0
+                masked_logits = logits + action_mask
+                probs = torch.softmax(masked_logits, dim=-1)
+                dist = torch.distributions.Categorical(probs=probs)
+                actions = dist.sample()
+                log_probs = dist.log_prob(actions)
+                # Step
+                next_boards, reward_t, done_t = env.step(actions)
+                # Store in buffer
+                for i in range(env_batch):
+                    with self._buffer_lock:
+                        idx = self._buf_head
+                        self._buf_head = (self._buf_head + 1) % self._buf_capacity
+                        if self._buf_count < self._buf_capacity:
+                            self._buf_count += 1
+                        self._buf_states_t[idx].copy_(boards[i].to(torch.float32))
+                        self._buf_actions_t[idx] = actions[i].to(torch.long)
+                        self._buf_rewards_ext_t[idx] = reward_t[i].to(torch.float32)
+                        self._buf_rewards_int_t[idx] = torch.tensor(0.0, device=self.device)
+                        self._buf_values_ext_t[idx] = v_ext[i].view(()).to(torch.float32)
+                        self._buf_values_int_t[idx] = v_int[i].view(()).to(torch.float32)
+                        self._buf_log_probs_t[idx] = log_probs[i].to(torch.float32)
+                        self._buf_dones_t[idx] = done_t[i]
+                steps[~done] += 1
+                boards = next_boards
+                done = done | done_t
+                # Keep sample for UI
+                try:
+                    self.latest_sample_board = boards[0].detach().to('cpu').tolist()
+                except Exception:
+                    pass
+            # Summarize this batch (respect remaining)
+            take_n = min(remaining, env_batch)
+            scores_cpu = env.scores[:take_n].detach().to('cpu').tolist()
+            steps_cpu = steps[:take_n].detach().to('cpu').tolist()
+            for s, l in zip(scores_cpu, steps_cpu):
+                results.append({
+                    'episode': self.episode_count + 1 + len(results),
+                    'score': int(s),
+                    'reward': float(s),  # proxy; environment reports extrinsic via merge sums
+                    'length': int(l),
+                    'losses': {'policy_loss': None, 'value_loss': None, 'entropy': None}
+                })
+            remaining -= take_n
+        return results
+
+    @torch.no_grad()
+    def evaluate_policy_gpu(self, episodes: int = 50, batch_env_size: Optional[int] = None) -> Dict[str, Any]:
+        """Deterministic GPU evaluation using batched envs. Returns summary stats."""
+        if not (self.device and str(self.device).startswith("cuda")):
+            # Fallback to existing CPU evaluation
+            return self.evaluate_policy(num_episodes=episodes)
+        env_batch = int(batch_env_size or max(32, min(self.batch_size, 256)))
+        env = GPU2048BatchEnv(env_batch, device=self.device)
+        remaining = int(max(1, episodes))
+        scores: list[int] = []
+        lengths: list[int] = []
+        while remaining > 0:
+            run_n = min(remaining, env_batch)
+            boards = env.reset()
+            done = torch.zeros((env_batch,), dtype=torch.bool, device=self.device)
+            steps = torch.zeros((env_batch,), dtype=torch.int32, device=self.device)
+            while (~done).any():
+                legal = env.legal_moves_mask(boards)
+                with torch.autocast(device_type="cuda", dtype=torch.float16) if self.cuda_autocast_enabled else torch.cuda.amp.autocast(enabled=False):
+                    logits, _, _ = self.model(boards.to(torch.float32))
+                mask = torch.full_like(logits, -float('inf'))
+                mask[legal] = 0.0
+                masked = logits + mask
+                actions = torch.argmax(masked, dim=-1)
+                boards, _, d = env.step(actions)
+                newly_done = (~done) & d
+                steps[newly_done] += 1
+                done = d | done
+            # Collect scores for first run_n envs
+            scores.extend(env.scores[:run_n].detach().to('cpu').tolist())
+            lengths.extend(steps[:run_n].detach().to('cpu').tolist())
+            remaining -= run_n
+        # Summaries
+        import statistics
+        scores_sorted = sorted(scores)
+        p50 = statistics.median(scores_sorted) if scores_sorted else 0.0
+        p75 = scores_sorted[int(0.75 * (len(scores_sorted) - 1))] if scores_sorted else 0.0
+        p90 = scores_sorted[int(0.90 * (len(scores_sorted) - 1))] if scores_sorted else 0.0
+        mean_score = float(sum(scores) / len(scores)) if scores else 0.0
+        mean_len = float(sum(lengths) / len(lengths)) if lengths else 0.0
+        return {
+            'episodes': episodes,
+            'mean_score': mean_score,
+            'median_score': float(p50),
+            'p75_score': float(p75),
+            'p90_score': float(p90),
+            'mean_length': mean_len,
+            'scores': scores,
+            'lengths': lengths,
+        }
     
     async def train_episode(self, env: Gym2048Env) -> Dict[str, Any]:
         """Train for one episode"""
