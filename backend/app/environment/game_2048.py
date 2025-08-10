@@ -28,6 +28,7 @@ from __future__ import annotations
 import random
 from copy import deepcopy
 from typing import List, Tuple, Sequence
+import math
 
 # Type alias for clarity
 Board = List[List[int]]
@@ -123,12 +124,19 @@ class Game2048:
         reward = 0
         for r in range(SIZE):
             original = self.board[r]
-            new_row, row_reward = self._compress_and_merge(original if left else original[::-1])
-            if not left:
-                new_row = new_row[::-1]
-            if new_row != original:
+            enc = _encode_row_values(original)
+            if left:
+                new_enc = _ROW_LEFT_NEW[enc]
+                row_reward = _ROW_LEFT_REWARD[enc]
+                did_move = _ROW_LEFT_MOVED[enc]
+            else:
+                rev = _reverse_row_enc(enc)
+                new_enc = _reverse_row_enc(_ROW_LEFT_NEW[rev])
+                row_reward = _ROW_LEFT_REWARD[rev]
+                did_move = _ROW_LEFT_MOVED[rev]
+            if did_move:
                 moved = True
-            self.board[r] = new_row
+            self.board[r] = _decode_row_values(new_enc)
             reward += row_reward
         return moved, reward
 
@@ -137,15 +145,73 @@ class Game2048:
         reward = 0
         for c in range(SIZE):
             col = [self.board[r][c] for r in range(SIZE)]
-            new_col, col_reward = self._compress_and_merge(col if up else col[::-1])
-            if not up:
-                new_col = new_col[::-1]
-            if new_col != col:
+            enc = _encode_row_values(col)
+            if up:
+                new_enc = _ROW_LEFT_NEW[enc]
+                col_reward = _ROW_LEFT_REWARD[enc]
+                did_move = _ROW_LEFT_MOVED[enc]
+            else:
+                rev = _reverse_row_enc(enc)
+                new_enc = _reverse_row_enc(_ROW_LEFT_NEW[rev])
+                col_reward = _ROW_LEFT_REWARD[rev]
+                did_move = _ROW_LEFT_MOVED[rev]
+            if did_move:
                 moved = True
+            new_col = _decode_row_values(new_enc)
             for r in range(SIZE):
                 self.board[r][c] = new_col[r]
             reward += col_reward
         return moved, reward
+
+    # ---- game over detection -------------------------------------------------
+    def _can_move(self, action: int) -> bool:
+        """Fast check using precomputed row transitions.
+
+        Encodes rows/columns and checks if a move in the given direction would change any row/col.
+        """
+        b = self.board
+        if action == 2:  # left
+            for r in range(SIZE):
+                enc = _encode_row_values(b[r])
+                if _ROW_LEFT_MOVED[enc]:
+                    return True
+            return False
+        if action == 3:  # right
+            for r in range(SIZE):
+                enc = _reverse_row_enc(_encode_row_values(b[r]))
+                if _ROW_LEFT_MOVED[enc]:
+                    return True
+            return False
+        if action == 0:  # up
+            for c in range(SIZE):
+                col = [b[r][c] for r in range(SIZE)]
+                enc = _encode_row_values(col)
+                if _ROW_LEFT_MOVED[enc]:
+                    return True
+            return False
+        if action == 1:  # down
+            for c in range(SIZE):
+                col = [b[r][c] for r in range(SIZE)]
+                enc = _reverse_row_enc(_encode_row_values(col))
+                if _ROW_LEFT_MOVED[enc]:
+                    return True
+            return False
+        return False
+
+    def _has_moves(self) -> bool:
+        for a in range(4):
+            if self._can_move(a):
+                return True
+        return False
+
+    def get_max_tile(self) -> int:
+        """Get the maximum tile value on the board"""
+        max_tile = 0
+        for row in self.board:
+            for tile in row:
+                if tile > max_tile:
+                    max_tile = tile
+        return max_tile
 
     # ---- utility ------------------------------------------------------------
     @staticmethod
@@ -166,63 +232,67 @@ class Game2048:
         new += [0] * (SIZE - len(new))
         return new, reward
 
-    # ---- game over detection -------------------------------------------------
-    def _can_move(self, action: int) -> bool:
-        """Fast check without copying the full game state.
+# ------------------------------ Fast row transition tables ------------------------------
 
-        Scans rows/columns to determine if a move in the given direction would
-        cause any tile to slide or merge.
-        """
-        b = self.board
-        if action == 2:  # left
-            for r in range(SIZE):
-                for c in range(1, SIZE):
-                    v = b[r][c]
-                    if v == 0:
-                        continue
-                    if b[r][c - 1] == 0 or b[r][c - 1] == v:
-                        return True
-            return False
-        if action == 3:  # right
-            for r in range(SIZE):
-                for c in range(SIZE - 2, -1, -1):
-                    v = b[r][c]
-                    if v == 0:
-                        continue
-                    if b[r][c + 1] == 0 or b[r][c + 1] == v:
-                        return True
-            return False
-        if action == 0:  # up
-            for c in range(SIZE):
-                for r in range(1, SIZE):
-                    v = b[r][c]
-                    if v == 0:
-                        continue
-                    if b[r - 1][c] == 0 or b[r - 1][c] == v:
-                        return True
-            return False
-        if action == 1:  # down
-            for c in range(SIZE):
-                for r in range(SIZE - 2, -1, -1):
-                    v = b[r][c]
-                    if v == 0:
-                        continue
-                    if b[r + 1][c] == 0 or b[r + 1][c] == v:
-                        return True
-            return False
-        return False
+# We encode a 4-length row of tile values as a 16-bit key by mapping values to exponents
+# (0 -> 0, 2 -> 1, 4 -> 2, ... up to a reasonable cap), storing 4 nibbles.
 
-    def _has_moves(self) -> bool:
-        for a in range(4):
-            if self._can_move(a):
-                return True
-        return False
-    
-    def get_max_tile(self) -> int:
-        """Get the maximum tile value on the board"""
-        max_tile = 0
-        for row in self.board:
-            for tile in row:
-                if tile > max_tile:
-                    max_tile = tile
-        return max_tile 
+_VAL_TO_EXP = {0: 0}
+for e in range(1, 16):
+    _VAL_TO_EXP[1 << e] = e
+
+def _to_exp(v: int) -> int:
+    if v in _VAL_TO_EXP:
+        return _VAL_TO_EXP[v]
+    if v <= 0:
+        return 0
+    # Fallback: integer log2
+    return int(math.log2(v))
+
+def _encode_row_values(vals: Sequence[int]) -> int:
+    # vals length is 4
+    return ((_to_exp(vals[0]) & 0xF) << 12) | ((_to_exp(vals[1]) & 0xF) << 8) | ((_to_exp(vals[2]) & 0xF) << 4) | (_to_exp(vals[3]) & 0xF)
+
+def _decode_row_values(code: int) -> List[int]:
+    # Convert exponents back to values
+    return [0 if ((code >> shift) & 0xF) == 0 else (1 << ((code >> shift) & 0xF)) for shift in (12, 8, 4, 0)]
+
+def _reverse_row_enc(code: int) -> int:
+    a = (code >> 12) & 0xF
+    b = (code >> 8) & 0xF
+    c = (code >> 4) & 0xF
+    d = code & 0xF
+    return (d << 12) | (c << 8) | (b << 4) | a
+
+# Precompute transitions for all 16^4 = 65536 possible encoded rows.
+_ROW_LEFT_NEW = [0] * 65536
+_ROW_LEFT_REWARD = [0] * 65536
+_ROW_LEFT_MOVED = [False] * 65536
+
+def _decode_exp_row(code: int) -> List[int]:
+    return [(code >> s) & 0xF for s in (12, 8, 4, 0)]
+
+def _compress_merge_exp_row(exps: List[int]) -> Tuple[List[int], int]:
+    # Slide non-zeros, merge equal, slide again — in exponent space (0 denotes empty)
+    new = [e for e in exps if e != 0]
+    reward = 0
+    i = 0
+    while i < len(new) - 1:
+        if new[i] != 0 and new[i] == new[i + 1]:
+            new[i] += 1
+            reward += (1 << new[i])
+            del new[i + 1]
+            i += 1
+        else:
+            i += 1
+    while len(new) < 4:
+        new.append(0)
+    return new, reward
+
+for code in range(65536):
+    exps = _decode_exp_row(code)
+    new_exps, rew = _compress_merge_exp_row(exps)
+    new_code = ((new_exps[0] & 0xF) << 12) | ((new_exps[1] & 0xF) << 8) | ((new_exps[2] & 0xF) << 4) | (new_exps[3] & 0xF)
+    _ROW_LEFT_NEW[code] = new_code
+    _ROW_LEFT_REWARD[code] = rew
+    _ROW_LEFT_MOVED[code] = (new_code != code)

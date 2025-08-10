@@ -55,10 +55,11 @@ class TrainingManager:
         elif available_vram >= 12.0:
             auto_envs = min(6, max(3, (cpu_cores + 1) // 2))
         elif available_vram >= 8.0:
-            auto_envs = min(4, max(2, (cpu_cores + 1) // 3))
+            auto_envs = min(4, max(3, (cpu_cores + 1) // 3))
         else:
-            auto_envs = max(2, min(3, cpu_cores // 2))
-        self._auto_envs = max(n_envs, auto_envs)
+            auto_envs = max(3, min(3, cpu_cores // 2))
+        # Start with at least 3 envs by default, but allow scaling down to 1 later
+        self._auto_envs = max(3, max(n_envs, auto_envs))
         self.envs: List[Gym2048Env] = [Gym2048Env() for _ in range(self._auto_envs)]
         self.timing_logger.end_operation("env_creation", "setup", f"created={len(self.envs)}_environments (auto)")
         
@@ -66,8 +67,21 @@ class TrainingManager:
         
         # Initialize PPO trainer with default config (will be updated when training starts)
         self.timing_logger.start_operation("trainer_init", "setup")
+        # Select an initial model config and default learning rate based on profile
+        try:
+            from app.models.model_config import DynamicModelConfig
+            self.current_config = DynamicModelConfig.select_config()
+            default_lr = DynamicModelConfig.get_default_learning_rate(self.current_config)
+        except Exception:
+            self.current_config = None
+            default_lr = 3e-4
         # Validation clones are expensive; rely on env.legal_moves + fast can-move
-        self.trainer = PPOTrainer(validate_moves=False, compile_model=False)
+        self.trainer = PPOTrainer(
+            config=self.current_config,
+            learning_rate=default_lr,
+            validate_moves=False,
+            compile_model=False,
+        )
         self.timing_logger.end_operation("trainer_init", "setup")
         
         # MEMORY OPTIMIZATION: Use single shared trainer instead of multiple trainers
@@ -133,11 +147,22 @@ class TrainingManager:
         self.timing_logger.end_operation("manager_init", "setup")
 
         # ------------------------------ Evaluation config ------------------------------
-        # Run evaluation every N synchronous updates
-        self._eval_every_updates = 10
-        self._eval_num_episodes = 100
+        # Run evaluation every N synchronous updates (less frequent, lighter)
+        self._eval_every_updates = 20
+        self._eval_num_episodes = 20
         self._best_median_score: Optional[float] = None
         self._updates_since_last_eval = 0
+        # Run evaluation in the background to avoid blocking training loop
+        self._eval_task: Optional[asyncio.Task] = None
+        # Skip early evaluations until some updates completed
+        self._min_updates_before_eval: int = 3
+        # Safety: timeout for per-env episode task to avoid hangs
+        self._per_env_timeout_sec: float = 45.0
+        # Safety: timeout for PPO update to prevent indefinite stalls
+        self._update_timeout_sec: float = 120.0
+        # Heartbeat to keep UI aware even if long ops are running
+        self._last_loop_heartbeat: float = time.time()
+        self._heartbeat_task: Optional[asyncio.Task] = None
 
     def __del__(self):
         """Cleanup when training manager is destroyed"""
@@ -265,9 +290,15 @@ class TrainingManager:
         
         # Reinitialize trainer with new config
         self.timing_logger.start_operation("trainer_reinit", "config")
+        # Use provided LR if specified, otherwise a profile-aware default
+        try:
+            from app.models.model_config import DynamicModelConfig
+            default_lr = DynamicModelConfig.get_default_learning_rate(self.current_config)
+        except Exception:
+            default_lr = 3e-4
         self.trainer = PPOTrainer(
             config=self.current_config,
-            learning_rate=config_dict.get('learning_rate', 0.0003),
+            learning_rate=float(config_dict.get('learning_rate', default_lr)),
             validate_moves=False,
             compile_model=False,
         )
@@ -292,9 +323,14 @@ class TrainingManager:
         
         # Create new trainer with checkpoint config
         self.timing_logger.start_operation("trainer_checkpoint_init", "checkpoint")
+        try:
+            from app.models.model_config import DynamicModelConfig
+            default_lr = DynamicModelConfig.get_default_learning_rate(config)
+        except Exception:
+            default_lr = 3e-4
         self.trainer = PPOTrainer(
             config=config,
-            learning_rate=0.0003,  # Default learning rate, can be adjusted via UI later
+            learning_rate=default_lr,  # Can be adjusted via UI later
             validate_moves=False,
             compile_model=False,
         )
@@ -348,7 +384,6 @@ class TrainingManager:
             asyncio.create_task(self._send_training_start_message())
         except RuntimeError:
             # No running event loop, we're in a sync context
-            # Just log the message instead of sending via WebSocket
             print("Training session started (no WebSocket context)")
         
         # schedule on current event loop
@@ -361,7 +396,34 @@ class TrainingManager:
             asyncio.set_event_loop(loop)
             self._task = loop.create_task(self._training_loop())
         
+        # Start a lightweight heartbeat so frontend can detect stalls
+        try:
+            async def heartbeat():
+                while self.is_training:
+                    await asyncio.sleep(2.0)
+                    self._last_loop_heartbeat = time.time()
+                    # best-effort, do not await broadcast
+                    try:
+                        asyncio.create_task(self.ws_manager.broadcast({
+                            'type': 'training_heartbeat',
+                            'timestamp': self._last_loop_heartbeat,
+                            'current_episode': self.current_episode,
+                            'is_paused': self.is_paused
+                        }, priority="high"))
+                    except Exception:
+                        pass
+            self._heartbeat_task = loop.create_task(heartbeat())
+        except Exception:
+            self._heartbeat_task = None
+
         self.timing_logger.end_operation("training_start", "control")
+        
+        # Ensure WebSocket batch processor is running to avoid backlog
+        try:
+            if hasattr(self.ws_manager, 'start_batch_processor'):
+                self.ws_manager.start_batch_processor()
+        except Exception:
+            pass
     
     def reset_to_fresh_model(self):
         """Reset training state and create a fresh model with current config"""
@@ -402,9 +464,14 @@ class TrainingManager:
         
         # Reinitialize trainer with fresh state
         self.timing_logger.start_operation("trainer_fresh_init", "control")
+        try:
+            from app.models.model_config import DynamicModelConfig
+            default_lr = DynamicModelConfig.get_default_learning_rate(self.current_config)
+        except Exception:
+            default_lr = 3e-4
         self.trainer = PPOTrainer(
             config=self.current_config,
-            learning_rate=0.0003  # Default learning rate
+            learning_rate=default_lr
         )
         
         # MEMORY OPTIMIZATION: Update shared trainer references
@@ -460,6 +527,13 @@ class TrainingManager:
         self.timing_logger.end_operation("training_stop", "control")
         # Do not await self._task; return immediately
         # Optionally, schedule a background cleanup if needed
+        # Stop heartbeat
+        if self._heartbeat_task:
+            try:
+                self._heartbeat_task.cancel()
+            except Exception:
+                pass
+            self._heartbeat_task = None
 
     def stop_sync(self):
         """Synchronous version of stop for non-async contexts"""
@@ -479,6 +553,13 @@ class TrainingManager:
             torch.cuda.empty_cache()
             print(f"GPU memory after stop: {torch.cuda.memory_allocated() / (1024**3):.2f} GB")
         
+        # Stop heartbeat
+        if self._heartbeat_task:
+            try:
+                self._heartbeat_task.cancel()
+            except Exception:
+                pass
+            self._heartbeat_task = None
         self.timing_logger.end_operation("training_stop_sync", "control")
 
     # ------------------------------------------------------------------ Loop
@@ -486,12 +567,24 @@ class TrainingManager:
         self.timing_logger.start_operation("training_loop", "main")
         
         try:
+            # Gentle autoscaling state
+            autoscale_cooldown_until = 0.0
+            autoscale_min_envs = 1
+            autoscale_max_envs = self._auto_envs
+            recent_loop_durations: List[float] = []
+            last_loop_start = time.time()
             while self.is_training and self.current_episode < self.total_episodes:
                 if self.is_paused:
                     await asyncio.sleep(0.5)
                     continue
 
                 try:
+                    # Track loop iteration duration for autoscaling
+                    now = time.time()
+                    recent_loop_durations.append(now - last_loop_start)
+                    if len(recent_loop_durations) > 20:
+                        recent_loop_durations = recent_loop_durations[-20:]
+                    last_loop_start = now
                     # Send new episode start message for first few episodes (reduced frequency)
                     if self.current_episode % 50 == 0:  # Reduced from 25 to 50 for less overhead
                         self.timing_logger.start_operation("send_episode_message", "websocket")
@@ -529,7 +622,21 @@ class TrainingManager:
                     for i, env in enumerate(self.envs):
                         async def run_env(idx: int, environment: Gym2048Env):
                             try:
-                                return await self.env_trainers[idx].train_episode(environment)
+                                # Hard timeout per env episode to prevent freezes
+                                return await asyncio.wait_for(
+                                    self.env_trainers[idx].train_episode(environment),
+                                    timeout=self._per_env_timeout_sec
+                                )
+                            except asyncio.TimeoutError:
+                                print(f"Environment {idx} episode timed out after {self._per_env_timeout_sec}s")
+                                return {
+                                    'episode': self.current_episode + 1,
+                                    'score': 0,
+                                    'reward': 0.0,
+                                    'length': 0,
+                                    'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
+                                    'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
+                                }
                             except Exception as err:
                                 print(f"Environment {idx} training failed: {err}")
                                 import traceback
@@ -546,7 +653,19 @@ class TrainingManager:
 
                     episode_results = []
                     for future in asyncio.as_completed(tasks):
-                        res = await future
+                        # Guard each future to avoid a single hung env blocking the gather
+                        try:
+                            res = await asyncio.wait_for(future, timeout=self._per_env_timeout_sec + 5)
+                        except asyncio.TimeoutError:
+                            print("Warning: an environment future exceeded timeout; skipping result")
+                            res = {
+                                'episode': self.current_episode + 1,
+                                'score': 0,
+                                'reward': 0.0,
+                                'length': 0,
+                                'losses': {'policy_loss': 0.0, 'value_loss': 0.0, 'entropy': 0.0},
+                                'best_score': self.env_trainers[0].best_score if self.env_trainers else 0
+                            }
                         if isinstance(res, Exception):
                             print(f"Environment task raised exception: {res}")
                             res = {
@@ -563,50 +682,70 @@ class TrainingManager:
                     if self.current_episode < 5:
                         print(f"Rollout collection completed with {len(episode_results)} episodes")
 
-                    # Synchronous PPO update once per collection window (trainer manages minibatches)
+                    # PPO update offloaded to background thread to keep event loop responsive
                     self.timing_logger.start_operation("synchronous_update", "training")
                     try:
-                        losses_sync = self.trainer.update_policy()
+                        # Guard PPO update with timeout to prevent stalls
+                        losses_sync = await asyncio.wait_for(
+                            asyncio.to_thread(self.trainer.update_policy),
+                            timeout=self._update_timeout_sec
+                        )
+                    except asyncio.TimeoutError:
+                        print(f"Warning: PPO update timed out after {self._update_timeout_sec}s; skipping this update")
+                        losses_sync = {'policy_loss': None, 'value_loss': None, 'entropy': None}
                     finally:
                         self.timing_logger.end_operation("synchronous_update", "training")
 
                     # --------------------------- Deterministic evaluation ---------------------------
                     self._updates_since_last_eval += 1
-                    if self._updates_since_last_eval >= self._eval_every_updates:
+                    if self._updates_since_last_eval >= self._eval_every_updates and (self.trainer.update_steps >= self._min_updates_before_eval):
                         self._updates_since_last_eval = 0
-                        self.timing_logger.start_operation("evaluation", "eval")
-                        try:
-                            eval_metrics = self.trainer.evaluate_policy(num_episodes=self._eval_num_episodes)
-                        except Exception as e:
-                            eval_metrics = { 'error': str(e) }
-                        self.timing_logger.end_operation("evaluation", "eval")
-
-                        # Broadcast evaluation metrics
-                        try:
-                            await asyncio.wait_for(
-                                self.ws_manager.broadcast({
-                                    'type': 'evaluation_metrics',
-                                    'metrics': eval_metrics,
-                                }, priority="high"),
-                                timeout=1.0,
-                            )
-                        except Exception:
-                            pass
-
-                        # Checkpoint best-by-median-score
-                        if 'median_score' in eval_metrics:
-                            median_score = float(eval_metrics['median_score'])
-                            should_save = (self._best_median_score is None) or (median_score > (self._best_median_score or 0.0))
-                            if should_save:
-                                self._best_median_score = median_score
+                        # If a previous eval is still running, skip to avoid backlog
+                        if self._eval_task and not self._eval_task.done():
+                            print("Skipping evaluation: previous evaluation still running")
+                        else:
+                            self.timing_logger.start_operation("evaluation", "eval")
+                            async def run_eval_and_broadcast():
                                 try:
-                                    await self._save_checkpoint(
-                                        training_speed=self._calculate_training_speed_with_checkpoint_offset(),
-                                        avg_game_length=float(eval_metrics.get('mean_length', 0.0)),
-                                        metrics={'evaluation': eval_metrics, 'reason': 'best_median_score'}
+                                    eval_metrics = await asyncio.to_thread(self.trainer.evaluate_policy, num_episodes=self._eval_num_episodes)
+                                except Exception as e:
+                                    eval_metrics = { 'error': str(e) }
+                                finally:
+                                    # Always end timing, even on error
+                                    self.timing_logger.end_operation("evaluation", "eval")
+
+                                # Broadcast evaluation metrics (best-effort)
+                                try:
+                                    await asyncio.wait_for(
+                                        self.ws_manager.broadcast({
+                                            'type': 'evaluation_metrics',
+                                            'metrics': eval_metrics,
+                                        }, priority="high"),
+                                        timeout=1.0,
                                     )
                                 except Exception:
                                     pass
+
+                                # Checkpoint best-by-median-score
+                                if isinstance(eval_metrics, dict) and 'median_score' in eval_metrics:
+                                    try:
+                                        median_score = float(eval_metrics['median_score'])
+                                        should_save = (self._best_median_score is None) or (median_score > (self._best_median_score or 0.0))
+                                        if should_save:
+                                            self._best_median_score = median_score
+                                            try:
+                                                await self._save_checkpoint(
+                                                    training_speed=self._calculate_training_speed_with_checkpoint_offset(),
+                                                    avg_game_length=float(eval_metrics.get('mean_length', 0.0)),
+                                                    metrics={'evaluation': eval_metrics, 'reason': 'best_median_score'}
+                                                )
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+
+                            # Fire-and-forget evaluation; do not block training loop
+                            self._eval_task = asyncio.create_task(run_eval_and_broadcast())
 
                     # Convenience: last result for logging / checkpoint metrics
                     last_res = episode_results[-1] if episode_results else {}
@@ -642,7 +781,8 @@ class TrainingManager:
                         with self._lb_lock:
                             expert_usage = self.env_trainers[0].model.get_expert_usage()
                             if expert_usage is not None:
-                                usage_list = expert_usage.tolist() if hasattr(expert_usage, 'tolist') else list(expert_usage)
+                                # expert_usage is a device tensor; convert once for metrics
+                                usage_list = expert_usage.detach().cpu().tolist()
                                 self._expert_usage_history.append([float(u) for u in usage_list])
                                 
                                 # ENHANCED: Check for expert starvation with model-size awareness
@@ -714,9 +854,9 @@ class TrainingManager:
                     
                     self.timing_logger.end_operation("metrics_processing", "training", f"processed={len(episode_results)}_results")
                     
-                    # FIX: Broadcast metrics after every episode (reduced from 2 episodes)
-                    # This provides immediate feedback to users
-                    if episode_results:
+                    # FIX: Broadcast metrics after every episode (rate-limited)
+                    # Provide immediate feedback while avoiding flooding the event loop
+                    if episode_results and (time.time() - self._last_broadcast_time >= self._broadcast_interval):
                         self.timing_logger.start_operation("metrics_broadcast", "websocket")
                         
                         # Build metrics for the last environment only (representative sample)
@@ -728,16 +868,15 @@ class TrainingManager:
                         
                         # CRITICAL FIX: Add timeout and error handling for WebSocket broadcast
                         try:
-                            await asyncio.wait_for(
-                                self.ws_manager.broadcast(metrics, priority="normal"),
-                                timeout=1.0  # 1 second timeout to prevent blocking
-                            )
+                            # Queue broadcast to avoid stalling loop when clients are slow
+                            asyncio.create_task(self.ws_manager.broadcast(metrics, priority="normal"))
                         except asyncio.TimeoutError:
                             print("Warning: WebSocket broadcast timed out, skipping metrics update")
                         except Exception as e:
                             print(f"Warning: WebSocket broadcast failed: {e}")
                         
                         self.timing_logger.end_operation("metrics_broadcast", "websocket", "immediate_feedback")
+                        self._last_broadcast_time = time.time()
 
                     # Extract metrics we need later for checkpoint bookkeeping
                     training_speed = self._calculate_training_speed_with_checkpoint_offset()
@@ -789,6 +928,27 @@ class TrainingManager:
                     if self.current_episode % self._checkpoint_interval == 0:
                         await self._save_checkpoint(training_speed, avg_game_length, metrics if 'metrics' in locals() else {})
                     
+                    # Gentle autoscaling: adjust number of envs based on recent loop durations with cooldown
+                    try:
+                        if time.time() >= autoscale_cooldown_until and len(recent_loop_durations) >= 10:
+                            avg_loop = sum(recent_loop_durations[-10:]) / 10.0
+                            # If loop is slow, reduce envs to free CPU for API responsiveness
+                            if avg_loop > 1.0 and len(self.envs) > autoscale_min_envs:
+                                new_n = max(autoscale_min_envs, len(self.envs) - 1)
+                                self.envs = self.envs[:new_n]
+                                self.env_trainers = [self.trainer] * len(self.envs)
+                                print(f"Autoscale: reduced envs to {len(self.envs)} (avg loop {avg_loop:.3f}s)")
+                                autoscale_cooldown_until = time.time() + 30.0
+                            # If loop is very fast, cautiously increase envs up to max
+                            elif avg_loop < 0.3 and len(self.envs) < autoscale_max_envs:
+                                add_n = 1
+                                self.envs.extend([Gym2048Env() for _ in range(add_n)])
+                                self.env_trainers = [self.trainer] * len(self.envs)
+                                print(f"Autoscale: increased envs to {len(self.envs)} (avg loop {avg_loop:.3f}s)")
+                                autoscale_cooldown_until = time.time() + 30.0
+                    except Exception as _autoscale_err:
+                        print(f"Autoscale warning: {_autoscale_err}")
+
                     await asyncio.sleep(0.001)  # Reduced from 0.005 to 0.001 for faster feedback
                     
                 except Exception as e:
@@ -868,7 +1028,11 @@ class TrainingManager:
         # Save model checkpoint
         self.timing_logger.start_operation("model_checkpoint_save", "io")
         if self.trainer is not None:
-            self.trainer.save_checkpoint(str(checkpoint_path))
+            # Offload heavy disk I/O to thread pool to keep event loop responsive
+            try:
+                await asyncio.to_thread(self.trainer.save_checkpoint, str(checkpoint_path))
+            except Exception as e:
+                print(f"Warning: async checkpoint save failed, reason: {e}")
         self.timing_logger.end_operation("model_checkpoint_save", "io", f"filepath={checkpoint_path}")
         
         # NEW: Track this checkpoint for long run mode
@@ -926,15 +1090,21 @@ class TrainingManager:
 
         # Notify all connected clients that a new checkpoint is available
         self.timing_logger.start_operation("checkpoint_notification", "websocket")
-        await self.ws_manager.broadcast({
-            'type': 'checkpoint_created',
-            'checkpoint_id': checkpoint_id,
-            'episode': self.current_episode,
-            'absolute_path': str(checkpoint_path),
-            'created_at': time.time(),
-            'long_run_mode': self._long_run_mode,
-            'run_id': self._current_run_id
-        })
+        try:
+            await asyncio.wait_for(
+                self.ws_manager.broadcast({
+                    'type': 'checkpoint_created',
+                    'checkpoint_id': checkpoint_id,
+                    'episode': self.current_episode,
+                    'absolute_path': str(checkpoint_path),
+                    'created_at': time.time(),
+                    'long_run_mode': self._long_run_mode,
+                    'run_id': self._current_run_id
+                }),
+                timeout=1.0,
+            )
+        except Exception:
+            pass
         self.timing_logger.end_operation("checkpoint_notification", "websocket")
         
         self.timing_logger.end_operation("checkpoint_save", "io", f"checkpoint_id={checkpoint_id}")

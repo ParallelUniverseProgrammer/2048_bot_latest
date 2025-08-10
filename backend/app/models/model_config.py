@@ -58,39 +58,38 @@ class DynamicModelConfig:
     """Dynamically configure model based on available resources"""
 
     # Predefined configurations targeting total/active parameter budgets
-    # lightning: ~2M total, ~0.5M active
-    # base: ~12M total, ~3M active
-    # expert: ~100M total, ~10M active
+    # Profiles are tuned for 16-token 2048 boards and PPO stability.
+    # lightning: compact, fast (edge/CPU); base: balanced; expert: larger but still efficient
     CONFIGS = {
         "lightning": ModelConfig(
             d_model=128,
-            n_heads=2,
-            n_layers=3,
-            n_experts=8,
+            n_heads=4,   # 128 dims / 4 heads = 32 per head
+            n_layers=4,  # a bit more depth helps with planning
+            n_experts=6, # fewer but higher-quality experts for tiny models
             d_ff=256,
-            top_k=1,
+            top_k=2,     # allow two experts to reduce starvation
             dropout=0.1,
             attention_dropout=0.1,
             model_size="lightning",
         ),
         "base": ModelConfig(
             d_model=256,
-            n_heads=4,
-            n_layers=3,
-            n_experts=12,
+            n_heads=8,   # 256 / 8 = 32
+            n_layers=6,
+            n_experts=8,
             d_ff=512,
-            top_k=1,
+            top_k=2,
             dropout=0.1,
             attention_dropout=0.1,
             model_size="base",
         ),
         "expert": ModelConfig(
             d_model=512,
-            n_heads=3,
-            n_layers=3,
-            n_experts=30,
+            n_heads=8,   # 512 / 8 = 64
+            n_layers=8,
+            n_experts=16,
             d_ff=1024,
-            top_k=1,
+            top_k=2,
             dropout=0.1,
             attention_dropout=0.1,
             model_size="expert",
@@ -216,3 +215,18 @@ class DynamicModelConfig:
             console.print("[yellow]Using CPU (CUDA not available)")
         
         return device 
+
+    @classmethod
+    def get_default_learning_rate(cls, config: ModelConfig) -> float:
+        """Return a sane default learning rate for PPO based on model profile.
+
+        Rationale:
+        - lightning/base are compact enough to train stably at 3e-4.
+        - expert has substantially more parameters; a slightly lower LR (2e-4)
+          improves stability without materially slowing convergence.
+        """
+        profile = getattr(config, "model_size", None) or "base"
+        if profile == "expert":
+            return 2e-4
+        # Default for lightning and base
+        return 3e-4

@@ -64,6 +64,8 @@ class MultiHeadAttention(nn.Module):
     
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         batch_size, seq_len, d_model = x.size()
+        # Ensure input is a regular autograd tensor (not an inference tensor)
+        x = x.clone()
         
         # Generate Q, K, V
         Q = self.w_q(x).view(batch_size, seq_len, self.n_heads, self.d_k).transpose(1, 2)
@@ -198,10 +200,10 @@ class MoELayer(nn.Module):
             for i in range(self.n_experts):
                 usage[i] = (top_k_indices == i).float().sum()
             usage = usage / usage.sum()
+            # Keep expert usage on device; buffer is a registered buffer
             self.expert_usage = self.usage_decay * self.expert_usage + (1 - self.usage_decay) * usage
-            
-            # Store for visualization
-            self.current_expert_usage = usage.cpu().numpy()
+            # Store device tensor for visualization/metrics; callers can .tolist() as needed
+            self.current_expert_usage = usage
         
         # Apply experts with capacity limiting
         # Ensure output uses the same dtype as input activations to avoid AMP dtype mismatches
@@ -219,7 +221,9 @@ class MoELayer(nn.Module):
                 token_indices = token_indices[:capacity]
 
             # Run through expert
-            expert_output = expert(x_flat[token_indices])
+            # Clone slice to ensure it's a regular autograd tensor (not an inference tensor)
+            expert_input = x_flat[token_indices].clone()
+            expert_output = expert(expert_input)
             # Align dtypes for safe "index_put" under autocast (expert may be fp16 while output is fp32)
             if expert_output.dtype != output.dtype:
                 expert_output = expert_output.to(output.dtype)
@@ -344,13 +348,18 @@ class GameTransformer(nn.Module):
         ])
         
         # Output heads
-        self.policy_head = nn.Sequential(
-            nn.LayerNorm(config.d_model),
-            nn.Linear(config.d_model, config.d_model // 2),
+        # Direction-aware policy head: combines row/column aggregation with pooled token state
+        self.policy_norm = nn.LayerNorm(config.d_model)
+        self.policy_mlp = nn.Sequential(
+            nn.Linear(config.d_model, max(64, config.d_model // 2)),
             nn.GELU(),
             nn.Dropout(config.dropout),
-            nn.Linear(config.d_model // 2, 4)  # 4 actions: up, down, left, right
         )
+        # Row/column summarizers to bias logits toward spatial structure of 2048
+        hidden_out = max(64, config.d_model // 2)
+        self.row_head = nn.Linear(hidden_out, 2)   # up/down bias
+        self.col_head = nn.Linear(hidden_out, 2)   # left/right bias
+        self.policy_out = nn.Linear(hidden_out, 4) # residual logits
         
         # Extrinsic value head (for game score)
         self.value_head = nn.Sequential(
@@ -409,7 +418,7 @@ class GameTransformer(nn.Module):
         
         return encoded.clamp(0, 16)  # Clamp to valid range
     
-    def forward(self, board: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, board: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass
         
@@ -467,9 +476,17 @@ class GameTransformer(nn.Module):
         
         # Global average pooling for final representation
         pooled = x.mean(dim=1)  # (batch_size, d_model)
-        
-        # Output heads
-        policy_logits = self.policy_head(pooled)
+
+        # Direction-aware policy computation
+        h = self.policy_mlp(self.policy_norm(pooled))  # (B, H)
+        # Split logits into directional components
+        row_logits = self.row_head(h)  # (B, 2) -> [up, down]
+        col_logits = self.col_head(h)  # (B, 2) -> [left, right]
+        residual_logits = self.policy_out(h)  # (B, 4)
+        # Assemble in action order [up, down, left, right]
+        policy_logits = torch.stack(
+            [row_logits[:, 0], row_logits[:, 1], col_logits[:, 0], col_logits[:, 1]], dim=-1
+        ) + residual_logits
         value_ext = self.value_head(pooled)
         value_int = self.intrinsic_value_head(pooled)
 
@@ -500,3 +517,8 @@ class GameTransformer(nn.Module):
         if torch.cuda.is_available():
             return torch.cuda.memory_allocated() / (1024**3)
         return 0.0 
+
+    @torch.no_grad()
+    def count_parameters(self) -> int:
+        """Count parameters with no autograd overhead (kept for compatibility)."""
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
