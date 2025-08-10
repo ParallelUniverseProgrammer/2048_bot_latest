@@ -196,7 +196,7 @@ const NetworkVisualizer: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between bg-gray-800/40 rounded-md p-2">
                       <span>Params</span>
-                      <span className="font-semibold text-green-400">{trainingData?.model_params || '0'}M</span>
+                      <span className="font-semibold text-green-400">{typeof trainingData?.model_params === 'number' ? `${trainingData.model_params.toFixed(1)}M` : '—'}</span>
                     </div>
                     <div className="flex items-center justify-between bg-gray-800/40 rounded-md p-2">
                       <span>Memory</span>
@@ -390,7 +390,7 @@ const NetworkVisualizer: React.FC = () => {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between p-3 bg-gray-800/40 rounded-xl">
                       <span className="text-sm text-gray-400">Parameters:</span>
-                      <span className="text-sm font-semibold text-blue-400">{trainingData?.model_params || '0'}M</span>
+                      <span className="text-sm font-semibold text-blue-400">{typeof trainingData?.model_params === 'number' ? `${trainingData.model_params.toFixed(1)}M` : '—'}</span>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-gray-800/40 rounded-xl">
                       <span className="text-sm text-gray-400">GPU Memory:</span>

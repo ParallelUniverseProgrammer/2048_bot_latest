@@ -53,6 +53,9 @@ class HealthMetrics:
     memory_percent: float = 0.0
     memory_available: float = 0.0
     gpu_memory_percent: float = 0.0
+    gpu_memory_total_gb: float = 0.0
+    gpu_memory_used_gb: float = 0.0
+    gpu_memory_free_gb: float = 0.0
     gpu_utilization: float = 0.0
     disk_usage_percent: float = 0.0
     load_average: float = 0.0
@@ -194,12 +197,27 @@ class SystemHealthMonitor:
             # GPU metrics
             gpu_memory_percent = 0.0
             gpu_utilization = 0.0
+            gpu_total_gb = 0.0
+            gpu_used_gb = 0.0
+            gpu_free_gb = 0.0
             
             if torch.cuda.is_available():
                 try:
-                    gpu_memory_used = torch.cuda.memory_allocated()
-                    gpu_memory_total = torch.cuda.get_device_properties(0).total_memory
-                    gpu_memory_percent = (gpu_memory_used / gpu_memory_total) * 100
+                    # Prefer mem_get_info for real free/total
+                    if hasattr(torch.cuda, 'mem_get_info'):
+                        free_bytes, total_bytes = torch.cuda.mem_get_info(0)
+                        used_bytes = total_bytes - free_bytes
+                    else:
+                        # Fallback: approximate with allocated bytes
+                        total_bytes = torch.cuda.get_device_properties(0).total_memory
+                        used_bytes = torch.cuda.memory_allocated()
+                        free_bytes = max(0, total_bytes - used_bytes)
+
+                    gpu_memory_percent = (used_bytes / total_bytes) * 100 if total_bytes > 0 else 0.0
+                    gpu_total_gb = total_bytes / (1024**3)
+                    gpu_used_gb = used_bytes / (1024**3)
+                    gpu_free_gb = free_bytes / (1024**3)
+                    # Utilization may not be available in torch; keep zero if missing
                     gpu_utilization = torch.cuda.utilization() if hasattr(torch.cuda, 'utilization') else 0.0
                 except Exception as e:
                     logger.debug(f"GPU metrics collection failed: {e}")
@@ -222,6 +240,9 @@ class SystemHealthMonitor:
                 memory_percent=memory.percent,
                 memory_available=memory.available / (1024**3),  # GB
                 gpu_memory_percent=gpu_memory_percent,
+                gpu_memory_total_gb=gpu_total_gb,
+                gpu_memory_used_gb=gpu_used_gb,
+                gpu_memory_free_gb=gpu_free_gb,
                 gpu_utilization=gpu_utilization,
                 disk_usage_percent=disk_usage_percent,
                 load_average=load_average,
@@ -473,6 +494,9 @@ class SystemHealthMonitor:
                 'memory_percent': self.current_metrics.memory_percent,
                 'memory_available_gb': self.current_metrics.memory_available,
                 'gpu_memory_percent': self.current_metrics.gpu_memory_percent,
+                'gpu_memory_total_gb': self.current_metrics.gpu_memory_total_gb,
+                'gpu_memory_used_gb': self.current_metrics.gpu_memory_used_gb,
+                'gpu_memory_free_gb': self.current_metrics.gpu_memory_free_gb,
                 'gpu_utilization': self.current_metrics.gpu_utilization,
                 'disk_usage_percent': self.current_metrics.disk_usage_percent,
                 'load_average': self.current_metrics.load_average,

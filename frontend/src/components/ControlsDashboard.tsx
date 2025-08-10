@@ -12,6 +12,9 @@ type HealthReport = {
     memory_percent: number
     memory_available_gb: number
     gpu_memory_percent: number
+    gpu_memory_total_gb: number
+    gpu_memory_used_gb: number
+    gpu_memory_free_gb: number
     gpu_utilization: number
     disk_usage_percent: number
     load_average: number
@@ -90,21 +93,23 @@ const ControlsDashboard: React.FC = () => {
   }
 
   const gpuMemPercent = health?.metrics.gpu_memory_percent
-  const gpuUsedGb = trainingData?.gpu_memory
-  const approxTotalVram = gpuMemPercent && gpuUsedGb && gpuMemPercent > 0 ? (gpuUsedGb / (gpuMemPercent / 100)) : undefined
-  const vramAvailableGb = approxTotalVram && gpuUsedGb ? Math.max(0, approxTotalVram - gpuUsedGb) : undefined
+  const gpuUsedGb = (typeof health?.metrics?.gpu_memory_used_gb === 'number' && isFinite(health.metrics.gpu_memory_used_gb))
+    ? health.metrics.gpu_memory_used_gb
+    : trainingData?.gpu_memory
+  const vramAvailableGb = (typeof health?.metrics?.gpu_memory_free_gb === 'number' && isFinite(health.metrics.gpu_memory_free_gb))
+    ? health.metrics.gpu_memory_free_gb
+    : undefined
   const cudaEnabled = (gpuMemPercent ?? 0) > 0 || (gpuUsedGb ?? 0) > 0
   const gpuUtil = health?.metrics.gpu_utilization
   const modelParams = trainingData?.model_params
 
   const formatGb = (v?: number) => (typeof v === 'number' && isFinite(v) ? `${v.toFixed(1)}GB` : '—')
-  const formatLarge = (v?: number) => {
+  const formatModelParams = (v?: number) => {
     if (typeof v !== 'number' || !isFinite(v)) return '—'
-    if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`
-    if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`
-    if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`
-    return `${v}`
+    // model_params is expressed in millions across the app
+    return `${v.toFixed(1)}M`
   }
+  // Removed generic formatter; params are explicitly displayed in millions (M)
 
   return (
     <div className="safe-area h-full min-h-0 grid grid-rows-[auto_auto] px-4 overflow-hidden gap-2" id="controls">
@@ -217,7 +222,7 @@ const ControlsDashboard: React.FC = () => {
           </div>
           <div className="rounded-xl border border-ui-border-muted p-2 bg-token-surface-70">
             <div className="text-[11px] text-ui-text-secondary mb-1">Params</div>
-            <div className="text-lg font-semibold numeric">{formatLarge(modelParams)}</div>
+            <div className="text-lg font-semibold numeric">{formatModelParams(modelParams)}</div>
           </div>
         </div>
 

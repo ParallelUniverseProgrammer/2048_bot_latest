@@ -106,16 +106,22 @@ const TrainingDashboard: React.FC = () => {
   }
 
   const lossChartData = useMemo(() => {
-    const episodes = lossHistory.episodes.length > 0 
-      ? lossHistory.episodes 
-      : Array.from({length: 20}, (_, i) => i + 1)
-    
-    const dataPoints = isMobile ? Math.min(15, episodes.length) : episodes.length
-    const startIndex = Math.max(0, episodes.length - dataPoints)
-    const selectedEpisodes = episodes.slice(startIndex)
-    
-    const values = lossHistory.values.length > 0 
-      ? lossHistory.values.slice(startIndex)
+    // Prefer score episodes as the canonical x-axis to keep charts aligned
+    const baseEpisodes = (scoreHistory.episodes.length > 0
+      ? scoreHistory.episodes
+      : (lossHistory.episodes.length > 0
+          ? lossHistory.episodes
+          : Array.from({ length: 20 }, (_, i) => i + 1)))
+
+    const dataPoints = isMobile ? Math.min(15, baseEpisodes.length) : baseEpisodes.length
+    const startIndex = Math.max(0, baseEpisodes.length - dataPoints)
+    const selectedEpisodes = baseEpisodes.slice(startIndex)
+
+    const values = lossHistory.values.length > 0
+      ? selectedEpisodes.map((ep) => {
+          const idx = lossHistory.episodes.indexOf(ep)
+          return idx >= 0 ? lossHistory.values[idx] : Number.NaN
+        })
       : createMockData(selectedEpisodes, 2.5, 0.3)
 
     return {
@@ -137,19 +143,25 @@ const TrainingDashboard: React.FC = () => {
         },
       ],
     }
-  }, [lossHistory, isMobile])
+  }, [lossHistory, scoreHistory, isMobile])
 
   const scoreChartData = useMemo(() => {
-    const episodes = scoreHistory.episodes.length > 0 
-      ? scoreHistory.episodes 
-      : Array.from({length: 20}, (_, i) => i + 1)
-    
-    const dataPoints = isMobile ? Math.min(15, episodes.length) : episodes.length
-    const startIndex = Math.max(0, episodes.length - dataPoints)
-    const selectedEpisodes = episodes.slice(startIndex)
-    
-    const values = scoreHistory.values.length > 0 
-      ? scoreHistory.values.slice(startIndex)
+    // Use the same base episode axis selection as the loss chart
+    const baseEpisodes = (scoreHistory.episodes.length > 0
+      ? scoreHistory.episodes
+      : (lossHistory.episodes.length > 0
+          ? lossHistory.episodes
+          : Array.from({ length: 20 }, (_, i) => i + 1)))
+
+    const dataPoints = isMobile ? Math.min(15, baseEpisodes.length) : baseEpisodes.length
+    const startIndex = Math.max(0, baseEpisodes.length - dataPoints)
+    const selectedEpisodes = baseEpisodes.slice(startIndex)
+
+    const values = scoreHistory.values.length > 0
+      ? selectedEpisodes.map((ep) => {
+          const idx = scoreHistory.episodes.indexOf(ep)
+          return idx >= 0 ? scoreHistory.values[idx] : Number.NaN
+        })
       : createMockData(selectedEpisodes, 1000, 0.4)
 
     return {
@@ -171,7 +183,7 @@ const TrainingDashboard: React.FC = () => {
         },
       ],
     }
-  }, [scoreHistory, isMobile])
+  }, [scoreHistory, lossHistory, isMobile])
 
   const actionDistributionData = useMemo(() => {
     const actions = currentTrainingData?.actions || [0.25, 0.25, 0.25, 0.25]
